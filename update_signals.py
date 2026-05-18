@@ -58,7 +58,14 @@ def exit_date(idx, sd):
 
 def trading_day_n(idx, sd):
     today = pd.Timestamp(datetime.today().date())
-    count = int(((idx >= sd) & (idx <= today)).sum())
+    last_data = idx[-1]
+    # Count trading days in feather from sd to last available date
+    count = int(((idx >= sd) & (idx <= last_data)).sum())
+    # Add weekdays between last_data+1 and today (approximation for missing trading days)
+    if today > last_data:
+        extra = sum(1 for d in pd.date_range(last_data + pd.Timedelta(days=1), today)
+                    if d.weekday() < 5)
+        count += extra
     return min(count, 10)
 
 def today_change(price, sid):
@@ -228,7 +235,10 @@ def main():
     print(f'  → history.csv ({len(hist)} 筆)')
 
     # 更新時間
-    meta = {'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M')}
+    meta = {
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'data_date': price.index[-1].strftime('%Y-%m-%d'),
+    }
     with open(f'{OUT_DIR}/meta.json', 'w') as f:
         json.dump(meta, f)
     print(f'  → meta.json')

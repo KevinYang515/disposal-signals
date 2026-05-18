@@ -68,7 +68,19 @@ def load_meta():
 # ── Header ──────────────────────────────────────────────────────────────
 meta = load_meta()
 st.title('📈 處置股橡皮筋訊號系統')
-st.caption(f"資料更新：{meta.get('updated_at', '-')}　｜　策略：漲多處置 × 大+中型 × 20分鐘撮合 × D3累積跌幅 < -5%")
+data_date = meta.get('data_date', '')
+updated_at = meta.get('updated_at', '-')
+st.caption(f"腳本更新：{updated_at}　｜　價格資料截至：{data_date}　｜　策略：漲多處置 × 大+中型 × 20分鐘撮合")
+
+# 若價格資料超過 1 個交易日未更新，顯示警告
+if data_date:
+    from datetime import date
+    try:
+        lag = (date.today() - pd.Timestamp(data_date).date()).days
+        if lag >= 2:
+            st.warning(f"價格資料截至 {data_date}，距今 {lag} 天。今D幾估算可能偏差，請更新 finlab_db 後重新執行 update_signals.py")
+    except Exception:
+        pass
 
 def fmt_pct(v):
     try:
