@@ -136,12 +136,12 @@ with tab1:
             d_cols.append(col)
 
     display_cols = ['評級', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
-                    '起始日', '今D幾', '出關日'] + d_cols
+                    '起始日', '今D幾', '出關日', '今日漲跌'] + d_cols
 
     display_cols = [c for c in display_cols if c in view.columns]
 
     disp = view[display_cols].copy()
-    for c in d_cols + ['近20日漲幅', '大戶(%)']:
+    for c in d_cols + ['近20日漲幅', '大戶(%)', '今日漲跌']:
         if c in disp.columns:
             disp[c] = disp[c].apply(fmt_pct)
 
@@ -161,8 +161,9 @@ with tab1:
         return ''
 
     styled = disp.style.map(color_grade, subset=['評級'])
-    if d_cols:
-        styled = styled.map(color_ret_str, subset=d_cols)
+    color_cols = d_cols + (['今日漲跌'] if '今日漲跌' in disp.columns else [])
+    if color_cols:
+        styled = styled.map(color_ret_str, subset=color_cols)
 
     st.dataframe(styled, use_container_width=True, height=500)
 

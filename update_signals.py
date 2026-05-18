@@ -61,22 +61,35 @@ def trading_day_n(idx, sd):
     count = int(((idx >= sd) & (idx <= today)).sum())
     return min(count, 10)
 
+def today_change(price, sid):
+    if sid not in price.columns:
+        return np.nan
+    series = price[sid].dropna()
+    if len(series) < 2:
+        return np.nan
+    p1, p0 = series.iloc[-1], series.iloc[-2]
+    if p0 <= 0 or np.isnan(p0):
+        return np.nan
+    return round((p1 / p0 - 1) * 100, 2)
+
 def grade(row):
     reason  = row.get('處置原因', '')
     prerun  = row.get('入場前20日漲幅(%)', np.nan)
-    d3r     = row.get('D3收盤報酬(%)', np.nan)
     whale   = row.get('大戶持股變動(%)', np.nan)
+    dn_vals = [row.get(f'D{n}%') for n in range(1, 9)]
 
-    if reason == '漲多處置' and not np.isnan(d3r) and d3r < -5:
-        if not np.isnan(whale) and whale < -1.5:
-            return '⚠️ 漲多但大戶減碼'
-        return '✅ 主力訊號'
-    if reason == '跌深處置' and not np.isnan(prerun) and prerun < 0:
-        return '❌ 避開'
-    if reason == '漲多處置' and not np.isnan(d3r) and d3r < -3:
-        return '🟡 觀察中'
     if reason == '漲多處置':
+        any_entry = any(pd.notna(v) and v < -5 for v in dn_vals)
+        any_watch = any(pd.notna(v) and v < -3 for v in dn_vals)
+        if any_entry:
+            if pd.notna(whale) and whale < -1.5:
+                return '⚠️ 漲多但大戶減碼'
+            return '✅ 主力訊號'
+        if any_watch:
+            return '🟡 觀察中'
         return '⬜ 待觀察'
+    if reason == '跌深處置' and pd.notna(prerun) and prerun < 0:
+        return '❌ 避開'
     return '🟡 觀察中'
 
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
@@ -110,7 +123,8 @@ def build_signals(df, price, open_p):
         for n in range(1, 9):
             v = cumret(price, idx, sid, sd, n)
             d[f'D{n}%'] = v
-        d['評級'] = grade({**row.to_dict(), 'D3收盤報酬(%)': d.get('D3%')})
+        d['今日漲跌'] = today_change(price, sid)
+        d['評級'] = grade({**row.to_dict(), **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
         rows.append(d)
 
     return pd.DataFrame(rows).sort_values('起始日', ascending=False)
