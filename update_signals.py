@@ -18,6 +18,30 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 ENTRY_COL = '買進D3_出關D1賣出(%)'
 
+# ── 從 finlab 刷新價格資料 ────────────────────────────────────────────────
+def refresh_finlab():
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    token = None
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith('FINLAB_TOKEN='):
+                    token = line.strip().split('=', 1)[1]
+    if not token:
+        print('  未找到 FINLAB_TOKEN，跳過刷新')
+        return
+    try:
+        import finlab
+        finlab.login(token)
+        from finlab import data
+        print('  更新 price:收盤價...')
+        data.get('price:收盤價')
+        print('  更新 price:開盤價...')
+        data.get('price:開盤價')
+        print('  finlab 資料刷新完成')
+    except Exception as e:
+        print(f'  finlab 刷新失敗（將使用現有 feather）: {e}')
+
 # ── 讀資料 ──────────────────────────────────────────────────────────────
 def load():
     df = pd.read_csv(V2_CSV)
@@ -215,6 +239,9 @@ def build_history(df):
 
 # ── main ────────────────────────────────────────────────────────────────
 def main():
+    print('刷新 finlab 價格資料...')
+    refresh_finlab()
+
     print('載入資料...')
     df = load()
     price, open_p = load_price()
