@@ -135,13 +135,13 @@ with tab1:
         if col in view.columns and view[col].notna().any():
             d_cols.append(col)
 
-    display_cols = ['評級', '代號', '名稱', '規模', '處置原因', 'prerun', '大戶(%)',
+    display_cols = ['評級', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
                     '起始日', '今D幾', '出關日'] + d_cols
 
     display_cols = [c for c in display_cols if c in view.columns]
 
     disp = view[display_cols].copy()
-    for c in d_cols + ['prerun', '大戶(%)']:
+    for c in d_cols + ['近20日漲幅', '大戶(%)']:
         if c in disp.columns:
             disp[c] = disp[c].apply(fmt_pct)
 
@@ -172,7 +172,7 @@ with tab1:
 ✅ 主力訊號 = 漲多處置 + D3累積 < -5%（歷史勝率 85%+）
 ⚠️ 漲多但大戶減碼 > -1.5%，謹慎
 🟡 觀察中 = D3 尚未達 -5%，等後續發展
-❌ 避開 = 跌深處置 + 進場前已在跌（prerun < 0）
+❌ 避開 = 跌深處置 + 進場前已在跌（近20日漲幅 < 0）
 """)
 
     # 進場時序提醒
@@ -252,7 +252,7 @@ with tab2:
                 return ''
 
         disp = view_h.drop(columns=['年份']).reset_index(drop=True)
-        for c in ['prerun', 'D3累積(%)', '大戶(%)', '出關報酬(%)']:
+        for c in ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)']:
             if c in disp.columns:
                 disp[c] = disp[c].apply(fmt_pct)
 
@@ -358,7 +358,7 @@ with tab4:
 導致急著賣出的人只能接受極差的價格，造成**人工賣壓 → 股價被壓低**。
 
 ```
-漲多進處置（prerun > 0）
+漲多進處置（近20日漲幅 > 0）
     ↓
 20分撮合 → 窒息量 + 股價人工壓低
     ↓
@@ -391,7 +391,7 @@ D3/D4 累積跌幅 > 5% = 橡皮筋壓縮
 
 | 因子 | 意義 |
 |---|---|
-| prerun | 進場前20日漲幅，越高橡皮筋越強 |
+| 近20日漲幅 | 進場前20日漲幅，越高橡皮筋越強 |
 | 大戶(%) | 大戶持股變動，< -1.5% 要謹慎 |
 | 處置原因 | 漲多 > 震盪 > 跌深 |
 
