@@ -132,7 +132,7 @@ with tab1:
             default=['✅ 主力訊號', '⚠️ 漲多但大戶減碼', '🟡 觀察中'],
         )
     with col_f2:
-        filter_cap = st.multiselect('規模', options=['大', '中'], default=['大', '中'])
+        filter_cap = st.multiselect('規模', options=['大', '中'], default=['大', '中'], key='tab1_cap')
 
     view = sig.copy()
     if filter_grade:
@@ -229,7 +229,7 @@ with tab2:
                 default=['D3 < -5%'],
             )
         with col_f3:
-            sel_cap = st.multiselect('規模', ['大', '中'], default=['大', '中'])
+            sel_cap = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab2_cap')
 
         view_h = hist.copy()
         if sel_year != '全部':
