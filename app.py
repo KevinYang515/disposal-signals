@@ -70,6 +70,12 @@ meta = load_meta()
 st.title('📈 處置股橡皮筋訊號系統')
 st.caption(f"資料更新：{meta.get('updated_at', '-')}　｜　策略：漲多處置 × 大+中型 × 20分鐘撮合 × D3累積跌幅 < -5%")
 
+def fmt_pct(v):
+    try:
+        return f'{float(v):+.2f}%'
+    except:
+        return '-'
+
 tab1, tab2, tab3, tab4, tab5 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
@@ -134,19 +140,19 @@ with tab1:
 
     display_cols = [c for c in display_cols if c in view.columns]
 
-    # 確保數值欄位只有兩位小數
-    num_cols = d_cols + ['prerun', '大戶(%)']
-    for c in num_cols:
-        if c in view.columns:
-            view[c] = pd.to_numeric(view[c], errors='coerce').round(2)
+    disp = view[display_cols].copy()
+    for c in d_cols + ['prerun', '大戶(%)']:
+        if c in disp.columns:
+            disp[c] = disp[c].apply(fmt_pct)
 
+    # 顏色函數（針對已格式化的字串）
     def color_grade(val):
         color = GRADE_COLOR.get(str(val), '')
         return f'color: {color}; font-weight: bold;' if color else ''
 
-    def color_ret(val):
+    def color_ret_str(val):
         try:
-            v = float(val)
+            v = float(str(val).replace('%', ''))
             if v < -10: return 'color: #e74c3c; font-weight:700'
             if v < -5:  return 'color: #e67e22; font-weight:700'
             if v > 5:   return 'color: #26c281'
@@ -154,14 +160,9 @@ with tab1:
             pass
         return ''
 
-    styled = (
-        view[display_cols]
-        .style
-        .map(color_grade, subset=['評級'])
-        .map(color_ret,   subset=d_cols)
-        .format({c: '{:+.2f}%' for c in d_cols if c in view.columns}, na_rep='-')
-        .format({'prerun': '{:+.2f}%', '大戶(%)': '{:+.2f}%'}, na_rep='-')
-    )
+    styled = disp.style.map(color_grade, subset=['評級'])
+    if d_cols:
+        styled = styled.map(color_ret_str, subset=d_cols)
 
     st.dataframe(styled, use_container_width=True, height=500)
 
@@ -253,14 +254,22 @@ with tab2:
         disp = view_h.drop(columns=['年份']).reset_index(drop=True)
         for c in ['prerun', 'D3累積(%)', '大戶(%)', '出關報酬(%)']:
             if c in disp.columns:
-                disp[c] = pd.to_numeric(disp[c], errors='coerce').round(2)
+                disp[c] = disp[c].apply(fmt_pct)
+
+        def color_ret_h(val):
+            try:
+                v = float(str(val).replace('%', ''))
+                if v > 10:  return 'color: #26c281; font-weight: 700'
+                if v > 0:   return 'color: #2ecc71'
+                if v > -5:  return 'color: #e67e22'
+                return 'color: #e74c3c; font-weight: 700'
+            except:
+                return ''
 
         styled_h = (
             disp.style
-            .map(color_result, subset=['結果'])
-            .map(color_ret_h,  subset=['出關報酬(%)'])
-            .format({'prerun': '{:+.2f}%', 'D3累積(%)': '{:+.2f}%',
-                     '大戶(%)': '{:+.2f}%', '出關報酬(%)': '{:+.2f}%'}, na_rep='-')
+            .map(color_result,  subset=['結果'])
+            .map(color_ret_h,   subset=['出關報酬(%)'])
         )
 
         st.dataframe(styled_h, use_container_width=True, height=550)
