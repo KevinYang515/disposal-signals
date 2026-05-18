@@ -146,8 +146,8 @@ with tab1:
         .style
         .map(color_grade, subset=['評級'])
         .map(color_ret,   subset=d_cols)
-        .format({c: '{:+.1f}%' for c in d_cols if c in view.columns}, na_rep='-')
-        .format({'prerun': '{:+.0f}%', '大戶(%)': '{:+.2f}%'}, na_rep='-')
+        .format({c: '{:+.2f}%' for c in d_cols if c in view.columns}, na_rep='-')
+        .format({'prerun': '{:+.2f}%', '大戶(%)': '{:+.2f}%'}, na_rep='-')
     )
 
     st.dataframe(styled, use_container_width=True, height=500)
@@ -212,7 +212,7 @@ with tab2:
                 if val >= 5:  return 'background-color: #f6c90e; color: black'
                 return 'background-color: #c0392b; color: white'
 
-        fmt = '{:.1f}%' if metric == '勝率(%)' else '{:+.1f}%'
+        fmt = '{:.2f}%' if metric == '勝率(%)' else '{:+.2f}%'
         st.dataframe(
             pivot.style.map(color_cell).format(fmt, na_rep='-'),
             use_container_width=True
