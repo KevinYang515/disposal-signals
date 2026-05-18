@@ -215,6 +215,10 @@ with tab2:
     else:
         st.subheader('漲多處置 × 大+中型 × 20分鐘　歷史交易紀錄')
 
+        # ── 確保規模欄格式一致（舊版 CSV 可能是'大型股'）──
+        if '規模' in hist.columns:
+            hist['規模'] = hist['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
+
         # ── 確保 D3組別 欄位存在（舊版 CSV 相容）──
         if 'D3組別' not in hist.columns:
             def _d3g(v):

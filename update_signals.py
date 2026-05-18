@@ -261,7 +261,7 @@ def build_history(df, price, open_p):
         '起始日':    pool['處置起始日'].dt.strftime('%Y-%m-%d'),
         '代號':      pool['股票代號'],
         '名稱':      pool['股票名稱'],
-        '規模':      pool['市值規模'].str.extract(r'^(.+?)\(')[0],
+        '規模':      pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
         'D3組別':    pool['D3組別'],
         '近20日漲幅': pool['入場前20日漲幅(%)'].round(2),
         'D3累積(%)': pool['D3收盤報酬(%)'].round(2),
