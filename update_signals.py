@@ -228,6 +228,28 @@ def build_history(df, price, open_p):
               (df['處置原因'] == '漲多處置') &
               df[ENTRY].notna()].copy()
 
+    # ── 計算 D1~D8 最大跌幅（最小累積報酬）──
+    def min_dn_ret(row):
+        sid = row['股票代號']
+        sd  = row['處置起始日']
+        if sid not in price.columns:
+            return np.nan
+        pos = idx.searchsorted(sd)
+        if pos < 1:
+            return np.nan
+        p0 = price[sid].iloc[pos - 1]
+        if pd.isna(p0) or p0 <= 0:
+            return np.nan
+        vals = []
+        for n in range(1, 9):
+            if pos + n - 1 < len(price):
+                pn = price[sid].iloc[pos + n - 1]
+                if pd.notna(pn) and pn > 0:
+                    vals.append((pn / p0 - 1) * 100)
+        return min(vals) if vals else np.nan
+
+    pool['_min_dn'] = pool.apply(min_dn_ret, axis=1)
+
     # ── 對每筆計算出關後 T+1收、T+2、T+3 ──
     def extra_rets(row):
         sid = row['股票代號']
@@ -249,20 +271,20 @@ def build_history(df, price, open_p):
     pool[['_t1c', '_t2c', '_t3c']] = pool.apply(
         lambda r: pd.Series(extra_rets(r)), axis=1)
 
-    def d3_group(v):
-        if pd.isna(v):       return 'D3無資料'
-        if v < -5:           return 'D3 < -5%'
-        if v < 0:            return 'D3 -5%~0%'
-        return 'D3 ≥ 0%'
+    def dn_group(v):
+        if pd.isna(v):  return 'Dn無資料'
+        if v < -5:      return 'Dn < -5%'
+        if v < 0:       return 'Dn -5%~0%'
+        return 'Dn ≥ 0%'
 
-    pool['D3組別'] = pool['D3收盤報酬(%)'].apply(d3_group)
+    pool['Dn組別'] = pool['_min_dn'].apply(dn_group)
 
     out = pd.DataFrame({
         '起始日':    pool['處置起始日'].dt.strftime('%Y-%m-%d'),
         '代號':      pool['股票代號'],
         '名稱':      pool['股票名稱'],
         '規模':      pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
-        'D3組別':    pool['D3組別'],
+        'Dn組別':    pool['Dn組別'],
         '近20日漲幅': pool['入場前20日漲幅(%)'].round(2),
         'D3累積(%)': pool['D3收盤報酬(%)'].round(2),
         '大戶(%)':   pool['大戶持股變動(%)'].round(2),
@@ -286,10 +308,10 @@ def build_history(df, price, open_p):
         }
 
     cmp_stats = [
-        grp_stats(pool[pool['D3收盤報酬(%)'] < -5],  'D3累積 < -5%（進場）'),
-        grp_stats(pool[(pool['D3收盤報酬(%)'] >= -5) & (pool['D3收盤報酬(%)'] < 0)], 'D3累積 -5%~0%（觀察中）'),
-        grp_stats(pool[pool['D3收盤報酬(%)'] >= 0],  'D3累積 ≥ 0%（無跌幅）'),
-        grp_stats(pool,                              '全部漲多（不篩選D3）'),
+        grp_stats(pool[pool['_min_dn'] < -5],                               'Dn最深 < -5%（進場）'),
+        grp_stats(pool[(pool['_min_dn'] >= -5) & (pool['_min_dn'] < 0)],    'Dn最深 -5%~0%（觀察中）'),
+        grp_stats(pool[pool['_min_dn'] >= 0],                                'Dn最深 ≥ 0%（無跌幅）'),
+        grp_stats(pool,                                                       '全部漲多（不篩選Dn）'),
     ]
     cmp_stats = [x for x in cmp_stats if x]
 

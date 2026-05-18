@@ -43,7 +43,7 @@ def load_signals():
         return pd.DataFrame()
     return pd.read_csv(p)
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)
 def load_history():
     p = f'{DATA_DIR}/history.csv'
     if not os.path.exists(p):
@@ -219,29 +219,33 @@ with tab2:
         if '規模' in hist.columns:
             hist['規模'] = hist['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
 
-        # ── 確保 D3組別 欄位存在（舊版 CSV 相容）──
-        if 'D3組別' not in hist.columns:
-            def _d3g(v):
-                try:
-                    v = float(v)
-                    if v < -5:  return 'D3 < -5%'
-                    if v < 0:   return 'D3 -5%~0%'
-                    return 'D3 ≥ 0%'
-                except: return 'D3無資料'
-            hist['D3組別'] = hist['D3累積(%)'].apply(_d3g)
+        # ── 確保 Dn組別 欄位存在（舊版 CSV 相容）──
+        if 'Dn組別' not in hist.columns:
+            if 'D3組別' in hist.columns:
+                hist.rename(columns={'D3組別': 'Dn組別'}, inplace=True)
+                hist['Dn組別'] = hist['Dn組別'].str.replace('D3 ', 'Dn ', regex=False)
+            else:
+                def _dng(v):
+                    try:
+                        v = float(v)
+                        if v < -5:  return 'Dn < -5%'
+                        if v < 0:   return 'Dn -5%~0%'
+                        return 'Dn ≥ 0%'
+                    except: return 'Dn無資料'
+                hist['Dn組別'] = hist['D3累積(%)'].apply(_dng)
 
         # ── 篩選器 ──
         hist['年份'] = hist['起始日'].str[:4]
-        D3_OPTIONS = ['D3 < -5%', 'D3 -5%~0%', 'D3 ≥ 0%']
+        DN_OPTIONS = ['Dn < -5%', 'Dn -5%~0%', 'Dn ≥ 0%', '全部漲多']
 
         col_f1, col_f2, col_f3 = st.columns([2, 5, 2])
         with col_f1:
             sel_year = st.selectbox('年份', ['全部'] + sorted(hist['年份'].unique().tolist(), reverse=True))
         with col_f2:
-            sel_d3 = st.multiselect(
-                'D3累積跌幅條件',
-                options=D3_OPTIONS,
-                default=['D3 < -5%'],
+            sel_dn = st.multiselect(
+                'Dn最深跌幅條件（D1~D8 任意最大跌幅）',
+                options=DN_OPTIONS,
+                default=['Dn < -5%'],
             )
         with col_f3:
             sel_cap = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab2_cap')
@@ -249,8 +253,8 @@ with tab2:
         view_h = hist.copy()
         if sel_year != '全部':
             view_h = view_h[view_h['年份'] == sel_year]
-        if sel_d3:
-            view_h = view_h[view_h['D3組別'].isin(sel_d3)]
+        if sel_dn and '全部漲多' not in sel_dn:
+            view_h = view_h[view_h['Dn組別'].isin(sel_dn)]
         if sel_cap:
             view_h = view_h[view_h['規模'].isin(sel_cap)]
 
@@ -308,7 +312,7 @@ with tab2:
                 return ''
 
         if len(view_h) > 0:
-            disp = view_h.drop(columns=['年份', 'D3組別'], errors='ignore').reset_index(drop=True)
+            disp = view_h.drop(columns=['年份', 'Dn組別'], errors='ignore').reset_index(drop=True)
             ret_cols = ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
             for c in ret_cols:
                 if c in disp.columns:
