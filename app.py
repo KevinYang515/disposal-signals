@@ -213,85 +213,74 @@ with tab2:
     if hist.empty:
         st.warning('尚無歷史資料，請先執行 update_signals.py')
     else:
-        st.subheader('漲多處置 × 大+中型 × 20分鐘 × D3 < -5%　歷史交易紀錄')
+        st.subheader('漲多處置 × 大+中型 × 20分鐘　歷史交易紀錄')
 
-        # KPI
-        wins  = hist[hist['結果'] == '✅ 獲利']
-        loss  = hist[hist['結果'] == '❌ 虧損']
-        wr    = len(wins) / len(hist) * 100
-        avg_r = hist['出關報酬(%)'].mean()
-        wl    = wins['出關報酬(%)'].mean() / abs(loss['出關報酬(%)'].mean()) if len(loss) > 0 else float('inf')
+        # ── 篩選器 ──
+        hist['年份'] = hist['起始日'].str[:4]
+        D3_OPTIONS = ['D3 < -5%', 'D3 -5%~0%', 'D3 ≥ 0%']
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric('總筆數', len(hist))
-        c2.metric('勝率', f'{wr:.1f}%')
-        c3.metric('期望報酬', f'{avg_r:+.2f}%')
-        c4.metric('獲利筆', len(wins))
-        c5.metric('虧損筆', len(loss))
+        col_f1, col_f2, col_f3 = st.columns([2, 5, 2])
+        with col_f1:
+            sel_year = st.selectbox('年份', ['全部'] + sorted(hist['年份'].unique().tolist(), reverse=True))
+        with col_f2:
+            sel_d3 = st.multiselect(
+                'D3累積跌幅條件',
+                options=D3_OPTIONS,
+                default=['D3 < -5%'],
+            )
+        with col_f3:
+            sel_cap = st.multiselect('規模', ['大', '中'], default=['大', '中'])
+
+        view_h = hist.copy()
+        if sel_year != '全部':
+            view_h = view_h[view_h['年份'] == sel_year]
+        if sel_d3:
+            view_h = view_h[view_h['D3組別'].isin(sel_d3)]
+        if sel_cap:
+            view_h = view_h[view_h['規模'].isin(sel_cap)]
+
+        # ── KPI（依篩選結果動態更新）──
+        if len(view_h) == 0:
+            st.warning('目前篩選條件無資料')
+        else:
+            wins  = view_h[view_h['結果'] == '✅ 獲利']
+            loss  = view_h[view_h['結果'] == '❌ 虧損']
+            wr    = len(wins) / len(view_h) * 100
+            avg_r = view_h['出關報酬(%)'].mean()
+
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric('總筆數', len(view_h))
+            c2.metric('勝率', f'{wr:.1f}%')
+            c3.metric('期望報酬', f'{avg_r:+.2f}%')
+            c4.metric('獲利筆', len(wins))
+            c5.metric('虧損筆', len(loss))
 
         st.divider()
-
-        # 年份過濾
-        hist['年份'] = hist['起始日'].str[:4]
-        years = ['全部'] + sorted(hist['年份'].unique().tolist(), reverse=True)
-        col_y, col_r = st.columns([2, 6])
-        with col_y:
-            sel_year = st.selectbox('年份', years)
-
-        view_h = hist if sel_year == '全部' else hist[hist['年份'] == sel_year]
-
-        # 年份小計
-        if sel_year == '全部':
-            with col_r:
-                yr_stats = []
-                for yr, grp in hist.groupby('年份'):
-                    w = grp[grp['結果'] == '✅ 獲利']
-                    yr_stats.append({'年份': yr, 'N': len(grp),
-                                     '勝率': f"{len(w)/len(grp)*100:.0f}%",
-                                     '期望報酬': f"{grp['出關報酬(%)'].mean():+.2f}%"})
-                st.dataframe(pd.DataFrame(yr_stats).sort_values('年份', ascending=False),
-                             hide_index=True, use_container_width=True)
-
-        # 主表
-        def color_result(val):
-            if '獲利' in str(val): return 'color: #26c281; font-weight: 700'
-            if '虧損' in str(val): return 'color: #e74c3c; font-weight: 700'
-            return ''
-
-        def color_ret_h(val):
-            try:
-                v = float(val)
-                if v > 10:  return 'color: #26c281; font-weight: 700'
-                if v > 0:   return 'color: #2ecc71'
-                if v > -5:  return 'color: #e67e22'
-                return 'color: #e74c3c; font-weight: 700'
-            except:
-                return ''
 
         # ── 比較組（D3篩選效果）──
         cmp_stats = meta.get('cmp_stats', [])
         if cmp_stats:
-            st.markdown('**D3跌幅篩選效果比較**（漲多 × 大+中型 × 20分鐘，出關日T+1開盤賣出）')
-            cmp_df = pd.DataFrame(cmp_stats)[['label', 'n', 'wr', 'ret']]
-            cmp_df.columns = ['條件', '筆數', '勝率(%)', '期望報酬(%)']
-            def color_cmp_wr(val):
-                try:
-                    v = float(val)
-                    if v >= 85: return 'color: #26c281; font-weight: 700'
-                    if v >= 75: return 'color: #f6c90e'
-                    return 'color: #e74c3c'
-                except: return ''
-            st.dataframe(
-                cmp_df.style.map(color_cmp_wr, subset=['勝率(%)']).format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'}),
-                hide_index=True, use_container_width=True
-            )
-            st.divider()
+            with st.expander('📊 各組勝率比較（全部資料）'):
+                cmp_df = pd.DataFrame(cmp_stats)[['label', 'n', 'wr', 'ret']]
+                cmp_df.columns = ['條件', '筆數', '勝率(%)', '期望報酬(%)']
+                def color_cmp_wr(val):
+                    try:
+                        v = float(val)
+                        if v >= 85: return 'color: #26c281; font-weight: 700'
+                        if v >= 75: return 'color: #f6c90e'
+                        return 'color: #e74c3c'
+                    except: return ''
+                st.dataframe(
+                    cmp_df.style.map(color_cmp_wr, subset=['勝率(%)']).format(
+                        {'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'}),
+                    hide_index=True, use_container_width=True
+                )
 
-        disp = view_h.drop(columns=['年份']).reset_index(drop=True)
-        ret_cols = ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
-        for c in ret_cols:
-            if c in disp.columns:
-                disp[c] = disp[c].apply(fmt_pct)
+        # ── 主表 ──
+        def color_result(val):
+            if '獲利' in str(val): return 'color: #26c281; font-weight: 700'
+            if '虧損' in str(val): return 'color: #e74c3c; font-weight: 700'
+            return ''
 
         def color_ret_h(val):
             try:
@@ -303,15 +292,21 @@ with tab2:
             except:
                 return ''
 
-        exit_cols = [c for c in ['出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)'] if c in disp.columns]
-        styled_h = (
-            disp.style
-            .map(color_result, subset=['結果'])
-            .map(color_ret_h,  subset=exit_cols)
-        )
+        if len(view_h) > 0:
+            disp = view_h.drop(columns=['年份', 'D3組別'], errors='ignore').reset_index(drop=True)
+            ret_cols = ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
+            for c in ret_cols:
+                if c in disp.columns:
+                    disp[c] = disp[c].apply(fmt_pct)
 
-        st.dataframe(styled_h, use_container_width=True, height=550)
-        st.caption('出關報酬 = T+1 開盤賣出（現行策略）；T+1收盤/T+2/T+3 = 若繼續持有的報酬')
+            exit_cols = [c for c in ['出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)'] if c in disp.columns]
+            styled_h = (
+                disp.style
+                .map(color_result, subset=['結果'])
+                .map(color_ret_h,  subset=exit_cols)
+            )
+            st.dataframe(styled_h, use_container_width=True, height=520)
+            st.caption('出關報酬 = T+1 開盤賣出（現行策略）；T+1收盤/T+2/T+3 = 若繼續持有的報酬')
 
         # 累積報酬走勢
         st.divider()

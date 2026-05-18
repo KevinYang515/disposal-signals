@@ -249,21 +249,28 @@ def build_history(df, price, open_p):
     pool[['_t1c', '_t2c', '_t3c']] = pool.apply(
         lambda r: pd.Series(extra_rets(r)), axis=1)
 
-    base = pool[pool['D3收盤報酬(%)'].notna() & (pool['D3收盤報酬(%)'] < -5)].copy()
+    def d3_group(v):
+        if pd.isna(v):       return 'D3無資料'
+        if v < -5:           return 'D3 < -5%'
+        if v < 0:            return 'D3 -5%~0%'
+        return 'D3 ≥ 0%'
+
+    pool['D3組別'] = pool['D3收盤報酬(%)'].apply(d3_group)
 
     out = pd.DataFrame({
-        '起始日':    base['處置起始日'].dt.strftime('%Y-%m-%d'),
-        '代號':      base['股票代號'],
-        '名稱':      base['股票名稱'],
-        '規模':      base['市值規模'].str.extract(r'^(.+?)\(')[0],
-        '近20日漲幅': base['入場前20日漲幅(%)'].round(2),
-        'D3累積(%)': base['D3收盤報酬(%)'].round(2),
-        '大戶(%)':   base['大戶持股變動(%)'].round(2),
-        '出關報酬(%)': base[ENTRY].round(2),      # T+1 開盤（賣出點）
-        'T+1收盤(%)': base['_t1c'].round(2),
-        'T+2收盤(%)': base['_t2c'].round(2),
-        'T+3收盤(%)': base['_t3c'].round(2),
-        '結果':      base[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
+        '起始日':    pool['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '代號':      pool['股票代號'],
+        '名稱':      pool['股票名稱'],
+        '規模':      pool['市值規模'].str.extract(r'^(.+?)\(')[0],
+        'D3組別':    pool['D3組別'],
+        '近20日漲幅': pool['入場前20日漲幅(%)'].round(2),
+        'D3累積(%)': pool['D3收盤報酬(%)'].round(2),
+        '大戶(%)':   pool['大戶持股變動(%)'].round(2),
+        '出關報酬(%)': pool[ENTRY].round(2),
+        'T+1收盤(%)': pool['_t1c'].round(2),
+        'T+2收盤(%)': pool['_t2c'].round(2),
+        'T+3收盤(%)': pool['_t3c'].round(2),
+        '結果':      pool[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
     })
     hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
 
