@@ -44,6 +44,13 @@ def load_signals():
     return pd.read_csv(p)
 
 @st.cache_data(ttl=3600)
+def load_history():
+    p = f'{DATA_DIR}/history.csv'
+    if not os.path.exists(p):
+        return pd.DataFrame()
+    return pd.read_csv(p)
+
+@st.cache_data(ttl=3600)
 def load_grid():
     p = f'{DATA_DIR}/backtest_grid.csv'
     if not os.path.exists(p):
@@ -63,7 +70,7 @@ meta = load_meta()
 st.title('📈 處置股橡皮筋訊號系統')
 st.caption(f"資料更新：{meta.get('updated_at', '-')}　｜　策略：漲多處置 × 大+中型 × 20分鐘撮合 × D3累積跌幅 < -5%")
 
-tab1, tab2, tab3, tab4 = st.tabs(['🔔 今日訊號', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -174,9 +181,93 @@ with tab1:
 """)
 
 # ════════════════════════════════════════════════════════
-# TAB 2：進場網格回測
+# TAB 2：歷史回測紀錄
 # ════════════════════════════════════════════════════════
 with tab2:
+    hist = load_history()
+
+    if hist.empty:
+        st.warning('尚無歷史資料，請先執行 update_signals.py')
+    else:
+        st.subheader('漲多處置 × 大+中型 × 20分鐘 × D3 < -5%　歷史交易紀錄')
+
+        # KPI
+        wins  = hist[hist['結果'] == '✅ 獲利']
+        loss  = hist[hist['結果'] == '❌ 虧損']
+        wr    = len(wins) / len(hist) * 100
+        avg_r = hist['出關報酬(%)'].mean()
+        wl    = wins['出關報酬(%)'].mean() / abs(loss['出關報酬(%)'].mean()) if len(loss) > 0 else float('inf')
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric('總筆數', len(hist))
+        c2.metric('勝率', f'{wr:.1f}%')
+        c3.metric('期望報酬', f'{avg_r:+.2f}%')
+        c4.metric('獲利筆', len(wins))
+        c5.metric('虧損筆', len(loss))
+
+        st.divider()
+
+        # 年份過濾
+        hist['年份'] = hist['起始日'].str[:4]
+        years = ['全部'] + sorted(hist['年份'].unique().tolist(), reverse=True)
+        col_y, col_r = st.columns([2, 6])
+        with col_y:
+            sel_year = st.selectbox('年份', years)
+
+        view_h = hist if sel_year == '全部' else hist[hist['年份'] == sel_year]
+
+        # 年份小計
+        if sel_year == '全部':
+            with col_r:
+                yr_stats = []
+                for yr, grp in hist.groupby('年份'):
+                    w = grp[grp['結果'] == '✅ 獲利']
+                    yr_stats.append({'年份': yr, 'N': len(grp),
+                                     '勝率': f"{len(w)/len(grp)*100:.0f}%",
+                                     '期望報酬': f"{grp['出關報酬(%)'].mean():+.2f}%"})
+                st.dataframe(pd.DataFrame(yr_stats).sort_values('年份', ascending=False),
+                             hide_index=True, use_container_width=True)
+
+        # 主表
+        def color_result(val):
+            if '獲利' in str(val): return 'color: #26c281; font-weight: 700'
+            if '虧損' in str(val): return 'color: #e74c3c; font-weight: 700'
+            return ''
+
+        def color_ret_h(val):
+            try:
+                v = float(val)
+                if v > 10:  return 'color: #26c281; font-weight: 700'
+                if v > 0:   return 'color: #2ecc71'
+                if v > -5:  return 'color: #e67e22'
+                return 'color: #e74c3c; font-weight: 700'
+            except:
+                return ''
+
+        disp = view_h.drop(columns=['年份']).reset_index(drop=True)
+        styled_h = (
+            disp.style
+            .map(color_result, subset=['結果'])
+            .map(color_ret_h,  subset=['出關報酬(%)'])
+            .format({'prerun': '{:+.2f}%', 'D3累積(%)': '{:+.2f}%',
+                     '大戶(%)': '{:+.2f}%', '出關報酬(%)': '{:+.2f}%'}, na_rep='-')
+        )
+
+        st.dataframe(styled_h, use_container_width=True, height=550)
+
+        # 累積報酬走勢
+        st.divider()
+        st.markdown('**累積報酬走勢**（假設每筆等權重）')
+        cum = (view_h.sort_values('起始日')['出關報酬(%)'] / 100 + 1).cumprod() - 1
+        cum.index = range(len(cum))
+        chart_df = pd.DataFrame({'累積報酬(%)': (cum * 100).values})
+        st.line_chart(chart_df, height=250)
+
+
+# ════════════════════════════════════════════════════════
+# TAB 3：進場網格回測
+# ════════════════════════════════════════════════════════
+with tab3:
     grid = load_grid()
 
     if grid.empty:
@@ -234,9 +325,9 @@ with tab2:
             st.dataframe(show.style.format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}', '賺賠比': '{:.2f}'}, na_rep='-'), use_container_width=True)
 
 # ════════════════════════════════════════════════════════
-# TAB 3：策略說明
+# TAB 4：策略說明
 # ════════════════════════════════════════════════════════
-with tab3:
+with tab4:
     st.subheader('📖 橡皮筋效應策略說明')
 
     col1, col2 = st.columns(2)
@@ -292,9 +383,9 @@ D3/D4 累積跌幅 > 5% = 橡皮筋壓縮
 """)
 
 # ════════════════════════════════════════════════════════
-# TAB 4：使用方式
+# TAB 5：使用方式
 # ════════════════════════════════════════════════════════
-with tab4:
+with tab5:
     st.subheader('⚙️ 資料更新方式')
     st.markdown("""
 ### 每日操作流程

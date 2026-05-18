@@ -169,6 +169,29 @@ def build_backtest_grid(df, price, open_p):
             })
     return pd.DataFrame(rows)
 
+# ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
+def build_history(df):
+    ENTRY = '買進D3_出關D1賣出(%)'
+    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
+              (df['處置類型'] == '20分鐘') &
+              (df['處置原因'] == '漲多處置') &
+              (df['D3收盤報酬(%)'].notna()) &
+              (df['D3收盤報酬(%)'] < -5) &
+              (df[ENTRY].notna())].copy()
+
+    out = pd.DataFrame({
+        '起始日':   base['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '代號':     base['股票代號'],
+        '名稱':     base['股票名稱'],
+        '規模':     base['市值規模'].str.extract(r'^(.+?)\(')[0],
+        'prerun':   base['入場前20日漲幅(%)'].round(2),
+        'D3累積(%)': base['D3收盤報酬(%)'].round(2),
+        '大戶(%)':  base['大戶持股變動(%)'].round(2),
+        '出關報酬(%)': base[ENTRY].round(2),
+        '結果':     base[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
+    })
+    return out.sort_values('起始日', ascending=False).reset_index(drop=True)
+
 # ── main ────────────────────────────────────────────────────────────────
 def main():
     print('載入資料...')
@@ -184,6 +207,11 @@ def main():
     grid = build_backtest_grid(df, price, open_p)
     grid.to_csv(f'{OUT_DIR}/backtest_grid.csv', index=False, encoding='utf-8-sig')
     print(f'  → backtest_grid.csv ({len(grid)} 筆)')
+
+    print('產生歷史回測紀錄...')
+    hist = build_history(df)
+    hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig')
+    print(f'  → history.csv ({len(hist)} 筆)')
 
     # 更新時間
     meta = {'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M')}
