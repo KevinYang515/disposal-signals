@@ -220,27 +220,73 @@ def build_backtest_grid(df, price, open_p):
     return pd.DataFrame(rows)
 
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
-def build_history(df):
+def build_history(df, price, open_p):
     ENTRY = '買進D3_出關D1賣出(%)'
-    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
+    idx = price.index
+    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '20分鐘') &
               (df['處置原因'] == '漲多處置') &
-              (df['D3收盤報酬(%)'].notna()) &
-              (df['D3收盤報酬(%)'] < -5) &
-              (df[ENTRY].notna())].copy()
+              df[ENTRY].notna()].copy()
+
+    # ── 對每筆計算出關後 T+1收、T+2、T+3 ──
+    def extra_rets(row):
+        sid = row['股票代號']
+        sd  = row['處置起始日']
+        if sid not in price.columns:
+            return np.nan, np.nan, np.nan
+        pos = idx.searchsorted(sd)
+        if pos < 1 or pos + 2 >= len(idx):
+            return np.nan, np.nan, np.nan
+        p_d3 = price[sid].iloc[pos + 2]
+        if pd.isna(p_d3) or p_d3 <= 0:
+            return np.nan, np.nan, np.nan
+        def r(off):
+            if pos + off >= len(price): return np.nan
+            p = price[sid].iloc[pos + off]
+            return round((p / p_d3 - 1) * 100, 2) if pd.notna(p) and p > 0 else np.nan
+        return r(10), r(11), r(12)   # T+1收, T+2收, T+3收
+
+    pool[['_t1c', '_t2c', '_t3c']] = pool.apply(
+        lambda r: pd.Series(extra_rets(r)), axis=1)
+
+    base = pool[pool['D3收盤報酬(%)'].notna() & (pool['D3收盤報酬(%)'] < -5)].copy()
 
     out = pd.DataFrame({
-        '起始日':   base['處置起始日'].dt.strftime('%Y-%m-%d'),
-        '代號':     base['股票代號'],
-        '名稱':     base['股票名稱'],
-        '規模':     base['市值規模'].str.extract(r'^(.+?)\(')[0],
-        '近20日漲幅':   base['入場前20日漲幅(%)'].round(2),
+        '起始日':    base['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '代號':      base['股票代號'],
+        '名稱':      base['股票名稱'],
+        '規模':      base['市值規模'].str.extract(r'^(.+?)\(')[0],
+        '近20日漲幅': base['入場前20日漲幅(%)'].round(2),
         'D3累積(%)': base['D3收盤報酬(%)'].round(2),
-        '大戶(%)':  base['大戶持股變動(%)'].round(2),
-        '出關報酬(%)': base[ENTRY].round(2),
-        '結果':     base[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
+        '大戶(%)':   base['大戶持股變動(%)'].round(2),
+        '出關報酬(%)': base[ENTRY].round(2),      # T+1 開盤（賣出點）
+        'T+1收盤(%)': base['_t1c'].round(2),
+        'T+2收盤(%)': base['_t2c'].round(2),
+        'T+3收盤(%)': base['_t3c'].round(2),
+        '結果':      base[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
     })
-    return out.sort_values('起始日', ascending=False).reset_index(drop=True)
+    hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
+
+    # ── 產生比較組統計 ──
+    def grp_stats(sub, label):
+        s = sub[ENTRY].dropna()
+        if len(s) == 0: return None
+        return {
+            'label': label,
+            'n': len(s),
+            'wr': round((s > 0).mean() * 100, 1),
+            'ret': round(s.mean(), 2),
+        }
+
+    cmp_stats = [
+        grp_stats(pool[pool['D3收盤報酬(%)'] < -5],  'D3累積 < -5%（進場）'),
+        grp_stats(pool[(pool['D3收盤報酬(%)'] >= -5) & (pool['D3收盤報酬(%)'] < 0)], 'D3累積 -5%~0%（觀察中）'),
+        grp_stats(pool[pool['D3收盤報酬(%)'] >= 0],  'D3累積 ≥ 0%（無跌幅）'),
+        grp_stats(pool,                              '全部漲多（不篩選D3）'),
+    ]
+    cmp_stats = [x for x in cmp_stats if x]
+
+    return hist, cmp_stats
 
 # ── main ────────────────────────────────────────────────────────────────
 def main():
@@ -262,7 +308,7 @@ def main():
     print(f'  → backtest_grid.csv ({len(grid)} 筆)')
 
     print('產生歷史回測紀錄...')
-    hist = build_history(df)
+    hist, cmp_stats = build_history(df, price, open_p)
     hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → history.csv ({len(hist)} 筆)')
 
@@ -270,6 +316,7 @@ def main():
     meta = {
         'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
         'data_date': price.index[-1].strftime('%Y-%m-%d'),
+        'cmp_stats': cmp_stats,
     }
     with open(f'{OUT_DIR}/meta.json', 'w') as f:
         json.dump(meta, f)

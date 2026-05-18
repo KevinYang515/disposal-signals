@@ -268,8 +268,28 @@ with tab2:
             except:
                 return ''
 
+        # ── 比較組（D3篩選效果）──
+        cmp_stats = meta.get('cmp_stats', [])
+        if cmp_stats:
+            st.markdown('**D3跌幅篩選效果比較**（漲多 × 大+中型 × 20分鐘，出關日T+1開盤賣出）')
+            cmp_df = pd.DataFrame(cmp_stats)[['label', 'n', 'wr', 'ret']]
+            cmp_df.columns = ['條件', '筆數', '勝率(%)', '期望報酬(%)']
+            def color_cmp_wr(val):
+                try:
+                    v = float(val)
+                    if v >= 85: return 'color: #26c281; font-weight: 700'
+                    if v >= 75: return 'color: #f6c90e'
+                    return 'color: #e74c3c'
+                except: return ''
+            st.dataframe(
+                cmp_df.style.map(color_cmp_wr, subset=['勝率(%)']).format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'}),
+                hide_index=True, use_container_width=True
+            )
+            st.divider()
+
         disp = view_h.drop(columns=['年份']).reset_index(drop=True)
-        for c in ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)']:
+        ret_cols = ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
+        for c in ret_cols:
             if c in disp.columns:
                 disp[c] = disp[c].apply(fmt_pct)
 
@@ -283,13 +303,15 @@ with tab2:
             except:
                 return ''
 
+        exit_cols = [c for c in ['出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)'] if c in disp.columns]
         styled_h = (
             disp.style
-            .map(color_result,  subset=['結果'])
-            .map(color_ret_h,   subset=['出關報酬(%)'])
+            .map(color_result, subset=['結果'])
+            .map(color_ret_h,  subset=exit_cols)
         )
 
         st.dataframe(styled_h, use_container_width=True, height=550)
+        st.caption('出關報酬 = T+1 開盤賣出（現行策略）；T+1收盤/T+2/T+3 = 若繼續持有的報酬')
 
         # 累積報酬走勢
         st.divider()
