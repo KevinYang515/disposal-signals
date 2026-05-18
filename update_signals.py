@@ -137,8 +137,13 @@ def build_signals(df, price, open_p):
     for _, row in active.iterrows():
         sid = row['股票代號']
         sd  = row['處置起始日']
-        nd  = trading_day_n(idx, sd)
         ex  = exit_date(idx, sd)
+
+        # 已出關（今天超過 T+1）就跳過
+        if pd.notna(ex) and today > ex:
+            continue
+
+        nd  = trading_day_n(idx, sd)
 
         d = {
             '代號':   sid,
