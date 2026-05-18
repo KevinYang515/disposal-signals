@@ -215,6 +215,17 @@ with tab2:
     else:
         st.subheader('漲多處置 × 大+中型 × 20分鐘　歷史交易紀錄')
 
+        # ── 確保 D3組別 欄位存在（舊版 CSV 相容）──
+        if 'D3組別' not in hist.columns:
+            def _d3g(v):
+                try:
+                    v = float(v)
+                    if v < -5:  return 'D3 < -5%'
+                    if v < 0:   return 'D3 -5%~0%'
+                    return 'D3 ≥ 0%'
+                except: return 'D3無資料'
+            hist['D3組別'] = hist['D3累積(%)'].apply(_d3g)
+
         # ── 篩選器 ──
         hist['年份'] = hist['起始日'].str[:4]
         D3_OPTIONS = ['D3 < -5%', 'D3 -5%~0%', 'D3 ≥ 0%']
