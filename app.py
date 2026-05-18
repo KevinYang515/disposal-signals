@@ -144,8 +144,8 @@ with tab1:
     styled = (
         view[display_cols]
         .style
-        .applymap(color_grade, subset=['評級'])
-        .applymap(color_ret,   subset=d_cols)
+        .map(color_grade, subset=['評級'])
+        .map(color_ret,   subset=d_cols)
         .format({c: '{:+.1f}%' for c in d_cols if c in view.columns}, na_rep='-')
         .format({'prerun': '{:+.0f}%', '大戶(%)': '{:+.2f}%'}, na_rep='-')
     )
@@ -214,7 +214,7 @@ with tab2:
 
         fmt = '{:.1f}%' if metric == '勝率(%)' else '{:+.1f}%'
         st.dataframe(
-            pivot.style.applymap(color_cell).format(fmt, na_rep='-'),
+            pivot.style.map(color_cell).format(fmt, na_rep='-'),
             use_container_width=True
         )
 
