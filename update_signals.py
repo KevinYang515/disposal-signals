@@ -200,7 +200,7 @@ def main():
 
     print('產生訊號表...')
     sig = build_signals(df, price, open_p)
-    sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig')
+    sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals.csv ({len(sig)} 筆)')
 
     print('產生回測網格...')
@@ -210,7 +210,7 @@ def main():
 
     print('產生歷史回測紀錄...')
     hist = build_history(df)
-    hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig')
+    hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → history.csv ({len(hist)} 筆)')
 
     # 更新時間

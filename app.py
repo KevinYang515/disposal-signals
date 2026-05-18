@@ -134,6 +134,12 @@ with tab1:
 
     display_cols = [c for c in display_cols if c in view.columns]
 
+    # 確保數值欄位只有兩位小數
+    num_cols = d_cols + ['prerun', '大戶(%)']
+    for c in num_cols:
+        if c in view.columns:
+            view[c] = pd.to_numeric(view[c], errors='coerce').round(2)
+
     def color_grade(val):
         color = GRADE_COLOR.get(str(val), '')
         return f'color: {color}; font-weight: bold;' if color else ''
@@ -245,6 +251,10 @@ with tab2:
                 return ''
 
         disp = view_h.drop(columns=['年份']).reset_index(drop=True)
+        for c in ['prerun', 'D3累積(%)', '大戶(%)', '出關報酬(%)']:
+            if c in disp.columns:
+                disp[c] = pd.to_numeric(disp[c], errors='coerce').round(2)
+
         styled_h = (
             disp.style
             .map(color_result, subset=['結果'])
