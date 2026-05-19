@@ -224,7 +224,7 @@ with tab2:
             if 'D3組別' in hist.columns:
                 hist.rename(columns={'D3組別': 'Dn組別'}, inplace=True)
                 hist['Dn組別'] = hist['Dn組別'].str.replace('D3 ', 'Dn ', regex=False)
-            else:
+            elif 'D3累積(%)' in hist.columns:
                 def _dng(v):
                     try:
                         v = float(v)
@@ -313,7 +313,7 @@ with tab2:
 
         if len(view_h) > 0:
             disp = view_h.drop(columns=['年份', 'Dn組別'], errors='ignore').reset_index(drop=True)
-            ret_cols = ['近20日漲幅', 'D3累積(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
+            ret_cols = ['近20日漲幅', '買進時累積(%)', '期間最深(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
             for c in ret_cols:
                 if c in disp.columns:
                     disp[c] = disp[c].apply(fmt_pct)
@@ -325,12 +325,12 @@ with tab2:
                 .map(color_ret_h,  subset=exit_cols)
             )
             st.dataframe(styled_h, use_container_width=True, height=520)
-            st.caption('出關報酬 = T+1 開盤賣出（現行策略）；T+1收盤/T+2/T+3 = 若繼續持有的報酬')
+            st.caption('買進日 = 首次 Dn < -5% 的交易日；出關報酬 = T+1 開盤賣出；T+1收盤/T+2/T+3 = 若繼續持有的報酬（基準為買進日收盤）')
 
         # 累積報酬走勢
         st.divider()
         st.markdown('**累積報酬走勢**（假設每筆等權重）')
-        cum = (view_h.sort_values('起始日')['出關報酬(%)'] / 100 + 1).cumprod() - 1
+        cum = (view_h.sort_values('起始日')['出關報酬(%)'].dropna() / 100 + 1).cumprod() - 1
         cum.index = range(len(cum))
         chart_df = pd.DataFrame({'累積報酬(%)': (cum * 100).values})
         st.line_chart(chart_df, height=250)

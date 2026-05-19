@@ -221,55 +221,64 @@ def build_backtest_grid(df, price, open_p):
 
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
 def build_history(df, price, open_p):
-    ENTRY = '買進D3_出關D1賣出(%)'
     idx = price.index
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '20分鐘') &
-              (df['處置原因'] == '漲多處置') &
-              df[ENTRY].notna()].copy()
+              (df['處置原因'] == '漲多處置')].copy()
 
-    # ── 計算 D1~D8 最大跌幅（最小累積報酬）──
-    def min_dn_ret(row):
+    def compute_row(row):
         sid = row['股票代號']
         sd  = row['處置起始日']
+        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan,
+                   actual_ret=np.nan, _t1c=np.nan, _t2c=np.nan, _t3c=np.nan)
         if sid not in price.columns:
-            return np.nan
+            return pd.Series(out)
         pos = idx.searchsorted(sd)
-        if pos < 1:
-            return np.nan
+        if pos < 1 or pos + 11 >= len(idx):
+            return pd.Series(out)
         p0 = price[sid].iloc[pos - 1]
         if pd.isna(p0) or p0 <= 0:
-            return np.nan
-        vals = []
+            return pd.Series(out)
+
+        t1_open = open_p[sid].iloc[pos + 10] if sid in open_p.columns else np.nan
+        has_exit = pd.notna(t1_open) and t1_open > 0
+
+        # D1~D8 累積報酬
+        dn_rets = {}
         for n in range(1, 9):
             if pos + n - 1 < len(price):
                 pn = price[sid].iloc[pos + n - 1]
                 if pd.notna(pn) and pn > 0:
-                    vals.append((pn / p0 - 1) * 100)
-        return min(vals) if vals else np.nan
+                    dn_rets[n] = (pn / p0 - 1) * 100
+        if not dn_rets:
+            return pd.Series(out)
 
-    pool['_min_dn'] = pool.apply(min_dn_ret, axis=1)
+        out['min_dn'] = round(min(dn_rets.values()), 2)
 
-    # ── 對每筆計算出關後 T+1收、T+2、T+3 ──
-    def extra_rets(row):
-        sid = row['股票代號']
-        sd  = row['處置起始日']
-        if sid not in price.columns:
-            return np.nan, np.nan, np.nan
-        pos = idx.searchsorted(sd)
-        if pos < 1 or pos + 2 >= len(idx):
-            return np.nan, np.nan, np.nan
-        p_d3 = price[sid].iloc[pos + 2]
-        if pd.isna(p_d3) or p_d3 <= 0:
-            return np.nan, np.nan, np.nan
-        def r(off):
-            if pos + off >= len(price): return np.nan
-            p = price[sid].iloc[pos + off]
-            return round((p / p_d3 - 1) * 100, 2) if pd.notna(p) and p > 0 else np.nan
-        return r(10), r(11), r(12)   # T+1收, T+2收, T+3收
+        # 最早觸發 -5% 的 Dn 作為實際進場日
+        for n in range(1, 9):
+            if n in dn_rets and dn_rets[n] < -5:
+                out['entry_n']   = n
+                out['entry_cum'] = round(dn_rets[n], 2)
+                if has_exit:
+                    pn = price[sid].iloc[pos + n - 1]
+                    out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
+                break
 
-    pool[['_t1c', '_t2c', '_t3c']] = pool.apply(
-        lambda r: pd.Series(extra_rets(r)), axis=1)
+        # T+1/T+2/T+3 相對於進場日收盤（無進場則相對 D3）
+        ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
+        if ref_n in dn_rets:
+            p_ref = price[sid].iloc[pos + ref_n - 1]
+            for off, key in [(10, '_t1c'), (11, '_t2c'), (12, '_t3c')]:
+                if pos + off < len(price):
+                    p = price[sid].iloc[pos + off]
+                    if pd.notna(p) and p > 0:
+                        out[key] = round((p / p_ref - 1) * 100, 2)
+
+        return pd.Series(out)
+
+    stats = pool.apply(compute_row, axis=1)
+    pool  = pd.concat([pool, stats], axis=1)
 
     def dn_group(v):
         if pd.isna(v):  return 'Dn無資料'
@@ -277,28 +286,32 @@ def build_history(df, price, open_p):
         if v < 0:       return 'Dn -5%~0%'
         return 'Dn ≥ 0%'
 
-    pool['Dn組別'] = pool['_min_dn'].apply(dn_group)
+    pool['Dn組別'] = pool['min_dn'].apply(dn_group)
 
     out = pd.DataFrame({
-        '起始日':    pool['處置起始日'].dt.strftime('%Y-%m-%d'),
-        '代號':      pool['股票代號'],
-        '名稱':      pool['股票名稱'],
-        '規模':      pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
-        'Dn組別':    pool['Dn組別'],
-        '近20日漲幅': pool['入場前20日漲幅(%)'].round(2),
-        'D3累積(%)': pool['D3收盤報酬(%)'].round(2),
-        '大戶(%)':   pool['大戶持股變動(%)'].round(2),
-        '出關報酬(%)': pool[ENTRY].round(2),
-        'T+1收盤(%)': pool['_t1c'].round(2),
-        'T+2收盤(%)': pool['_t2c'].round(2),
-        'T+3收盤(%)': pool['_t3c'].round(2),
-        '結果':      pool[ENTRY].apply(lambda v: f'✅ {v:+.2f}%' if v > 0 else f'❌ {v:+.2f}%'),
+        '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '代號':          pool['股票代號'],
+        '名稱':          pool['股票名稱'],
+        '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
+        'Dn組別':        pool['Dn組別'],
+        '近20日漲幅':    pool['入場前20日漲幅(%)'].round(2),
+        '大戶(%)':       pool['大戶持股變動(%)'].round(2),
+        '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '買進時累積(%)': pool['entry_cum'],
+        '期間最深(%)':   pool['min_dn'],
+        '出關報酬(%)':   pool['actual_ret'],
+        'T+1收盤(%)':    pool['_t1c'],
+        'T+2收盤(%)':    pool['_t2c'],
+        'T+3收盤(%)':    pool['_t3c'],
+        '結果':          pool['actual_ret'].apply(
+            lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
+                      else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
     })
     hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
 
     # ── 產生比較組統計 ──
     def grp_stats(sub, label):
-        s = sub[ENTRY].dropna()
+        s = sub['actual_ret'].dropna()
         if len(s) == 0: return None
         return {
             'label': label,
@@ -308,10 +321,10 @@ def build_history(df, price, open_p):
         }
 
     cmp_stats = [
-        grp_stats(pool[pool['_min_dn'] < -5],                               'Dn最深 < -5%（進場）'),
-        grp_stats(pool[(pool['_min_dn'] >= -5) & (pool['_min_dn'] < 0)],    'Dn最深 -5%~0%（觀察中）'),
-        grp_stats(pool[pool['_min_dn'] >= 0],                                'Dn最深 ≥ 0%（無跌幅）'),
-        grp_stats(pool,                                                       '全部漲多（不篩選Dn）'),
+        grp_stats(pool[pool['min_dn'] < -5],                              'Dn最深 < -5%（進場）'),
+        grp_stats(pool[(pool['min_dn'] >= -5) & (pool['min_dn'] < 0)],   'Dn最深 -5%~0%（觀察中）'),
+        grp_stats(pool[pool['min_dn'] >= 0],                               'Dn最深 ≥ 0%（無跌幅）'),
+        grp_stats(pool,                                                    '全部漲多（不篩選Dn）'),
     ]
     cmp_stats = [x for x in cmp_stats if x]
 
