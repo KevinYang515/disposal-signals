@@ -107,7 +107,7 @@ def grade(row):
     reason  = row.get('處置原因', '')
     prerun  = row.get('入場前20日漲幅(%)', np.nan)
     whale   = row.get('大戶持股變動(%)', np.nan)
-    dn_vals = [row.get(f'D{n}%') for n in range(1, 9)]
+    dn_vals = [row.get(f'D{n}%') for n in range(3, 9)]
 
     if reason == '漲多處置':
         any_entry = any(pd.notna(v) and v < -5 for v in dn_vals)
@@ -243,9 +243,9 @@ def build_history(df, price, open_p):
         t1_open = open_p[sid].iloc[pos + 10] if sid in open_p.columns else np.nan
         has_exit = pd.notna(t1_open) and t1_open > 0
 
-        # D1~D8 累積報酬
+        # D3~D8 累積報酬（D1/D2 跌深屬真實賣壓，不作為進場依據）
         dn_rets = {}
-        for n in range(1, 9):
+        for n in range(3, 9):
             if pos + n - 1 < len(price):
                 pn = price[sid].iloc[pos + n - 1]
                 if pd.notna(pn) and pn > 0:
@@ -255,8 +255,8 @@ def build_history(df, price, open_p):
 
         out['min_dn'] = round(min(dn_rets.values()), 2)
 
-        # 最早觸發 -5% 的 Dn 作為實際進場日
-        for n in range(1, 9):
+        # 最早觸發 -5% 的 Dn 作為實際進場日（D3 起算）
+        for n in range(3, 9):
             if n in dn_rets and dn_rets[n] < -5:
                 out['entry_n']   = n
                 out['entry_cum'] = round(dn_rets[n], 2)
