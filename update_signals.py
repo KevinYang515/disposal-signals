@@ -292,7 +292,7 @@ def build_history(df, price, open_p):
         'T+1收盤(%)': pool['_t1c'].round(2),
         'T+2收盤(%)': pool['_t2c'].round(2),
         'T+3收盤(%)': pool['_t3c'].round(2),
-        '結果':      pool[ENTRY].apply(lambda v: '✅ 獲利' if v > 0 else '❌ 虧損'),
+        '結果':      pool[ENTRY].apply(lambda v: f'✅ {v:+.2f}%' if v > 0 else f'❌ {v:+.2f}%'),
     })
     hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
 

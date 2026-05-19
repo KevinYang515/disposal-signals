@@ -262,8 +262,8 @@ with tab2:
         if len(view_h) == 0:
             st.warning('目前篩選條件無資料')
         else:
-            wins  = view_h[view_h['結果'] == '✅ 獲利']
-            loss  = view_h[view_h['結果'] == '❌ 虧損']
+            wins  = view_h[view_h['結果'].str.startswith('✅')]
+            loss  = view_h[view_h['結果'].str.startswith('❌')]
             wr    = len(wins) / len(view_h) * 100
             avg_r = view_h['出關報酬(%)'].mean()
 
@@ -297,8 +297,8 @@ with tab2:
 
         # ── 主表 ──
         def color_result(val):
-            if '獲利' in str(val): return 'color: #26c281; font-weight: 700'
-            if '虧損' in str(val): return 'color: #e74c3c; font-weight: 700'
+            if str(val).startswith('✅'): return 'color: #26c281; font-weight: 700'
+            if str(val).startswith('❌'): return 'color: #e74c3c; font-weight: 700'
             return ''
 
         def color_ret_h(val):
