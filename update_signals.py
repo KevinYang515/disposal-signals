@@ -13,7 +13,14 @@ warnings.filterwarnings("ignore")
 V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
 PRICE_F  = os.path.expanduser('~/finlab_db/price#收盤價.feather')
 OPEN_F   = os.path.expanduser('~/finlab_db/price#開盤價.feather')
-WHALE_F  = os.path.expanduser('~/finlab_db/etl#inventory#大於四百張佔比.feather')
+WHALE_FILES = {
+    100:  os.path.expanduser('~/finlab_db/etl#inventory#大於一百張佔比.feather'),
+    200:  os.path.expanduser('~/finlab_db/etl#inventory#大於二百張佔比.feather'),
+    400:  os.path.expanduser('~/finlab_db/etl#inventory#大於四百張佔比.feather'),
+    800:  os.path.expanduser('~/finlab_db/etl#inventory#大於八百張佔比.feather'),
+    1000: os.path.expanduser('~/finlab_db/etl#inventory#大於一千張佔比.feather'),
+}
+_WHALE_THRESHOLDS = sorted(WHALE_FILES)
 OUT_DIR  = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -39,8 +46,9 @@ def refresh_finlab():
         data.get('price:收盤價')
         print('  更新 price:開盤價...')
         data.get('price:開盤價')
-        print('  更新大戶持股...')
-        data.get('etl:inventory:大於四百張佔比')
+        print('  更新大戶持股資料 (5個門檻)...')
+        for zh in ['一百', '二百', '四百', '八百', '一千']:
+            data.get(f'etl:inventory:大於{zh}張佔比')
         print('  finlab 資料刷新完成')
     except Exception as e:
         print(f'  finlab 刷新失敗（將使用現有 feather）: {e}')
@@ -64,22 +72,34 @@ def load_price():
     open_p['date'] = pd.to_datetime(open_p['date'])
     open_p = open_p.set_index('date').sort_index()
 
-    whale = pd.DataFrame(pd.read_feather(WHALE_F))
-    whale['date'] = pd.to_datetime(whale['date'])
-    whale = whale.set_index('date').sort_index()
-    return price, open_p, whale
+    whale_dfs = {}
+    for t, path in WHALE_FILES.items():
+        if os.path.exists(path):
+            w = pd.DataFrame(pd.read_feather(path))
+            w['date'] = pd.to_datetime(w['date'])
+            whale_dfs[t] = w.set_index('date').sort_index()
+    return price, open_p, whale_dfs
 
 # ── 工具函數 ────────────────────────────────────────────────────────────
-def whale_delta(whale, sid, sd):
-    """大戶(>400張)持股比例變動：處置前一週 vs 最後一次紀錄"""
-    if sid not in whale.columns:
+def whale_delta(whale_dfs, sid, sd, price_df=None):
+    """大戶持股比例變動：依持股市值 5000萬 動態回推張數門檻"""
+    threshold = 400
+    if price_df is not None and sid in price_df.columns:
+        pos_w = price_df.index.searchsorted(sd)
+        if pos_w >= 1:
+            p0 = price_df[sid].iloc[pos_w - 1]
+            if pd.notna(p0) and p0 > 0:
+                lots = 50_000 / p0  # 5000萬 / (每股價格 × 1000股/張)
+                threshold = min(_WHALE_THRESHOLDS, key=lambda t: abs(t - lots))
+    whale = whale_dfs.get(threshold)
+    if whale is None:
+        whale = next(iter(whale_dfs.values()), None)
+    if whale is None or sid not in whale.columns:
         return np.nan
     series = whale[sid].dropna()
     before = series[series.index < sd]
-    if len(before) == 0:
-        return np.nan
-    after = series[series.index >= sd]
-    if len(after) == 0:
+    after  = series[series.index >= sd]
+    if len(before) == 0 or len(after) == 0:
         return np.nan
     return round(float(after.iloc[-1]) - float(before.iloc[-1]), 2)
 
@@ -165,7 +185,7 @@ def grade(row):
     return '🟡 觀察中'
 
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
-def build_signals(df, price, open_p, whale_df):
+def build_signals(df, price, open_p, whale_dfs):
     idx = price.index
     today = pd.Timestamp(datetime.today().date())
     cutoff = today - pd.Timedelta(days=20)
@@ -192,7 +212,7 @@ def build_signals(df, price, open_p, whale_df):
             '規模':   '大' if '大型' in row['市值規模'] else '中',
             '處置原因': row.get('處置原因', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
-            '大戶(%)': whale_delta(whale_df, sid, sd),
+            '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
             '起始日':  sd.strftime('%m/%d'),
             '今D幾':   f'D{nd}',
             '出關日':  ex.strftime('%m/%d') if pd.notna(ex) else '?',
@@ -264,7 +284,7 @@ def build_backtest_grid(df, price, open_p):
     return pd.DataFrame(rows)
 
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
-def build_history(df, price, open_p, whale_df):
+def build_history(df, price, open_p, whale_dfs):
     idx = price.index
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '20分鐘') &
@@ -275,27 +295,36 @@ def build_history(df, price, open_p, whale_df):
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan,
                    actual_ret=np.nan, _t1c=np.nan, _t2c=np.nan, _t3c=np.nan)
+        for n in range(1, 11):
+            out[f'_d{n}_cum'] = np.nan
+            out[f'_d{n}_ret'] = np.nan
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
-        if pos < 1 or pos + 2 >= len(idx):   # 至少要有 D3 資料才繼續
+        if pos < 1 or pos + 2 >= len(idx):
             return pd.Series(out)
         p0 = price[sid].iloc[pos - 1]
         if pd.isna(p0) or p0 <= 0:
             return pd.Series(out)
 
-        # T+1 開盤（出關日）— 有則算出關報酬，無則客觀欄位仍可填
         t1_open = (open_p[sid].iloc[pos + 10]
                    if sid in open_p.columns and pos + 10 < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
 
-        # D3~D8 累積報酬（D1/D2 跌深屬真實賣壓，不作為進場依據）
-        dn_rets = {}
-        for n in range(3, 9):
+        # 計算 D1~D10 各天累積報酬與出關報酬（自訂策略頁使用）
+        all_rets = {}
+        for n in range(1, 11):
             if pos + n - 1 < len(price):
                 pn = price[sid].iloc[pos + n - 1]
                 if pd.notna(pn) and pn > 0:
-                    dn_rets[n] = (pn / p0 - 1) * 100
+                    cum = round((pn / p0 - 1) * 100, 2)
+                    out[f'_d{n}_cum'] = cum
+                    all_rets[n] = cum
+                    if has_exit:
+                        out[f'_d{n}_ret'] = round((t1_open / pn - 1) * 100, 2)
+
+        # D3~D8 用於主策略（D1/D2 跌深屬真實賣壓）
+        dn_rets = {n: all_rets[n] for n in range(3, 9) if n in all_rets}
         if not dn_rets:
             return pd.Series(out)
 
@@ -303,7 +332,6 @@ def build_history(df, price, open_p, whale_df):
         out['min_dn']    = round(dn_rets[deepest], 2)
         out['deepest_n'] = deepest
 
-        # 最早觸發 -5% 的 Dn 作為實際進場日（D3 起算）
         for n in range(3, 9):
             if n in dn_rets and dn_rets[n] < -5:
                 out['entry_n']   = n
@@ -313,9 +341,8 @@ def build_history(df, price, open_p, whale_df):
                     out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
                 break
 
-        # T+1/T+2/T+3 無論是否進場皆填入（相對進場日或 D3 收盤）
         ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
-        if ref_n in dn_rets:
+        if ref_n in all_rets:
             p_ref = price[sid].iloc[pos + ref_n - 1]
             for off, key in [(10, '_t1c'), (11, '_t2c'), (12, '_t3c')]:
                 if pos + off < len(price):
@@ -343,7 +370,7 @@ def build_history(df, price, open_p, whale_df):
         '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
         'Dn組別':        pool['Dn組別'],
         '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
-        '大戶(%)':       pool.apply(lambda r: whale_delta(whale_df, r['股票代號'], r['處置起始日']), axis=1),
+        '大戶(%)':       pool.apply(lambda r: whale_delta(whale_dfs, r['股票代號'], r['處置起始日'], price), axis=1),
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '買進時累積(%)': pool['entry_cum'],
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
@@ -355,6 +382,9 @@ def build_history(df, price, open_p, whale_df):
         '結果':          pool['actual_ret'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
+        # D1~D10 各天進場累積報酬與出關報酬（自訂策略回測頁使用）
+        **{f'D{n}累積(%)': pool[f'_d{n}_cum'] for n in range(1, 11)},
+        **{f'D{n}報酬(%)': pool[f'_d{n}_ret'] for n in range(1, 11)},
     })
     hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
 
@@ -386,10 +416,10 @@ def main():
 
     print('載入資料...')
     df = load()
-    price, open_p, whale_df = load_price()
+    price, open_p, whale_dfs = load_price()
 
     print('產生訊號表...')
-    sig = build_signals(df, price, open_p, whale_df)
+    sig = build_signals(df, price, open_p, whale_dfs)
     sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals.csv ({len(sig)} 筆)')
 
@@ -399,7 +429,7 @@ def main():
     print(f'  → backtest_grid.csv ({len(grid)} 筆)')
 
     print('產生歷史回測紀錄...')
-    hist, cmp_stats = build_history(df, price, open_p, whale_df)
+    hist, cmp_stats = build_history(df, price, open_p, whale_dfs)
     hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → history.csv ({len(hist)} 筆)')
 

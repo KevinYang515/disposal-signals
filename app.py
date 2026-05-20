@@ -88,7 +88,7 @@ def fmt_pct(v):
     except:
         return '-'
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -339,9 +339,165 @@ with tab2:
 
 
 # ════════════════════════════════════════════════════════
-# TAB 3：進場網格回測
+# TAB 3：自訂策略回測
 # ════════════════════════════════════════════════════════
 with tab3:
+    st.subheader('🔬 自訂策略回測')
+    st.caption('自由組合進場日與跌幅門檻，查看任意策略的歷史勝率與報酬')
+
+    hist_c = load_history()
+    if hist_c.empty or 'D1累積(%)' not in hist_c.columns:
+        st.warning('缺少 D1~D10 欄位，請重新執行 update_signals.py 後再使用此功能' if not hist_c.empty else '尚無歷史資料')
+    else:
+        if '規模' in hist_c.columns:
+            hist_c['規模'] = hist_c['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
+
+        ctrl_col, main_col = st.columns([1, 3])
+        with ctrl_col:
+            mode_c = st.radio('進場模式', ['固定日進場', '範圍進場'])
+            sel_cap_c = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab_c_cap')
+            threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
+                                    format='%d%%', key='tab_c_thr')
+            if mode_c == '固定日進場':
+                entry_day_c = st.selectbox('進場日', [f'D{n}' for n in range(1, 11)], index=2, key='tab_c_day')
+                entry_n_c = int(entry_day_c[1:])
+            else:
+                range_days_c = st.slider('進場日範圍', 1, 10, (3, 8), key='tab_c_range')
+                range_start_c, range_end_c = range_days_c
+
+        base_c = hist_c[hist_c['規模'].isin(sel_cap_c)].copy() if sel_cap_c else hist_c.copy()
+
+        # ── 計算符合條件的進場紀錄 ──
+        eligible = pd.DataFrame()
+        if mode_c == '固定日進場':
+            cum_c = f'D{entry_n_c}累積(%)'
+            ret_c = f'D{entry_n_c}報酬(%)'
+            if cum_c in base_c.columns:
+                eligible = base_c[base_c[cum_c] < threshold_c].copy()
+                eligible['_entry_n']   = entry_n_c
+                eligible['_entry_cum'] = eligible[cum_c]
+                eligible['_entry_ret'] = eligible[ret_c] if ret_c in eligible.columns else np.nan
+        else:
+            days_r     = [n for n in range(range_start_c, range_end_c + 1)
+                          if f'D{n}累積(%)' in base_c.columns]
+            cum_cols_r = [f'D{n}累積(%)' for n in days_r]
+            ret_cols_r = [f'D{n}報酬(%)' for n in days_r]
+            if days_r:
+                cum_mat  = base_c[cum_cols_r].values.astype(float)
+                has_all_ret = all(c in base_c.columns for c in ret_cols_r)
+                ret_mat  = base_c[ret_cols_r].values.astype(float) if has_all_ret else np.full_like(cum_mat, np.nan)
+                cum_fill = np.where(np.isnan(cum_mat), np.inf, cum_mat)
+                below    = cum_fill < threshold_c
+                has_entry_mask = below.any(axis=1)
+                if has_entry_mask.any():
+                    first_idx = np.argmax(below, axis=1)
+                    ri = np.arange(len(cum_mat))
+                    eligible = base_c.copy()
+                    eligible['_entry_n']   = np.where(has_entry_mask, np.array(days_r)[first_idx], np.nan)
+                    eligible['_entry_cum'] = np.where(has_entry_mask, cum_mat[ri, first_idx], np.nan)
+                    eligible['_entry_ret'] = np.where(has_entry_mask, ret_mat[ri, first_idx], np.nan)
+                    eligible = eligible[eligible['_entry_n'].notna()].copy()
+
+        with main_col:
+            if eligible.empty:
+                st.info('目前條件無符合紀錄（可嘗試調寬門檻或擴大進場日範圍）')
+            else:
+                settled_c = eligible[eligible['_entry_ret'].notna()]
+                wins_c    = settled_c[settled_c['_entry_ret'] > 0]
+                loss_c    = settled_c[settled_c['_entry_ret'] < 0]
+                wr_c      = len(wins_c) / len(settled_c) * 100 if len(settled_c) > 0 else 0
+                avg_r_c   = settled_c['_entry_ret'].mean() if len(settled_c) > 0 else np.nan
+                avg_w_c   = wins_c['_entry_ret'].mean() if len(wins_c) > 0 else np.nan
+                avg_l_c   = loss_c['_entry_ret'].mean() if len(loss_c) > 0 else np.nan
+
+                kc1, kc2, kc3, kc4, kc5 = st.columns(5)
+                kc1.metric('符合條件', f'{len(eligible)} 筆')
+                kc2.metric('已出關', f'{len(settled_c)} 筆')
+                kc3.metric('勝率', f'{wr_c:.1f}%')
+                kc4.metric('期望報酬', f'{avg_r_c:+.2f}%' if pd.notna(avg_r_c) else '-')
+                kc5.metric('均獲利/均虧損',
+                           f'{avg_w_c:+.2f}% / {avg_l_c:+.2f}%' if pd.notna(avg_w_c) and pd.notna(avg_l_c) else '-')
+
+                st.divider()
+
+                # ── 各天進場對比表 ──
+                st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，同規模篩選）')
+                cmp_rows_c = []
+                for n in range(1, 11):
+                    cc, rc = f'D{n}累積(%)', f'D{n}報酬(%)'
+                    if cc not in base_c.columns or rc not in base_c.columns:
+                        continue
+                    s = base_c[base_c[cc] < threshold_c][rc].dropna()
+                    if len(s) < 3:
+                        continue
+                    cmp_rows_c.append({'進場日': f'D{n}', '樣本N': len(s),
+                                       '勝率(%)': round((s > 0).mean() * 100, 1),
+                                       '期望報酬(%)': round(s.mean(), 2),
+                                       '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
+                                       '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0})
+                if cmp_rows_c:
+                    cdf = pd.DataFrame(cmp_rows_c).set_index('進場日')
+
+                    def _wr_clr(v):
+                        if v >= 85: return 'background-color:#1a5c38;color:white;font-weight:700'
+                        if v >= 75: return 'background-color:#26c281;color:black;font-weight:700'
+                        if v >= 65: return 'background-color:#f6c90e;color:black'
+                        return 'background-color:#c0392b;color:white'
+
+                    def _ret_clr(v):
+                        if v >= 15: return 'background-color:#1a5c38;color:white;font-weight:700'
+                        if v >= 8:  return 'background-color:#26c281;color:black;font-weight:700'
+                        if v >= 3:  return 'background-color:#f6c90e;color:black'
+                        return 'background-color:#c0392b;color:white'
+
+                    st.dataframe(
+                        cdf.style
+                            .map(_wr_clr, subset=['勝率(%)'])
+                            .map(_ret_clr, subset=['期望報酬(%)'])
+                            .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
+                                     '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'}),
+                        use_container_width=True
+                    )
+
+                st.divider()
+
+                # ── 明細表 ──
+                st.markdown('**符合條件明細**')
+                detail_c = eligible.copy()
+                if mode_c == '固定日進場':
+                    detail_c['買進日'] = f'D{entry_n_c}'
+                else:
+                    detail_c['買進日'] = detail_c['_entry_n'].apply(
+                        lambda v: f'D{int(v)}' if pd.notna(v) else '-')
+                detail_c['買進累積(%)'] = detail_c['_entry_cum'].round(2)
+                detail_c['模擬報酬(%)'] = detail_c['_entry_ret'].round(2)
+                detail_c['結果'] = detail_c['_entry_ret'].apply(
+                    lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
+                              else (f'❌ {v:+.2f}%' if pd.notna(v) else '-'))
+
+                show_dc_cols = [c for c in ['代號', '名稱', '規模', '起始日', '買進日',
+                                            '近20日漲幅', '大戶(%)', '買進累積(%)', '模擬報酬(%)', '結果']
+                                if c in detail_c.columns]
+                show_dc = detail_c[show_dc_cols].sort_values('起始日', ascending=False)
+                num_dc  = [c for c in ['近20日漲幅', '大戶(%)', '買進累積(%)', '模擬報酬(%)']
+                           if c in show_dc.columns]
+
+                def _res_clr_c(val):
+                    if str(val).startswith('✅'): return 'color:#26c281;font-weight:700'
+                    if str(val).startswith('❌'): return 'color:#e74c3c;font-weight:700'
+                    return ''
+
+                st.dataframe(
+                    show_dc.style
+                        .format({c: '{:+.2f}%' for c in num_dc}, na_rep='-')
+                        .map(_res_clr_c, subset=['結果']),
+                    use_container_width=True, height=420
+                )
+
+# ════════════════════════════════════════════════════════
+# TAB 4：進場網格回測
+# ════════════════════════════════════════════════════════
+with tab4:
     grid = load_grid()
 
     if grid.empty:
@@ -399,9 +555,9 @@ with tab3:
             st.dataframe(show.style.format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}', '賺賠比': '{:.2f}'}, na_rep='-'), use_container_width=True)
 
 # ════════════════════════════════════════════════════════
-# TAB 4：策略說明
+# TAB 5：策略說明
 # ════════════════════════════════════════════════════════
-with tab4:
+with tab5:
     st.subheader('📖 橡皮筋效應策略說明')
 
     col1, col2 = st.columns(2)
@@ -458,9 +614,9 @@ with tab4:
 """)
 
 # ════════════════════════════════════════════════════════
-# TAB 5：使用方式
+# TAB 6：使用方式
 # ════════════════════════════════════════════════════════
-with tab5:
+with tab6:
     st.subheader('⚙️ 資料更新方式')
     st.markdown("""
 ### 每日操作流程
