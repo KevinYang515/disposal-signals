@@ -47,8 +47,7 @@ def load():
     df = pd.read_csv(V2_CSV)
     df['股票代號']  = df['股票代號'].astype(str).str.zfill(4)
     df['處置起始日'] = pd.to_datetime(df['處置起始日'])
-    for col in ['大戶持股變動(%)', '入場前20日漲幅(%)', 'D3收盤報酬(%)',
-                'd4r', 'D5收盤報酬(%)', ENTRY_COL]:
+    for col in ['大戶持股變動(%)', 'D3收盤報酬(%)', 'D5收盤報酬(%)']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
@@ -64,6 +63,17 @@ def load_price():
     return price, open_p
 
 # ── 工具函數 ────────────────────────────────────────────────────────────
+def prerun20(price, idx, sid, sd):
+    """處置起始日前 20 個交易日的累積漲幅"""
+    pos = idx.searchsorted(sd)
+    if pos < 21 or sid not in price.columns:
+        return np.nan
+    p0 = price[sid].iloc[pos - 21]
+    p1 = price[sid].iloc[pos - 1]
+    if p0 <= 0 or np.isnan(p0) or np.isnan(p1):
+        return np.nan
+    return round((p1 / p0 - 1) * 100, 2)
+
 def cumret(price, idx, sid, sd, nd):
     pos = idx.searchsorted(sd)
     if pos < 1 or pos + nd > len(idx) or sid not in price.columns:
@@ -161,7 +171,7 @@ def build_signals(df, price, open_p):
             '名稱':   row['股票名稱'],
             '規模':   '大' if '大型' in row['市值規模'] else '中',
             '處置原因': row.get('處置原因', ''),
-            '近20日漲幅': round(row.get('入場前20日漲幅(%)', np.nan), 1),
+            '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': round(row.get('大戶持股變動(%)', np.nan), 2),
             '起始日':  sd.strftime('%m/%d'),
             '今D幾':   f'D{nd}',
@@ -171,7 +181,9 @@ def build_signals(df, price, open_p):
             v = cumret(price, idx, sid, sd, n)
             d[f'D{n}%'] = v
         d['今日漲跌'] = today_change(price, sid)
-        d['評級'] = grade({**row.to_dict(), **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+        pr = d['近20日漲幅']
+        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr,
+                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
         rows.append(d)
 
     return pd.DataFrame(rows).sort_values('起始日', ascending=False)
@@ -305,7 +317,7 @@ def build_history(df, price, open_p):
         '名稱':          pool['股票名稱'],
         '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
         'Dn組別':        pool['Dn組別'],
-        '近20日漲幅':    pool['入場前20日漲幅(%)'].round(2),
+        '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
         '大戶(%)':       pool['大戶持股變動(%)'].round(2),
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '買進時累積(%)': pool['entry_cum'],
