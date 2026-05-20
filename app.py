@@ -147,7 +147,7 @@ with tab1:
         if col in view.columns and view[col].notna().any():
             d_cols.append(col)
 
-    display_cols = ['評級', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
+    display_cols = ['評級', '買進訊號', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
                     '起始日', '今D幾', '出關日', '今日漲跌'] + d_cols
 
     display_cols = [c for c in display_cols if c in view.columns]
@@ -172,12 +172,84 @@ with tab1:
             pass
         return ''
 
+    def color_entry_signal(val):
+        return 'color:#26c281;font-weight:700' if str(val).startswith('D') else ''
+
     styled = disp.style.map(color_grade, subset=['評級'])
+    if '買進訊號' in disp.columns:
+        styled = styled.map(color_entry_signal, subset=['買進訊號'])
     color_cols = d_cols + (['今日漲跌'] if '今日漲跌' in disp.columns else [])
     if color_cols:
         styled = styled.map(color_ret_str, subset=color_cols)
 
     st.dataframe(styled, use_container_width=True, height=500)
+
+    # ── 進場預覽 / 觸發分析 ──────────────────────────────────────────────
+    if '距觸發(%)' in view.columns and '觸發價' in view.columns:
+        with st.expander('📍 進場預覽 / 觸發分析（依缺口排序）'):
+            # 用規模篩選但不過濾評級，顯示全部漲多處置的觀察狀況
+            prev_base = sig[sig['規模'].isin(filter_cap)].copy() if filter_cap else sig.copy()
+            prev_base = prev_base[prev_base['處置原因'] == '漲多處置']
+
+            def fmt_preview(row):
+                entry = str(row.get('買進訊號', ''))
+                if entry.startswith('D'):
+                    return f'✅ 已觸發 ({entry})'
+                gap = row.get('距觸發(%)', np.nan)
+                if pd.isna(gap):
+                    return '-'
+                elif gap >= -2:
+                    return f'🔥 再跌 {abs(gap):.1f}%'
+                elif gap >= -5:
+                    return f'🟡 再跌 {abs(gap):.1f}%'
+                else:
+                    return f'⬜ 再跌 {abs(gap):.1f}%'
+
+            prev_base['明日預覽'] = prev_base.apply(fmt_preview, axis=1)
+
+            # 顯示欄位
+            prev_cols = [c for c in ['代號', '名稱', '評級', '買進訊號', '今D幾', '出關日',
+                                     '當前累積(%)', '觸發價', '距觸發(%)', '明日預覽']
+                         if c in prev_base.columns]
+            prev_show = prev_base[prev_cols].copy()
+
+            # 格式化數字
+            for c in ['當前累積(%)', '距觸發(%)']:
+                if c in prev_show.columns:
+                    prev_show[c] = prev_show[c].apply(fmt_pct)
+
+            # 排序：已觸發 > 距觸發接近的（用 sort_key 合成）
+            sort_df = prev_base[['買進訊號', '距觸發(%)']].copy()
+            sort_df['_triggered'] = sort_df['買進訊號'].apply(lambda v: 0 if str(v).startswith('D') else 1)
+            sort_df['_gap_fill']  = sort_df['距觸發(%)'].fillna(-999)
+            sort_df = sort_df.sort_values(['_triggered', '_gap_fill'], ascending=[True, False])
+            prev_show = prev_show.loc[sort_df.index]
+
+            def color_preview_col(val):
+                s = str(val)
+                if '✅' in s: return 'color:#26c281;font-weight:700'
+                if '🔥' in s: return 'color:#e67e22;font-weight:700'
+                if '🟡' in s: return 'color:#f6c90e'
+                return 'color:#95a5a6'
+
+            def color_gap_col(val):
+                try:
+                    v = float(str(val).replace('%', ''))
+                    if v >= 0:   return 'color:#26c281;font-weight:700'
+                    if v >= -2:  return 'color:#e67e22;font-weight:700'
+                    if v >= -5:  return 'color:#f6c90e'
+                    return 'color:#95a5a6'
+                except:
+                    return ''
+
+            styled_prev = prev_show.style.map(color_preview_col, subset=['明日預覽'])
+            if '距觸發(%)' in prev_show.columns:
+                styled_prev = styled_prev.map(color_gap_col, subset=['距觸發(%)'])
+            if '評級' in prev_show.columns:
+                styled_prev = styled_prev.map(color_grade, subset=['評級'])
+
+            st.dataframe(styled_prev, use_container_width=True)
+            st.caption('已觸發 = 距觸發 ≥ 0%（目前收盤已低於觸發價）｜🔥 = 距觸發 < 2%（高度警戒）｜觸發條件：D3~D8 任意天累積跌幅 < -5%')
 
     # 說明
     st.markdown("""

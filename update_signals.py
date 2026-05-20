@@ -225,6 +225,43 @@ def build_signals(df, price, open_p, whale_dfs):
         wh = d['大戶(%)']
         d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
                            **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+
+        is_changduo = row.get('處置原因') == '漲多處置'
+
+        # ── 買進訊號：首個 D3~D8 < -5% 的天（僅漲多處置）──
+        entry_n_sig = None
+        if is_changduo:
+            for n in range(3, 9):
+                if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
+                    entry_n_sig = n
+                    break
+        d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
+
+        # ── 當前累積報酬（最新可用的 Dn 值）──
+        cur_cum = np.nan
+        for n in range(nd, 0, -1):
+            v = d.get(f'D{n}%')
+            if pd.notna(v):
+                cur_cum = v
+                break
+        d['當前累積(%)'] = cur_cum
+
+        # ── 觸發價與距觸發（僅漲多處置）──
+        if is_changduo:
+            pos_v = idx.searchsorted(sd)
+            p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
+            ser_v = price[sid].dropna()
+            cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
+            if pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
+                d['觸發價']    = round(p0_v * 0.95, 1)
+                d['距觸發(%)'] = round((d['觸發價'] / cur_p - 1) * 100, 2)
+            else:
+                d['觸發價']    = np.nan
+                d['距觸發(%)'] = np.nan
+        else:
+            d['觸發價']    = np.nan
+            d['距觸發(%)'] = np.nan
+
         rows.append(d)
 
     return pd.DataFrame(rows).sort_values('起始日', ascending=False)
