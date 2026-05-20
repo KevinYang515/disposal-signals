@@ -246,6 +246,18 @@ def build_signals(df, price, open_p, whale_dfs):
                 break
         d['當前累積(%)'] = cur_cum
 
+        # ── 目前損益：已觸發股票從進場日到當前收盤的未實現損益 ──
+        if entry_n_sig and pd.notna(cur_cum):
+            entry_cum_v = d.get(f'D{entry_n_sig}%', np.nan)
+            if pd.notna(entry_cum_v):
+                entry_factor = 1 + entry_cum_v / 100
+                cur_factor   = 1 + cur_cum / 100
+                d['目前損益(%)'] = round((cur_factor / entry_factor - 1) * 100, 2) if entry_factor > 0 else np.nan
+            else:
+                d['目前損益(%)'] = np.nan
+        else:
+            d['目前損益(%)'] = np.nan
+
         # ── 觸發價與距觸發（僅漲多處置）──
         if is_changduo:
             pos_v = idx.searchsorted(sd)

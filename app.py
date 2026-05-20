@@ -209,12 +209,12 @@ with tab1:
 
             # 顯示欄位
             prev_cols = [c for c in ['代號', '名稱', '評級', '買進訊號', '今D幾', '出關日',
-                                     '今日漲跌', '當前累積(%)', '觸發價', '距觸發(%)', '明日預覽']
+                                     '今日漲跌', '目前損益(%)', '觸發價', '距觸發(%)', '明日預覽']
                          if c in prev_base.columns]
             prev_show = prev_base[prev_cols].copy()
 
             # 格式化數字
-            for c in ['今日漲跌', '當前累積(%)', '距觸發(%)']:
+            for c in ['今日漲跌', '目前損益(%)', '距觸發(%)']:
                 if c in prev_show.columns:
                     prev_show[c] = prev_show[c].apply(fmt_pct)
             if '觸發價' in prev_show.columns:
@@ -250,7 +250,7 @@ with tab1:
                 styled_prev = styled_prev.map(color_gap_col, subset=['距觸發(%)'])
             if '評級' in prev_show.columns:
                 styled_prev = styled_prev.map(color_grade, subset=['評級'])
-            for c in ['今日漲跌', '當前累積(%)']:
+            for c in ['今日漲跌', '目前損益(%)']:
                 if c in prev_show.columns:
                     styled_prev = styled_prev.map(color_ret_str, subset=[c])
 
