@@ -13,6 +13,7 @@ warnings.filterwarnings("ignore")
 V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
 PRICE_F  = os.path.expanduser('~/finlab_db/price#收盤價.feather')
 OPEN_F   = os.path.expanduser('~/finlab_db/price#開盤價.feather')
+WHALE_F  = os.path.expanduser('~/finlab_db/etl#inventory#大於四百張佔比.feather')
 OUT_DIR  = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -38,6 +39,8 @@ def refresh_finlab():
         data.get('price:收盤價')
         print('  更新 price:開盤價...')
         data.get('price:開盤價')
+        print('  更新大戶持股...')
+        data.get('etl:inventory:大於四百張佔比')
         print('  finlab 資料刷新完成')
     except Exception as e:
         print(f'  finlab 刷新失敗（將使用現有 feather）: {e}')
@@ -60,9 +63,26 @@ def load_price():
     open_p = pd.DataFrame(pd.read_feather(OPEN_F))
     open_p['date'] = pd.to_datetime(open_p['date'])
     open_p = open_p.set_index('date').sort_index()
-    return price, open_p
+
+    whale = pd.DataFrame(pd.read_feather(WHALE_F))
+    whale['date'] = pd.to_datetime(whale['date'])
+    whale = whale.set_index('date').sort_index()
+    return price, open_p, whale
 
 # ── 工具函數 ────────────────────────────────────────────────────────────
+def whale_delta(whale, sid, sd):
+    """大戶(>400張)持股比例變動：處置前一週 vs 最後一次紀錄"""
+    if sid not in whale.columns:
+        return np.nan
+    series = whale[sid].dropna()
+    before = series[series.index < sd]
+    if len(before) == 0:
+        return np.nan
+    after = series[series.index >= sd]
+    if len(after) == 0:
+        return np.nan
+    return round(float(after.iloc[-1]) - float(before.iloc[-1]), 2)
+
 def prerun20(price, idx, sid, sd):
     """處置起始日前 20 個交易日的累積漲幅"""
     pos = idx.searchsorted(sd)
@@ -145,7 +165,7 @@ def grade(row):
     return '🟡 觀察中'
 
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
-def build_signals(df, price, open_p):
+def build_signals(df, price, open_p, whale_df):
     idx = price.index
     today = pd.Timestamp(datetime.today().date())
     cutoff = today - pd.Timedelta(days=20)
@@ -172,7 +192,7 @@ def build_signals(df, price, open_p):
             '規模':   '大' if '大型' in row['市值規模'] else '中',
             '處置原因': row.get('處置原因', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
-            '大戶(%)': round(row.get('大戶持股變動(%)', np.nan), 2),
+            '大戶(%)': whale_delta(whale_df, sid, sd),
             '起始日':  sd.strftime('%m/%d'),
             '今D幾':   f'D{nd}',
             '出關日':  ex.strftime('%m/%d') if pd.notna(ex) else '?',
@@ -182,7 +202,8 @@ def build_signals(df, price, open_p):
             d[f'D{n}%'] = v
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
-        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr,
+        wh = d['大戶(%)']
+        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
                            **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
         rows.append(d)
 
@@ -243,7 +264,7 @@ def build_backtest_grid(df, price, open_p):
     return pd.DataFrame(rows)
 
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
-def build_history(df, price, open_p):
+def build_history(df, price, open_p, whale_df):
     idx = price.index
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '20分鐘') &
@@ -318,7 +339,7 @@ def build_history(df, price, open_p):
         '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
         'Dn組別':        pool['Dn組別'],
         '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
-        '大戶(%)':       pool['大戶持股變動(%)'].round(2),
+        '大戶(%)':       pool.apply(lambda r: whale_delta(whale_df, r['股票代號'], r['處置起始日']), axis=1),
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '買進時累積(%)': pool['entry_cum'],
         '期間最深(%)':   pool['min_dn'],
@@ -360,10 +381,10 @@ def main():
 
     print('載入資料...')
     df = load()
-    price, open_p = load_price()
+    price, open_p, whale_df = load_price()
 
     print('產生訊號表...')
-    sig = build_signals(df, price, open_p)
+    sig = build_signals(df, price, open_p, whale_df)
     sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals.csv ({len(sig)} 筆)')
 
@@ -373,7 +394,7 @@ def main():
     print(f'  → backtest_grid.csv ({len(grid)} 筆)')
 
     print('產生歷史回測紀錄...')
-    hist, cmp_stats = build_history(df, price, open_p)
+    hist, cmp_stats = build_history(df, price, open_p, whale_df)
     hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → history.csv ({len(hist)} 筆)')
 
