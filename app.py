@@ -209,14 +209,17 @@ with tab1:
 
             # 顯示欄位
             prev_cols = [c for c in ['代號', '名稱', '評級', '買進訊號', '今D幾', '出關日',
-                                     '當前累積(%)', '觸發價', '距觸發(%)', '明日預覽']
+                                     '今日漲跌', '當前累積(%)', '觸發價', '距觸發(%)', '明日預覽']
                          if c in prev_base.columns]
             prev_show = prev_base[prev_cols].copy()
 
             # 格式化數字
-            for c in ['當前累積(%)', '距觸發(%)']:
+            for c in ['今日漲跌', '當前累積(%)', '距觸發(%)']:
                 if c in prev_show.columns:
                     prev_show[c] = prev_show[c].apply(fmt_pct)
+            if '觸發價' in prev_show.columns:
+                prev_show['觸發價'] = prev_show['觸發價'].apply(
+                    lambda v: f'{v:.1f}' if pd.notna(v) else '-')
 
             # 排序：已觸發 > 距觸發接近的（用 sort_key 合成）
             sort_df = prev_base[['買進訊號', '距觸發(%)']].copy()
@@ -247,6 +250,9 @@ with tab1:
                 styled_prev = styled_prev.map(color_gap_col, subset=['距觸發(%)'])
             if '評級' in prev_show.columns:
                 styled_prev = styled_prev.map(color_grade, subset=['評級'])
+            for c in ['今日漲跌', '當前累積(%)']:
+                if c in prev_show.columns:
+                    styled_prev = styled_prev.map(color_ret_str, subset=[c])
 
             st.dataframe(styled_prev, use_container_width=True)
             st.caption('已觸發 = 距觸發 ≥ 0%（目前收盤已低於觸發價）｜🔥 = 距觸發 < 2%（高度警戒）｜觸發條件：D3~D8 任意天累積跌幅 < -5%')
