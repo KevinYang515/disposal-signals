@@ -78,7 +78,18 @@ def exit_date(idx, sd):
     pos = idx.searchsorted(sd)
     if pos + 10 < len(idx):
         return idx[pos + 10]
-    return pd.NaT
+    # feather 不夠長時，用 weekday 往後估算（不含假日）
+    days_in = int(((idx >= sd) & (idx <= idx[-1])).sum())
+    remaining = 11 - days_in  # 到第 11 個交易日（出關日）
+    if remaining <= 0:
+        return idx[-1]
+    cur = idx[-1]
+    cnt = 0
+    while cnt < remaining:
+        cur += pd.Timedelta(days=1)
+        if cur.weekday() < 5:
+            cnt += 1
+    return cur
 
 def trading_day_n(idx, sd):
     today = pd.Timestamp(datetime.today().date())
