@@ -262,15 +262,16 @@ with tab2:
         if len(view_h) == 0:
             st.warning('目前篩選條件無資料')
         else:
-            wins  = view_h[view_h['結果'].str.startswith('✅')]
-            loss  = view_h[view_h['結果'].str.startswith('❌')]
-            wr    = len(wins) / len(view_h) * 100
-            avg_r = view_h['出關報酬(%)'].mean()
+            wins    = view_h[view_h['結果'].str.startswith('✅')]
+            loss    = view_h[view_h['結果'].str.startswith('❌')]
+            settled = len(wins) + len(loss)
+            wr      = len(wins) / settled * 100 if settled > 0 else 0.0
+            avg_r   = view_h['出關報酬(%)'].dropna().mean()
 
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric('總筆數', len(view_h))
+            c1.metric('總筆數', f'{len(view_h)} ({settled}已出關)')
             c2.metric('勝率', f'{wr:.1f}%')
-            c3.metric('期望報酬', f'{avg_r:+.2f}%')
+            c3.metric('期望報酬', f'{avg_r:+.2f}%' if pd.notna(avg_r) else '-')
             c4.metric('獲利筆', len(wins))
             c5.metric('虧損筆', len(loss))
 
