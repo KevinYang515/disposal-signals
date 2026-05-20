@@ -273,18 +273,20 @@ def build_history(df, price, open_p, whale_df):
     def compute_row(row):
         sid = row['股票代號']
         sd  = row['處置起始日']
-        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan,
+        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan,
                    actual_ret=np.nan, _t1c=np.nan, _t2c=np.nan, _t3c=np.nan)
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
-        if pos < 1 or pos + 11 >= len(idx):
+        if pos < 1 or pos + 2 >= len(idx):   # 至少要有 D3 資料才繼續
             return pd.Series(out)
         p0 = price[sid].iloc[pos - 1]
         if pd.isna(p0) or p0 <= 0:
             return pd.Series(out)
 
-        t1_open = open_p[sid].iloc[pos + 10] if sid in open_p.columns else np.nan
+        # T+1 開盤（出關日）— 有則算出關報酬，無則客觀欄位仍可填
+        t1_open = (open_p[sid].iloc[pos + 10]
+                   if sid in open_p.columns and pos + 10 < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
 
         # D3~D8 累積報酬（D1/D2 跌深屬真實賣壓，不作為進場依據）
@@ -297,7 +299,9 @@ def build_history(df, price, open_p, whale_df):
         if not dn_rets:
             return pd.Series(out)
 
-        out['min_dn'] = round(min(dn_rets.values()), 2)
+        deepest = min(dn_rets, key=lambda n: dn_rets[n])
+        out['min_dn']    = round(dn_rets[deepest], 2)
+        out['deepest_n'] = deepest
 
         # 最早觸發 -5% 的 Dn 作為實際進場日（D3 起算）
         for n in range(3, 9):
@@ -309,7 +313,7 @@ def build_history(df, price, open_p, whale_df):
                     out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
                 break
 
-        # T+1/T+2/T+3 相對於進場日收盤（無進場則相對 D3）
+        # T+1/T+2/T+3 無論是否進場皆填入（相對進場日或 D3 收盤）
         ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
         if ref_n in dn_rets:
             p_ref = price[sid].iloc[pos + ref_n - 1]
@@ -342,6 +346,7 @@ def build_history(df, price, open_p, whale_df):
         '大戶(%)':       pool.apply(lambda r: whale_delta(whale_df, r['股票代號'], r['處置起始日']), axis=1),
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '買進時累積(%)': pool['entry_cum'],
+        '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
         '出關報酬(%)':   pool['actual_ret'],
         'T+1收盤(%)':    pool['_t1c'],

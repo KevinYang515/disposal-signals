@@ -312,8 +312,9 @@ with tab2:
                 return ''
 
         if len(view_h) > 0:
-            disp = view_h.drop(columns=['年份', 'Dn組別'], errors='ignore').reset_index(drop=True)
+            disp = view_h.drop(columns=['年份', 'Dn組別', 'D3累積(%)'], errors='ignore').reset_index(drop=True)
             ret_cols = ['近20日漲幅', '買進時累積(%)', '期間最深(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
+            # 最深日 是字串欄位，不需格式化
             for c in ret_cols:
                 if c in disp.columns:
                     disp[c] = disp[c].apply(fmt_pct)
