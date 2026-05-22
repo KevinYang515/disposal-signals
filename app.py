@@ -559,6 +559,10 @@ with tab3:
                     eligible['_entry_ret'] = np.where(has_entry_mask, ret_mat[ri, first_idx], np.nan)
                     eligible = eligible[eligible['_entry_n'].notna()].copy()
 
+        # 在 exit adjustment 前先存 T+1 開盤報酬，供出場比較表使用
+        if not eligible.empty:
+            eligible['_ret_t1open'] = eligible['_entry_ret'].copy()
+
         # ── 出場時間點調整 ──
         # T+k收盤(%) = T+k_close / P_orig_entry - 1（原始策略進場日為基準）
         # 自訂進場 D{n}: T+k_close / P_Dn - 1
@@ -638,28 +642,28 @@ with tab3:
                                        '賺賠比': pf_n,
                                        '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
                                        '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0})
+                def _wr_clr(v):
+                    if v >= 85: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 75: return 'background-color:#26c281;color:black;font-weight:700'
+                    if v >= 65: return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+
+                def _ret_clr(v):
+                    if v >= 15: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 8:  return 'background-color:#26c281;color:black;font-weight:700'
+                    if v >= 3:  return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+
+                def _sp_clr(v):
+                    try:
+                        if v >= 1.0: return 'color:#26c281;font-weight:700'
+                        if v >= 0.5: return 'color:#2ecc71'
+                        if v >= 0:   return 'color:#f6c90e'
+                        return 'color:#e74c3c'
+                    except: return ''
+
                 if cmp_rows_c:
                     cdf = pd.DataFrame(cmp_rows_c).set_index('進場日')
-
-                    def _wr_clr(v):
-                        if v >= 85: return 'background-color:#1a5c38;color:white;font-weight:700'
-                        if v >= 75: return 'background-color:#26c281;color:black;font-weight:700'
-                        if v >= 65: return 'background-color:#f6c90e;color:black'
-                        return 'background-color:#c0392b;color:white'
-
-                    def _ret_clr(v):
-                        if v >= 15: return 'background-color:#1a5c38;color:white;font-weight:700'
-                        if v >= 8:  return 'background-color:#26c281;color:black;font-weight:700'
-                        if v >= 3:  return 'background-color:#f6c90e;color:black'
-                        return 'background-color:#c0392b;color:white'
-
-                    def _sp_clr(v):
-                        try:
-                            if v >= 1.0: return 'color:#26c281;font-weight:700'
-                            if v >= 0.5: return 'color:#2ecc71'
-                            if v >= 0:   return 'color:#f6c90e'
-                            return 'color:#e74c3c'
-                        except: return ''
                     st.dataframe(
                         cdf.style
                             .map(_wr_clr,  subset=['勝率(%)'])
@@ -671,6 +675,68 @@ with tab3:
                                     na_rep='-'),
                         use_container_width=True
                     )
+
+                # ── 各出場時間點效果對比 ──────────────────────────────────
+                entry_label = (f'D{entry_n_c} 進場' if mode_c == '固定日進場'
+                               else f'D{range_start_c}~D{range_end_c} 首觸發')
+                st.markdown(f'**各出場時間點效果對比**（{entry_label}，門檻 {threshold_c}%，同規模篩選）')
+                exit_cmp_rows = []
+
+                # T+1 開盤（已算好，直接取）
+                if '_ret_t1open' in eligible.columns:
+                    s_e = eligible['_ret_t1open'].dropna()
+                    if len(s_e) > 0:
+                        ew_e = (s_e > 0).sum(); el_e = (s_e <= 0).sum()
+                        sp_e, pf_e = sharpe_pf(s_e)
+                        exit_cmp_rows.append({
+                            '出場時間點': 'T+1 開盤 ★',
+                            '筆數': len(s_e),
+                            '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
+                            '均報酬(%)': round(s_e.mean(), 2),
+                            '夏普值': sp_e, '賺賠比': pf_e,
+                            '均獲利(%)': round(s_e[s_e > 0].mean(), 2) if ew_e > 0 else 0,
+                            '均虧損(%)': round(s_e[s_e <= 0].mean(), 2) if el_e > 0 else 0,
+                        })
+
+                # T+1 ~ T+10 收盤（套用相同的基準轉換公式）
+                for k in range(1, 11):
+                    ecol_k = f'T+{k}收盤(%)'
+                    if ecol_k not in eligible.columns or '買進時累積(%)' not in eligible.columns:
+                        continue
+                    ef_k   = 1 + eligible[ecol_k] / 100
+                    orig_k = 1 + eligible['買進時累積(%)'] / 100
+                    ent_k  = 1 + eligible['_entry_cum'] / 100
+                    adj_k  = pd.Series(
+                        np.where(ent_k > 0, (ef_k * orig_k / ent_k - 1) * 100, np.nan),
+                        index=eligible.index).dropna()
+                    if len(adj_k) == 0:
+                        continue
+                    ew_e = (adj_k > 0).sum(); el_e = (adj_k <= 0).sum()
+                    sp_e, pf_e = sharpe_pf(adj_k)
+                    exit_cmp_rows.append({
+                        '出場時間點': f'T+{k} 收盤',
+                        '筆數': len(adj_k),
+                        '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
+                        '均報酬(%)': round(adj_k.mean(), 2),
+                        '夏普值': sp_e, '賺賠比': pf_e,
+                        '均獲利(%)': round(adj_k[adj_k > 0].mean(), 2) if ew_e > 0 else 0,
+                        '均虧損(%)': round(adj_k[adj_k <= 0].mean(), 2) if el_e > 0 else 0,
+                    })
+
+                if exit_cmp_rows:
+                    ecdf = pd.DataFrame(exit_cmp_rows).set_index('出場時間點')
+                    st.dataframe(
+                        ecdf.style
+                            .map(_wr_clr,  subset=['勝率(%)'])
+                            .map(_ret_clr, subset=['均報酬(%)'])
+                            .map(_sp_clr,  subset=['夏普值'])
+                            .format({'勝率(%)': '{:.1f}', '均報酬(%)': '{:+.2f}',
+                                     '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
+                                     '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'},
+                                    na_rep='-'),
+                        use_container_width=True
+                    )
+                    st.caption('★ = 現行策略（T+1 開盤）｜目前選擇出場：' + exit_mode_c)
 
                 st.divider()
 
