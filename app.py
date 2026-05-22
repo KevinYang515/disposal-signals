@@ -429,6 +429,8 @@ with tab2:
                     use_container_width=True, hide_index=False
                 )
                 st.caption('T+1/T+2/T+3 報酬基準：從買進日收盤 → 各出場時間點收/開盤（T+1 開盤為現行策略）')
+                st.download_button('📥 下載此表 CSV', etdf.reset_index().to_csv(index=False, encoding='utf-8-sig'),
+                                   'exit_timing_tab2.csv', 'text/csv', key='dl_tab2_exit')
 
         # ── 比較組（D3篩選效果）──
         cmp_stats = meta.get('cmp_stats', [])
@@ -675,6 +677,8 @@ with tab3:
                                     na_rep='-'),
                         use_container_width=True
                     )
+                    st.download_button('📥 下載此表 CSV', cdf.reset_index().to_csv(index=False, encoding='utf-8-sig'),
+                                       'entry_day_compare.csv', 'text/csv', key='dl_tab3_entry')
 
                 # ── 各出場時間點效果對比 ──────────────────────────────────
                 entry_label = (f'D{entry_n_c} 進場' if mode_c == '固定日進場'
@@ -737,6 +741,8 @@ with tab3:
                         use_container_width=True
                     )
                     st.caption('★ = 現行策略（T+1 開盤）｜目前選擇出場：' + exit_mode_c)
+                    st.download_button('📥 下載此表 CSV', ecdf.reset_index().to_csv(index=False, encoding='utf-8-sig'),
+                                       'exit_timing_compare.csv', 'text/csv', key='dl_tab3_exit')
 
                 st.divider()
 
