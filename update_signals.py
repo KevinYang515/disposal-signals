@@ -343,7 +343,8 @@ def build_history(df, price, open_p, whale_dfs):
         sid = row['股票代號']
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan,
-                   actual_ret=np.nan, _t1c=np.nan, _t2c=np.nan, _t3c=np.nan)
+                   actual_ret=np.nan,
+                   **{f'_t{k}c': np.nan for k in range(1, 11)})
         for n in range(1, 11):
             out[f'_d{n}_cum'] = np.nan
             out[f'_d{n}_ret'] = np.nan
@@ -395,11 +396,12 @@ def build_history(df, price, open_p, whale_dfs):
         ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
         if ref_n in all_rets:
             p_ref = price[sid].iloc[pos + ref_n - 1]
-            for off, key in [(10, '_t1c'), (11, '_t2c'), (12, '_t3c')]:
+            for k in range(1, 11):
+                off = 9 + k  # T+1=pos+10, T+2=pos+11, ..., T+10=pos+19
                 if pos + off < len(price):
                     p = price[sid].iloc[pos + off]
                     if pd.notna(p) and p > 0:
-                        out[key] = round((p / p_ref - 1) * 100, 2)
+                        out[f'_t{k}c'] = round((p / p_ref - 1) * 100, 2)
 
         # 出關後 D1~D5 收盤（基準：T+1 開盤）
         if has_exit:
@@ -435,9 +437,7 @@ def build_history(df, price, open_p, whale_dfs):
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
         '出關報酬(%)':   pool['actual_ret'],
-        'T+1收盤(%)':    pool['_t1c'],
-        'T+2收盤(%)':    pool['_t2c'],
-        'T+3收盤(%)':    pool['_t3c'],
+        **{f'T+{k}收盤(%)': pool[f'_t{k}c'] for k in range(1, 11)},
         '結果':          pool['actual_ret'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),

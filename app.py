@@ -306,7 +306,7 @@ with tab2:
 
         # ── 確保規模欄格式一致（舊版 CSV 可能是'大型股'）──
         if '規模' in hist.columns:
-            hist['規模'] = hist['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
+            hist['規模'] = hist['規模'].apply(lambda v: '大' if '大' in str(v) else ('中' if '中' in str(v) else '小'))
 
         # ── 確保 Dn組別 欄位存在（舊版 CSV 相容）──
         if 'Dn組別' not in hist.columns:
@@ -375,10 +375,7 @@ with tab2:
         with st.expander('⏰ 出場時間點比較（依目前篩選條件）'):
             exit_timing_info = [
                 ('出關報酬(%)',  'T+1 開盤（現行策略）'),
-                ('T+1收盤(%)',  'T+1 收盤'),
-                ('T+2收盤(%)',  'T+2 收盤'),
-                ('T+3收盤(%)',  'T+3 收盤'),
-            ]
+            ] + [(f'T+{k}收盤(%)', f'T+{k} 收盤') for k in range(1, 11)]
             et_rows = []
             for ecol, elabel in exit_timing_info:
                 if ecol not in view_h.columns:
@@ -470,13 +467,14 @@ with tab2:
 
         if len(view_h) > 0:
             disp = view_h.drop(columns=['年份', 'Dn組別', 'D3累積(%)'], errors='ignore').reset_index(drop=True)
-            ret_cols = ['近20日漲幅', '買進時累積(%)', '期間最深(%)', '大戶(%)', '出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)']
-            # 最深日 是字串欄位，不需格式化
+            ret_cols = (['近20日漲幅', '買進時累積(%)', '期間最深(%)', '大戶(%)', '出關報酬(%)'] +
+                        [f'T+{k}收盤(%)' for k in range(1, 11)])
             for c in ret_cols:
                 if c in disp.columns:
                     disp[c] = disp[c].apply(fmt_pct)
 
-            exit_cols = [c for c in ['出關報酬(%)', 'T+1收盤(%)', 'T+2收盤(%)', 'T+3收盤(%)'] if c in disp.columns]
+            exit_cols = [c for c in ['出關報酬(%)'] + [f'T+{k}收盤(%)' for k in range(1, 11)]
+                         if c in disp.columns]
             styled_h = (
                 disp.style
                 .map(color_result, subset=['結果'])
@@ -506,7 +504,7 @@ with tab3:
         st.warning('缺少 D1~D10 欄位，請重新執行 update_signals.py 後再使用此功能' if not hist_c.empty else '尚無歷史資料')
     else:
         if '規模' in hist_c.columns:
-            hist_c['規模'] = hist_c['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
+            hist_c['規模'] = hist_c['規模'].apply(lambda v: '大' if '大' in str(v) else ('中' if '中' in str(v) else '小'))
 
         kpi_area = st.container()   # 全寬佔位，稍後填入 KPI
 
@@ -517,9 +515,10 @@ with tab3:
             st.caption('大 >500億\n中 100~500億\n小 <100億')
             threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
                                     format='%d%%', key='tab_c_thr')
-            exit_mode_c = st.radio('出場時間點', ['T+1 開盤', 'T+1 收盤', 'T+2 收盤', 'T+3 收盤'],
-                                   key='tab_c_exit')
-            EXIT_COL_MAP = {'T+1 收盤': 'T+1收盤(%)', 'T+2 收盤': 'T+2收盤(%)', 'T+3 收盤': 'T+3收盤(%)'}
+            exit_mode_c = st.selectbox('出場時間點',
+                                       ['T+1 開盤'] + [f'T+{k} 收盤' for k in range(1, 11)],
+                                       key='tab_c_exit')
+            EXIT_COL_MAP = {f'T+{k} 收盤': f'T+{k}收盤(%)' for k in range(1, 11)}
             if mode_c == '固定日進場':
                 entry_day_c = st.selectbox('進場日', [f'D{n}' for n in range(1, 11)], index=2, key='tab_c_day')
                 entry_n_c = int(entry_day_c[1:])
