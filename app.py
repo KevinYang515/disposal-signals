@@ -88,6 +88,16 @@ def fmt_pct(v):
     except:
         return '-'
 
+def sharpe_pf(s):
+    """(夏普值, 賺賠比) for a return series. Sharpe = mean/std; PF = avg_win/|avg_loss|."""
+    s = pd.Series(s).dropna()
+    if len(s) == 0:
+        return np.nan, np.nan
+    sharpe = round(s.mean() / s.std(), 3) if s.std() > 0 else np.nan
+    wins = s[s > 0]; loss = s[s <= 0]
+    pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
+    return sharpe, pf
+
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
@@ -345,13 +355,17 @@ with tab2:
             settled = len(wins) + len(loss)
             wr      = len(wins) / settled * 100 if settled > 0 else 0.0
             avg_r   = view_h['出關報酬(%)'].dropna().mean()
+            sharpe, pf = sharpe_pf(view_h['出關報酬(%)'])
 
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric('總筆數', f'{len(view_h)} ({settled}已出關)')
+            c1.metric('總筆數', f'{len(view_h)} 筆', delta=f'{settled} 已出關', delta_color='off')
             c2.metric('勝率', f'{wr:.1f}%')
             c3.metric('期望報酬', f'{avg_r:+.2f}%' if pd.notna(avg_r) else '-')
-            c4.metric('獲利筆', len(wins))
-            c5.metric('虧損筆', len(loss))
+            c4.metric('夏普值', f'{sharpe:.3f}' if pd.notna(sharpe) else '-')
+            c5.metric('賺賠比', f'{pf:.3f}' if pd.notna(pf) else '-')
+            d1, d2, d3 = st.columns([1, 1, 3])
+            d1.metric('獲利筆', len(wins))
+            d2.metric('虧損筆', len(loss))
 
         st.divider()
 
@@ -371,11 +385,14 @@ with tab2:
                 if len(es) == 0:
                     continue
                 ew = (es > 0).sum(); el = (es <= 0).sum()
+                sp, pf_et = sharpe_pf(es)
                 et_rows.append({
                     '出場時間點':  elabel,
                     '筆數':        len(es),
                     '勝率(%)':     round(ew / (ew + el) * 100, 1) if (ew + el) > 0 else 0,
                     '均報酬(%)':   round(es.mean(), 2),
+                    '夏普值':      sp,
+                    '賺賠比':      pf_et,
                     '均獲利(%)':   round(es[es > 0].mean(), 2) if ew > 0 else 0,
                     '均虧損(%)':   round(es[es <= 0].mean(), 2) if el > 0 else 0,
                     '最大獲利(%)': round(es.max(), 2),
@@ -393,13 +410,23 @@ with tab2:
                     if v >= 8:  return 'background-color:#26c281;color:black;font-weight:700'
                     if v >= 0:  return 'background-color:#f6c90e;color:black'
                     return 'background-color:#c0392b;color:white'
+                def _et_sp(v):
+                    try:
+                        if v >= 1.0: return 'color:#26c281;font-weight:700'
+                        if v >= 0.5: return 'color:#2ecc71'
+                        if v >= 0:   return 'color:#f6c90e'
+                        return 'color:#e74c3c'
+                    except: return ''
                 st.dataframe(
                     etdf.style
                         .map(_et_wr,  subset=['勝率(%)'])
                         .map(_et_ret, subset=['均報酬(%)'])
+                        .map(_et_sp,  subset=['夏普值'])
                         .format({'勝率(%)': '{:.1f}', '均報酬(%)': '{:+.2f}',
+                                 '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
                                  '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
-                                 '最大獲利(%)': '{:+.2f}', '最大虧損(%)': '{:+.2f}'}),
+                                 '最大獲利(%)': '{:+.2f}', '最大虧損(%)': '{:+.2f}'},
+                                na_rep='-'),
                     use_container_width=True, hide_index=False
                 )
                 st.caption('T+1/T+2/T+3 報酬基準：從買進日收盤 → 各出場時間點收/開盤（T+1 開盤為現行策略）')
@@ -479,6 +506,8 @@ with tab3:
         if '規模' in hist_c.columns:
             hist_c['規模'] = hist_c['規模'].apply(lambda v: '大' if '大' in str(v) else '中')
 
+        kpi_area = st.container()   # 全寬佔位，稍後填入 KPI
+
         ctrl_col, main_col = st.columns([1, 3])
         with ctrl_col:
             mode_c = st.radio('進場模式', ['固定日進場', '範圍進場'])
@@ -546,7 +575,8 @@ with tab3:
             else:
                 eligible['_entry_ret'] = np.nan
 
-        with main_col:
+        # ── 全寬 KPI（填入 kpi_area，視覺上在 columns 上方）──
+        with kpi_area:
             if eligible.empty:
                 st.info('目前條件無符合紀錄（可嘗試調寬門檻或擴大進場日範圍）')
             else:
@@ -557,17 +587,21 @@ with tab3:
                 avg_r_c   = settled_c['_entry_ret'].mean() if len(settled_c) > 0 else np.nan
                 avg_w_c   = wins_c['_entry_ret'].mean() if len(wins_c) > 0 else np.nan
                 avg_l_c   = loss_c['_entry_ret'].mean() if len(loss_c) > 0 else np.nan
+                sharpe_c, pf_c = sharpe_pf(settled_c['_entry_ret'])
 
                 kc1, kc2, kc3, kc4, kc5 = st.columns(5)
-                kc1.metric('符合條件', f'{len(eligible)} 筆')
-                kc2.metric('已出關', f'{len(settled_c)} 筆')
-                kc3.metric('勝率', f'{wr_c:.1f}%')
-                kc4.metric('期望報酬', f'{avg_r_c:+.2f}%' if pd.notna(avg_r_c) else '-')
-                kc5.metric('均獲利/均虧損',
-                           f'{avg_w_c:+.2f}% / {avg_l_c:+.2f}%' if pd.notna(avg_w_c) and pd.notna(avg_l_c) else '-')
-
+                kc1.metric('符合條件', f'{len(eligible)} 筆', delta=f'{len(settled_c)} 已出關', delta_color='off')
+                kc2.metric('勝率', f'{wr_c:.1f}%')
+                kc3.metric('期望報酬', f'{avg_r_c:+.2f}%' if pd.notna(avg_r_c) else '-')
+                kc4.metric('夏普值', f'{sharpe_c:.3f}' if pd.notna(sharpe_c) else '-')
+                kc5.metric('賺賠比', f'{pf_c:.3f}' if pd.notna(pf_c) else '-')
+                kd1, kd2, kd3 = st.columns([1, 1, 3])
+                kd1.metric('均獲利', f'{avg_w_c:+.2f}%' if pd.notna(avg_w_c) else '-')
+                kd2.metric('均虧損', f'{avg_l_c:+.2f}%' if pd.notna(avg_l_c) else '-')
                 st.divider()
 
+        with main_col:
+            if not eligible.empty:
                 # ── 各天進場對比表 ──
                 st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，出場：{exit_mode_c}，同規模篩選）')
                 cmp_rows_c = []
@@ -594,9 +628,12 @@ with tab3:
                         s    = pd.Series(adj).dropna()
                     if len(s) < 3:
                         continue
+                    sp_n, pf_n = sharpe_pf(s)
                     cmp_rows_c.append({'進場日': f'D{n}', '樣本N': len(s),
                                        '勝率(%)': round((s > 0).mean() * 100, 1),
                                        '期望報酬(%)': round(s.mean(), 2),
+                                       '夏普值': sp_n,
+                                       '賺賠比': pf_n,
                                        '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
                                        '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0})
                 if cmp_rows_c:
@@ -614,12 +651,22 @@ with tab3:
                         if v >= 3:  return 'background-color:#f6c90e;color:black'
                         return 'background-color:#c0392b;color:white'
 
+                    def _sp_clr(v):
+                        try:
+                            if v >= 1.0: return 'color:#26c281;font-weight:700'
+                            if v >= 0.5: return 'color:#2ecc71'
+                            if v >= 0:   return 'color:#f6c90e'
+                            return 'color:#e74c3c'
+                        except: return ''
                     st.dataframe(
                         cdf.style
-                            .map(_wr_clr, subset=['勝率(%)'])
+                            .map(_wr_clr,  subset=['勝率(%)'])
                             .map(_ret_clr, subset=['期望報酬(%)'])
+                            .map(_sp_clr,  subset=['夏普值'])
                             .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
-                                     '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'}),
+                                     '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
+                                     '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'},
+                                    na_rep='-'),
                         use_container_width=True
                     )
 
@@ -729,13 +776,17 @@ with tab3:
                         hit_n   = len(hit_days)
                         miss_n  = len(miss_rets)
 
-                        tp1, tp2, tp3, tp4 = st.columns(4)
+                        all_tp = hit_rets + [v for v in miss_rets if not np.isnan(v)]
+                        sp_tp, pf_tp = sharpe_pf(all_tp)
+
+                        tp1, tp2, tp3, tp4, tp5, tp6 = st.columns(6)
                         tp1.metric('觸發停利', f'{hit_n} 筆 ({hit_n/total_n*100:.0f}%)')
                         tp2.metric('觸發者均報酬', f'{np.mean(hit_rets):+.2f}%' if hit_rets else '-')
                         tp3.metric('未觸發(持至D5)均', f'{np.nanmean(miss_rets):+.2f}%' if miss_rets else '-')
-                        all_tp = hit_rets + [v for v in miss_rets if not np.isnan(v)]
                         tp4.metric('整體均報酬', f'{np.mean(all_tp):+.2f}%' if all_tp else '-',
                                    delta='vs T+1開盤直出 0%')
+                        tp5.metric('夏普值', f'{sp_tp:.3f}' if pd.notna(sp_tp) else '-')
+                        tp6.metric('賺賠比', f'{pf_tp:.3f}' if pd.notna(pf_tp) else '-')
 
                         if hit_days:
                             from collections import Counter
