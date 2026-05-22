@@ -389,7 +389,7 @@ with tab2:
                     '出場時間點':  elabel,
                     '筆數':        len(es),
                     '勝率(%)':     round(ew / (ew + el) * 100, 1) if (ew + el) > 0 else 0,
-                    '均報酬(%)':   round(es.mean(), 2),
+                    '期望報酬(%)':  round(es.mean(), 2),
                     '夏普值':      sp,
                     '賺賠比':      pf_et,
                     '均獲利(%)':   round(es[es > 0].mean(), 2) if ew > 0 else 0,
@@ -419,9 +419,9 @@ with tab2:
                 st.dataframe(
                     etdf.style
                         .map(_et_wr,  subset=['勝率(%)'])
-                        .map(_et_ret, subset=['均報酬(%)'])
+                        .map(_et_ret, subset=['期望報酬(%)'])
                         .map(_et_sp,  subset=['夏普值'])
-                        .format({'勝率(%)': '{:.1f}', '均報酬(%)': '{:+.2f}',
+                        .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
                                  '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
                                  '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
                                  '最大獲利(%)': '{:+.2f}', '最大虧損(%)': '{:+.2f}'},
@@ -692,7 +692,7 @@ with tab3:
                             '出場時間點': 'T+1 開盤 ★',
                             '筆數': len(s_e),
                             '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
-                            '均報酬(%)': round(s_e.mean(), 2),
+                            '期望報酬(%)': round(s_e.mean(), 2),
                             '夏普值': sp_e, '賺賠比': pf_e,
                             '均獲利(%)': round(s_e[s_e > 0].mean(), 2) if ew_e > 0 else 0,
                             '均虧損(%)': round(s_e[s_e <= 0].mean(), 2) if el_e > 0 else 0,
@@ -717,7 +717,7 @@ with tab3:
                         '出場時間點': f'T+{k} 收盤',
                         '筆數': len(adj_k),
                         '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
-                        '均報酬(%)': round(adj_k.mean(), 2),
+                        '期望報酬(%)': round(adj_k.mean(), 2),
                         '夏普值': sp_e, '賺賠比': pf_e,
                         '均獲利(%)': round(adj_k[adj_k > 0].mean(), 2) if ew_e > 0 else 0,
                         '均虧損(%)': round(adj_k[adj_k <= 0].mean(), 2) if el_e > 0 else 0,
@@ -728,9 +728,9 @@ with tab3:
                     st.dataframe(
                         ecdf.style
                             .map(_wr_clr,  subset=['勝率(%)'])
-                            .map(_ret_clr, subset=['均報酬(%)'])
+                            .map(_ret_clr, subset=['期望報酬(%)'])
                             .map(_sp_clr,  subset=['夏普值'])
-                            .format({'勝率(%)': '{:.1f}', '均報酬(%)': '{:+.2f}',
+                            .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
                                      '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
                                      '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'},
                                     na_rep='-'),
@@ -849,9 +849,9 @@ with tab3:
 
                         tp1, tp2, tp3, tp4, tp5, tp6 = st.columns(6)
                         tp1.metric('觸發停利', f'{hit_n} 筆 ({hit_n/total_n*100:.0f}%)')
-                        tp2.metric('觸發者均報酬', f'{np.mean(hit_rets):+.2f}%' if hit_rets else '-')
+                        tp2.metric('觸發者期望報酬', f'{np.mean(hit_rets):+.2f}%' if hit_rets else '-')
                         tp3.metric('未觸發(持至D5)均', f'{np.nanmean(miss_rets):+.2f}%' if miss_rets else '-')
-                        tp4.metric('整體均報酬', f'{np.mean(all_tp):+.2f}%' if all_tp else '-',
+                        tp4.metric('整體期望報酬', f'{np.mean(all_tp):+.2f}%' if all_tp else '-',
                                    delta='vs T+1開盤直出 0%')
                         tp5.metric('夏普值', f'{sp_tp:.3f}' if pd.notna(sp_tp) else '-')
                         tp6.metric('賺賠比', f'{pf_tp:.3f}' if pd.notna(pf_tp) else '-')
