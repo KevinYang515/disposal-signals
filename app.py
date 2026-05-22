@@ -355,6 +355,55 @@ with tab2:
 
         st.divider()
 
+        # ── 出場時間點比較 ──
+        with st.expander('⏰ 出場時間點比較（依目前篩選條件）'):
+            exit_timing_info = [
+                ('出關報酬(%)',  'T+1 開盤（現行策略）'),
+                ('T+1收盤(%)',  'T+1 收盤'),
+                ('T+2收盤(%)',  'T+2 收盤'),
+                ('T+3收盤(%)',  'T+3 收盤'),
+            ]
+            et_rows = []
+            for ecol, elabel in exit_timing_info:
+                if ecol not in view_h.columns:
+                    continue
+                es = view_h[ecol].dropna()
+                if len(es) == 0:
+                    continue
+                ew = (es > 0).sum(); el = (es <= 0).sum()
+                et_rows.append({
+                    '出場時間點':  elabel,
+                    '筆數':        len(es),
+                    '勝率(%)':     round(ew / (ew + el) * 100, 1) if (ew + el) > 0 else 0,
+                    '均報酬(%)':   round(es.mean(), 2),
+                    '均獲利(%)':   round(es[es > 0].mean(), 2) if ew > 0 else 0,
+                    '均虧損(%)':   round(es[es <= 0].mean(), 2) if el > 0 else 0,
+                    '最大獲利(%)': round(es.max(), 2),
+                    '最大虧損(%)': round(es.min(), 2),
+                })
+            if et_rows:
+                etdf = pd.DataFrame(et_rows).set_index('出場時間點')
+                def _et_wr(v):
+                    if v >= 85: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 75: return 'background-color:#26c281;color:black;font-weight:700'
+                    if v >= 65: return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+                def _et_ret(v):
+                    if v >= 15: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 8:  return 'background-color:#26c281;color:black;font-weight:700'
+                    if v >= 0:  return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+                st.dataframe(
+                    etdf.style
+                        .map(_et_wr,  subset=['勝率(%)'])
+                        .map(_et_ret, subset=['均報酬(%)'])
+                        .format({'勝率(%)': '{:.1f}', '均報酬(%)': '{:+.2f}',
+                                 '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
+                                 '最大獲利(%)': '{:+.2f}', '最大虧損(%)': '{:+.2f}'}),
+                    use_container_width=True, hide_index=False
+                )
+                st.caption('T+1/T+2/T+3 報酬基準：從買進日收盤 → 各出場時間點收/開盤（T+1 開盤為現行策略）')
+
         # ── 比較組（D3篩選效果）──
         cmp_stats = meta.get('cmp_stats', [])
         if cmp_stats:
@@ -436,6 +485,9 @@ with tab3:
             sel_cap_c = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab_c_cap')
             threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
                                     format='%d%%', key='tab_c_thr')
+            exit_mode_c = st.radio('出場時間點', ['T+1 開盤', 'T+1 收盤', 'T+2 收盤', 'T+3 收盤'],
+                                   key='tab_c_exit')
+            EXIT_COL_MAP = {'T+1 收盤': 'T+1收盤(%)', 'T+2 收盤': 'T+2收盤(%)', 'T+3 收盤': 'T+3收盤(%)'}
             if mode_c == '固定日進場':
                 entry_day_c = st.selectbox('進場日', [f'D{n}' for n in range(1, 11)], index=2, key='tab_c_day')
                 entry_n_c = int(entry_day_c[1:])
@@ -476,6 +528,24 @@ with tab3:
                     eligible['_entry_ret'] = np.where(has_entry_mask, ret_mat[ri, first_idx], np.nan)
                     eligible = eligible[eligible['_entry_n'].notna()].copy()
 
+        # ── 出場時間點調整 ──
+        # T+k收盤(%) = T+k_close / P_orig_entry - 1（原始策略進場日為基準）
+        # 自訂進場 D{n}: T+k_close / P_Dn - 1
+        #   = (1 + T+k收/100) * (1 + 買進時累積/100) / (1 + D{n}累積/100) - 1
+        if not eligible.empty and exit_mode_c != 'T+1 開盤':
+            ecol = EXIT_COL_MAP[exit_mode_c]
+            if ecol in eligible.columns and '_entry_cum' in eligible.columns and '買進時累積(%)' in eligible.columns:
+                exit_factor  = 1 + eligible[ecol] / 100
+                orig_factor  = 1 + eligible['買進時累積(%)'] / 100
+                entry_factor = 1 + eligible['_entry_cum'] / 100
+                eligible['_entry_ret'] = np.where(
+                    entry_factor > 0,
+                    (exit_factor * orig_factor / entry_factor - 1) * 100,
+                    np.nan
+                )
+            else:
+                eligible['_entry_ret'] = np.nan
+
         with main_col:
             if eligible.empty:
                 st.info('目前條件無符合紀錄（可嘗試調寬門檻或擴大進場日範圍）')
@@ -499,13 +569,29 @@ with tab3:
                 st.divider()
 
                 # ── 各天進場對比表 ──
-                st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，同規模篩選）')
+                st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，出場：{exit_mode_c}，同規模篩選）')
                 cmp_rows_c = []
                 for n in range(1, 11):
-                    cc, rc = f'D{n}累積(%)', f'D{n}報酬(%)'
-                    if cc not in base_c.columns or rc not in base_c.columns:
+                    cc = f'D{n}累積(%)'
+                    if cc not in base_c.columns:
                         continue
-                    s = base_c[base_c[cc] < threshold_c][rc].dropna()
+                    sub_n = base_c[base_c[cc] < threshold_c].copy()
+                    if len(sub_n) < 3:
+                        continue
+                    if exit_mode_c == 'T+1 開盤':
+                        rc = f'D{n}報酬(%)'
+                        if rc not in sub_n.columns:
+                            continue
+                        s = sub_n[rc].dropna()
+                    else:
+                        ecol_n = EXIT_COL_MAP[exit_mode_c]
+                        if ecol_n not in sub_n.columns or '買進時累積(%)' not in sub_n.columns:
+                            continue
+                        ef   = 1 + sub_n[ecol_n] / 100
+                        orig = 1 + sub_n['買進時累積(%)'] / 100
+                        nf   = 1 + sub_n[cc] / 100
+                        adj  = np.where(nf > 0, (ef * orig / nf - 1) * 100, np.nan)
+                        s    = pd.Series(adj).dropna()
                     if len(s) < 3:
                         continue
                     cmp_rows_c.append({'進場日': f'D{n}', '樣本N': len(s),
@@ -571,6 +657,95 @@ with tab3:
                         .map(_res_clr_c, subset=['結果']),
                     use_container_width=True, height=420
                 )
+
+                st.divider()
+
+                # ── 出關後停利分析 ──────────────────────────────────────────
+                with st.expander('📈 出關後停利分析（從 T+1 開盤持有）'):
+                    post_cols_available = [f'出關後D{n}(%)' for n in range(1, 6)
+                                           if f'出關後D{n}(%)' in eligible.columns]
+                    if not post_cols_available:
+                        st.info('缺少出關後資料，請重新執行 update_signals.py')
+                    else:
+                        post_settled = eligible[eligible['出關報酬(%)'].notna()].copy()
+
+                        # ── 出關後各天走勢統計 ──
+                        st.markdown('**出關後各天收盤走勢**（基準：T+1 開盤 = 0%）')
+                        pr_rows = []
+                        for n in range(1, 6):
+                            pc = f'出關後D{n}(%)'
+                            if pc not in post_settled.columns:
+                                continue
+                            s = post_settled[pc].dropna()
+                            if len(s) == 0:
+                                continue
+                            pr_rows.append({
+                                '出關後': f'D{n} 收盤',
+                                '樣本N':    len(s),
+                                '均漲跌(%)': round(s.mean(), 2),
+                                '中位數(%)': round(s.median(), 2),
+                                '上漲率(%)': round((s > 0).mean() * 100, 1),
+                                '最大漲幅(%)': round(s.max(), 2),
+                                '最大跌幅(%)': round(s.min(), 2),
+                            })
+                        if pr_rows:
+                            prdf = pd.DataFrame(pr_rows).set_index('出關後')
+                            def _pr_ret(v):
+                                if v >= 5:  return 'color:#26c281;font-weight:700'
+                                if v >= 0:  return 'color:#2ecc71'
+                                if v >= -3: return 'color:#e67e22'
+                                return 'color:#e74c3c;font-weight:700'
+                            st.dataframe(
+                                prdf.style
+                                    .map(_pr_ret, subset=['均漲跌(%)', '中位數(%)'])
+                                    .format({'均漲跌(%)': '{:+.2f}', '中位數(%)': '{:+.2f}',
+                                             '上漲率(%)': '{:.1f}',
+                                             '最大漲幅(%)': '{:+.2f}', '最大跌幅(%)': '{:+.2f}'}),
+                                use_container_width=True
+                            )
+
+                        st.divider()
+
+                        # ── 停利模擬 ──
+                        st.markdown('**停利模擬**（T+1 開盤後，收盤漲達目標則出，否則持至 D5 收盤）')
+                        tp_target = st.slider('停利目標（從 T+1 開盤）', 1, 30, 10, 1,
+                                              format='%d%%', key='tab_c_tp')
+
+                        hit_days, hit_rets, miss_rets = [], [], []
+                        for _, r in post_settled.iterrows():
+                            hit = False
+                            for n in range(1, 6):
+                                v = r.get(f'出關後D{n}(%)', np.nan)
+                                if pd.notna(v) and v >= tp_target:
+                                    hit_days.append(n)
+                                    hit_rets.append(v)
+                                    hit = True
+                                    break
+                            if not hit:
+                                v5 = r.get('出關後D5(%)', np.nan)
+                                miss_rets.append(v5 if pd.notna(v5) else np.nan)
+
+                        total_n = len(post_settled)
+                        hit_n   = len(hit_days)
+                        miss_n  = len(miss_rets)
+
+                        tp1, tp2, tp3, tp4 = st.columns(4)
+                        tp1.metric('觸發停利', f'{hit_n} 筆 ({hit_n/total_n*100:.0f}%)')
+                        tp2.metric('觸發者均報酬', f'{np.mean(hit_rets):+.2f}%' if hit_rets else '-')
+                        tp3.metric('未觸發(持至D5)均', f'{np.nanmean(miss_rets):+.2f}%' if miss_rets else '-')
+                        all_tp = hit_rets + [v for v in miss_rets if not np.isnan(v)]
+                        tp4.metric('整體均報酬', f'{np.mean(all_tp):+.2f}%' if all_tp else '-',
+                                   delta='vs T+1開盤直出 0%')
+
+                        if hit_days:
+                            from collections import Counter
+                            day_cnt = Counter(hit_days)
+                            day_df = pd.DataFrame([
+                                {'出關後第幾天觸發': f'D{d}', '觸發筆數': day_cnt[d]}
+                                for d in sorted(day_cnt)
+                            ])
+                            st.caption('停利觸發天分佈')
+                            st.dataframe(day_df, hide_index=True, use_container_width=False)
 
 # ════════════════════════════════════════════════════════
 # TAB 4：進場網格回測

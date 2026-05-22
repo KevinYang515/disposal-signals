@@ -347,6 +347,8 @@ def build_history(df, price, open_p, whale_dfs):
         for n in range(1, 11):
             out[f'_d{n}_cum'] = np.nan
             out[f'_d{n}_ret'] = np.nan
+        for n in range(1, 6):
+            out[f'_post_d{n}'] = np.nan
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -399,6 +401,14 @@ def build_history(df, price, open_p, whale_dfs):
                     if pd.notna(p) and p > 0:
                         out[key] = round((p / p_ref - 1) * 100, 2)
 
+        # 出關後 D1~D5 收盤（基準：T+1 開盤）
+        if has_exit:
+            for n in range(1, 6):
+                if pos + 9 + n < len(price):
+                    p = price[sid].iloc[pos + 9 + n]
+                    if pd.notna(p) and p > 0:
+                        out[f'_post_d{n}'] = round((p / t1_open - 1) * 100, 2)
+
         return pd.Series(out)
 
     stats = pool.apply(compute_row, axis=1)
@@ -434,6 +444,8 @@ def build_history(df, price, open_p, whale_dfs):
         # D1~D10 各天進場累積報酬與出關報酬（自訂策略回測頁使用）
         **{f'D{n}累積(%)': pool[f'_d{n}_cum'] for n in range(1, 11)},
         **{f'D{n}報酬(%)': pool[f'_d{n}_ret'] for n in range(1, 11)},
+        # 出關後 D1~D5 收盤報酬（基準：T+1 開盤）
+        **{f'出關後D{n}(%)': pool[f'_post_d{n}'] for n in range(1, 6)},
     })
     hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
 
