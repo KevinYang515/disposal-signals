@@ -190,7 +190,7 @@ def build_signals(df, price, open_p, whale_dfs):
     today = pd.Timestamp(datetime.today().date())
     cutoff = today - pd.Timedelta(days=20)
 
-    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
+    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
                 (df['處置類型'] == '20分鐘') &
                 (df['處置起始日'] >= cutoff)].copy()
 
@@ -209,7 +209,7 @@ def build_signals(df, price, open_p, whale_dfs):
         d = {
             '代號':   sid,
             '名稱':   row['股票名稱'],
-            '規模':   '大' if '大型' in row['市值規模'] else '中',
+            '規模':   '大' if '大型' in row['市值規模'] else ('中' if '中型' in row['市值規模'] else '小'),
             '處置原因': row.get('處置原因', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
@@ -282,7 +282,7 @@ def build_signals(df, price, open_p, whale_dfs):
 def build_backtest_grid(df, price, open_p):
     idx = price.index
 
-    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
+    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
               (df['處置類型'] == '20分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
 
@@ -335,7 +335,7 @@ def build_backtest_grid(df, price, open_p):
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
 def build_history(df, price, open_p, whale_dfs):
     idx = price.index
-    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
+    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
               (df['處置類型'] == '20分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
 
@@ -426,7 +426,7 @@ def build_history(df, price, open_p, whale_dfs):
         '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
         '代號':          pool['股票代號'],
         '名稱':          pool['股票名稱'],
-        '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else '中'),
+        '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else ('中' if '中型' in str(v) else '小')),
         'Dn組別':        pool['Dn組別'],
         '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
         '大戶(%)':       pool.apply(lambda r: whale_delta(whale_dfs, r['股票代號'], r['處置起始日'], price), axis=1),

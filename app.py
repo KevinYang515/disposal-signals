@@ -142,7 +142,8 @@ with tab1:
             default=['✅ 主力訊號', '⚠️ 漲多但大戶減碼', '🟡 觀察中'],
         )
     with col_f2:
-        filter_cap = st.multiselect('規模', options=['大', '中'], default=['大', '中'], key='tab1_cap')
+        filter_cap = st.multiselect('規模', options=['大', '中', '小'], default=['大', '中'], key='tab1_cap')
+        st.caption('大 >500億 ｜ 中 100~500億 ｜ 小 <100億')
 
     view = sig.copy()
     if filter_grade:
@@ -336,7 +337,8 @@ with tab2:
                 default=['Dn < -5%'],
             )
         with col_f3:
-            sel_cap = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab2_cap')
+            sel_cap = st.multiselect('規模', ['大', '中', '小'], default=['大', '中'], key='tab2_cap')
+            st.caption('大 >500億 ｜ 中 100~500億 ｜ 小 <100億')
 
         view_h = hist.copy()
         if sel_year != '全部':
@@ -511,7 +513,8 @@ with tab3:
         ctrl_col, main_col = st.columns([1, 3])
         with ctrl_col:
             mode_c = st.radio('進場模式', ['固定日進場', '範圍進場'])
-            sel_cap_c = st.multiselect('規模', ['大', '中'], default=['大', '中'], key='tab_c_cap')
+            sel_cap_c = st.multiselect('規模', ['大', '中', '小'], default=['大', '中'], key='tab_c_cap')
+            st.caption('大 >500億\n中 100~500億\n小 <100億')
             threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
                                     format='%d%%', key='tab_c_thr')
             exit_mode_c = st.radio('出場時間點', ['T+1 開盤', 'T+1 收盤', 'T+2 收盤', 'T+3 收盤'],
@@ -894,6 +897,16 @@ with tab5:
 
     with col2:
         st.markdown("""
+### 市值規模定義
+
+| 規模 | 市值門檻 | 說明 |
+|------|---------|------|
+| 大型股 | > 500 億元 | 流動性高，訊號穩定性最佳 |
+| 中型股 | 100 ~ 500 億元 | 流動性適中，佔歷史樣本最多 |
+| 小型股 | < 100 億元 | 流動性較低，橡皮筋效應可能更強但雜訊也更多，建議謹慎使用 |
+
+> 預設篩選「大+中」為策略驗證主體；小型股可在篩選器中手動加入觀察。
+
 ### 回測統計（漲多 × 大+中 × 20分）
 
 | 進場條件 | 勝率 | 期望報酬 |
