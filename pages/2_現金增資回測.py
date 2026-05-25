@@ -46,15 +46,30 @@ def load_all():
     year_df = pd.read_csv(f"{DATA_DIR}/cash_increase_year.csv")
     with open(f"{DATA_DIR}/cash_increase_meta.json") as f:
         meta = json.load(f)
-    # 把 market 欄位 join 進 window 資料，讓市場篩選能套到 CAR 曲線
-    mkt_map = events.set_index("event_id")["market"] if "event_id" in events.columns else \
-              events.set_index(events["ticker"].astype(str) + "_" + events["ann_date"].astype(str))["market"]
-    for win_df in [win_ann, win_exr]:
-        if "market" not in win_df.columns and "event_id" in win_df.columns:
-            win_df["market"] = win_df["event_id"].map(
-                hor_ann.set_index("event_id")["market"] if "event_id" in hor_ann.columns
-                else hor_ann.set_index(hor_ann["ticker"].astype(str) + "_" + hor_ann["ann_date"].astype(str))["market"]
-            )
+    # 計算市值代理並分級（大>500億 / 中100~500億 / 小<100億）
+    def add_size_band(df):
+        mktcap = df["ref_price"] * df["shares"] / (df["sub_ratio"] / 100) / 1e8
+        df = df.copy()
+        df["mktcap_b"] = mktcap
+        df["size_band"] = pd.cut(
+            mktcap,
+            bins=[0, 100, 500, float("inf")],
+            labels=["小型 <100億", "中型 100~500億", "大型 >500億"],
+        )
+        return df
+    hor_ann = add_size_band(hor_ann)
+    hor_exr = add_size_band(hor_exr)
+
+    # 把 event_id → size_band / market 對應表 join 進 window 資料
+    if "event_id" in hor_ann.columns:
+        id_map = hor_ann.set_index("event_id")[["market", "size_band"]]
+        for win_df in [win_ann, win_exr]:
+            if "event_id" in win_df.columns:
+                extra = id_map.reindex(win_df["event_id"].values)
+                extra.index = win_df.index
+                for col in ["market", "size_band"]:
+                    if col not in win_df.columns:
+                        win_df[col] = extra[col].values
     return events, win_ann, win_exr, avg_ann, avg_exr, hor_ann, hor_exr, summary, year_df, meta
 
 try:
@@ -72,27 +87,27 @@ with st.sidebar:
     default_yr_start = min(2024, yr_max)
     sel_years = st.slider("年份範圍", yr_min, yr_max, (default_yr_start, yr_max))
 
-    mkt_label_map = {"全部": "全部", "sii": "上市 sii（大中型股）",
-                     "otc": "上櫃 otc", "rotc": "興櫃 rotc（小型股）"}
-    raw_mkts = sorted(events["market"].dropna().unique().tolist())
-    mkt_opts_raw  = ["全部"] + raw_mkts
-    mkt_opts_disp = [mkt_label_map.get(m, m) for m in mkt_opts_raw]
-    default_mkt_idx = mkt_opts_raw.index("sii") if "sii" in mkt_opts_raw else 0
-    sel_mkt_disp = st.selectbox("市場別", mkt_opts_disp, index=default_mkt_idx)
-    sel_mkt = mkt_opts_raw[mkt_opts_disp.index(sel_mkt_disp)]
-
-    st.caption("💡 上市(sii) 為大中型股代理，統計最穩健；"
-               "2024+ × 上市 約 120 筆，已足夠參考。")
+    SIZE_OPTS = ["全部", "大型 >500億", "中型 100~500億", "小型 <100億"]
+    sel_size = st.selectbox("市值規模", SIZE_OPTS, index=1,
+                            help="以 認購前日收盤 × 現有股數 估算市值。\n"
+                                 "2024+ 大型: ~40筆  中型: ~177筆  小型: ~72筆")
 
     disc_vals = hor_ann["discount_pct"].dropna()
     d_lo = float(disc_vals.quantile(0.03))
     d_hi = float(disc_vals.quantile(0.97))
     sel_disc = st.slider("認購折扣範圍 (vs 前日收盤)", -1.0, 0.5, (d_lo, d_hi), step=0.01)
 
+    with st.expander("進階：市場別篩選"):
+        mkt_opts = ["全部", "sii（上市）", "otc（上櫃）", "rotc（興櫃）"]
+        sel_mkt_disp = st.selectbox("市場別", mkt_opts, index=0)
+        sel_mkt = sel_mkt_disp.split("（")[0] if sel_mkt_disp != "全部" else "全部"
+
 
 def apply_filters(df, date_col="ann_date"):
     m = (df[date_col].dt.year >= sel_years[0]) & (df[date_col].dt.year <= sel_years[1])
-    if sel_mkt != "全部":
+    if sel_size != "全部" and "size_band" in df.columns:
+        m &= df["size_band"] == sel_size
+    if sel_mkt != "全部" and "market" in df.columns:
         m &= df["market"] == sel_mkt
     if "discount_pct" in df.columns:
         m &= (df["discount_pct"].fillna(-999) >= sel_disc[0]) & \
@@ -103,9 +118,13 @@ def apply_filters(df, date_col="ann_date"):
 h_ann = apply_filters(hor_ann)
 h_exr = apply_filters(hor_exr)
 ev_f  = apply_filters(events)
+
+
 def apply_window_filter(win_df):
     m = (win_df["ann_date"].dt.year >= sel_years[0]) & \
         (win_df["ann_date"].dt.year <= sel_years[1])
+    if sel_size != "全部" and "size_band" in win_df.columns:
+        m &= win_df["size_band"] == sel_size
     if sel_mkt != "全部" and "market" in win_df.columns:
         m &= win_df["market"] == sel_mkt
     return win_df[m]
