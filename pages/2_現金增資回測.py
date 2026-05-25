@@ -84,7 +84,7 @@ with st.sidebar:
     st.header("篩選條件")
     yr_min = int(events["ann_date"].dt.year.min())
     yr_max = int(events["ann_date"].dt.year.max())
-    default_yr_start = min(2024, yr_max)
+    default_yr_start = min(2022, yr_max)
     sel_years = st.slider("年份範圍", yr_min, yr_max, (default_yr_start, yr_max))
 
     SIZE_OPTS = ["全部", "大型 >500億", "中型 100~500億", "小型 <100億"]
