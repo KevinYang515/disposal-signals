@@ -1,8 +1,14 @@
 {
-  "updated_at": "2026-05-25T15:28:17.507996",
-  "n_events": 682,
-  "date_start": "2008-01-10",
-  "date_end": "2026-05-06",
-  "market": "OTC (上櫃)",
-  "event_date_type": "除權日 (ex-rights date)"
+  "updated_at": "2026-05-25T15:40:58.885951",
+  "n_events": 2352,
+  "date_start": "2006-01-02",
+  "date_end": "2026-05-22",
+  "markets": {
+    "sii": 1116,
+    "otc": 987,
+    "rotc": 249
+  },
+  "note_ann": "T=0=公告日（交易所認購條件公告，距除權日約7-10天）",
+  "note_exr": "T=0=除權交易日（機械性稀釋發生當天）",
+  "note_board_mtg": "董事會決議日(新聞日)未包含，通常比公告日早2-3個月"
 }

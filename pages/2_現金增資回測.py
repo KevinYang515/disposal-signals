@@ -1,7 +1,7 @@
 """
-現金增資事件研究 — 除權日前後股價表現
-資料來源: FinLab OTC dividend 表 + price:收盤價
-預計算 CSV 由 stock/cash_increase_compute.py 產生
+現金增資事件研究 v2
+- 公告日 (T=0=交易所認購條件公告) 和 除權日 (T=0=除權) 兩種錨點
+- 資料: FinLab dividend_announcement，上市+上櫃+興櫃 2006-2026
 """
 
 import streamlit as st
@@ -10,181 +10,209 @@ import numpy as np
 import json, os
 import altair as alt
 
-st.set_page_config(
-    page_title="現金增資回測",
-    page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="現金增資回測", page_icon="💰", layout="wide",
+                   initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-.pos { color: #26c281; font-weight: 700; }
-.neg { color: #e74c3c; font-weight: 700; }
+.badge-ann { background:#2c3e50; color:#f6c90e; padding:2px 8px;
+             border-radius:4px; font-size:0.8em; font-weight:700; }
+.badge-exr { background:#2c3e50; color:#4a90d9; padding:2px 8px;
+             border-radius:4px; font-size:0.8em; font-weight:700; }
 </style>
 """, unsafe_allow_html=True)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
-FINE_DAYS = list(range(-10, 11))          # -10 ~ +10
-SUMMARY_HORIZONS = [-20, 5, 10, 20, 30, 60]
+FINE_DAYS        = list(range(-10, 11))
+SUMMARY_HORIZONS = [-20, -10, 1, 5, 10, 20, 30, 60]
 
-# ── Load ──────────────────────────────────────────────────────────────────
+
 @st.cache_data(ttl=3600)
 def load_all():
-    avg_win  = pd.read_csv(f"{DATA_DIR}/cash_increase_avg_window.csv")
-    horizon  = pd.read_csv(f"{DATA_DIR}/cash_increase_horizon.csv",
-                           parse_dates=["ex_date"])
-    year_df  = pd.read_csv(f"{DATA_DIR}/cash_increase_year.csv")
-    win_full = pd.read_csv(f"{DATA_DIR}/cash_increase_window.csv",
-                           parse_dates=["ex_date"])
+    events  = pd.read_csv(f"{DATA_DIR}/cash_increase_events.csv",
+                          parse_dates=["ann_date","exr_date"])
+    win_ann = pd.read_csv(f"{DATA_DIR}/cash_increase_window_ann.csv",
+                          parse_dates=["ann_date"])
+    win_exr = pd.read_csv(f"{DATA_DIR}/cash_increase_window_exr.csv",
+                          parse_dates=["ann_date"])
+    avg_ann = pd.read_csv(f"{DATA_DIR}/cash_increase_avg_ann.csv")
+    avg_exr = pd.read_csv(f"{DATA_DIR}/cash_increase_avg_exr.csv")
+    hor_ann = pd.read_csv(f"{DATA_DIR}/cash_increase_horizon_ann.csv",
+                          parse_dates=["ann_date","exr_date"])
+    hor_exr = pd.read_csv(f"{DATA_DIR}/cash_increase_horizon_exr.csv",
+                          parse_dates=["ann_date","exr_date"])
+    summary = pd.read_csv(f"{DATA_DIR}/cash_increase_summary.csv")
+    year_df = pd.read_csv(f"{DATA_DIR}/cash_increase_year.csv")
     with open(f"{DATA_DIR}/cash_increase_meta.json") as f:
         meta = json.load(f)
-    return avg_win, horizon, year_df, win_full, meta
+    return events, win_ann, win_exr, avg_ann, avg_exr, hor_ann, hor_exr, summary, year_df, meta
 
 try:
-    avg_win, horizon, year_df, win_full, meta = load_all()
+    events, win_ann, win_exr, avg_ann, avg_exr, hor_ann, hor_exr, summary, year_df, meta = load_all()
 except FileNotFoundError:
     st.error("找不到預計算資料，請先執行 `python3 stock/cash_increase_compute.py`")
     st.stop()
 
-# ── Sidebar filter ────────────────────────────────────────────────────────
+
+# ── Sidebar ───────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("篩選條件")
-    yr_min = int(horizon["ex_date"].dt.year.min())
-    yr_max = int(horizon["ex_date"].dt.year.max())
+    yr_min = int(events["ann_date"].dt.year.min())
+    yr_max = int(events["ann_date"].dt.year.max())
     sel_years = st.slider("年份範圍", yr_min, yr_max, (yr_min, yr_max))
 
-    disc_vals = horizon["discount_pct"].dropna()
-    disc_lo = float(disc_vals.quantile(0.05))
-    disc_hi = float(disc_vals.quantile(0.95))
-    sel_disc = st.slider(
-        "認購折扣範圍 (vs 前日收盤)",
-        min_value=-1.0, max_value=0.3,
-        value=(disc_lo, disc_hi),
-        step=0.01,
-        format="%.2f",
-        help="負值=認購價低於市價"
-    )
+    mkt_opts = ["全部"] + sorted(events["market"].dropna().unique().tolist())
+    sel_mkt  = st.selectbox("市場別", mkt_opts)
 
-# Apply filters
-mask = (
-    (horizon["ex_date"].dt.year >= sel_years[0]) &
-    (horizon["ex_date"].dt.year <= sel_years[1]) &
-    (horizon["discount_pct"].fillna(-999) >= sel_disc[0]) &
-    (horizon["discount_pct"].fillna(999)  <= sel_disc[1])
-)
-h = horizon[mask].copy()
-n_ev = len(h)
+    disc_vals = hor_ann["discount_pct"].dropna()
+    d_lo = float(disc_vals.quantile(0.03))
+    d_hi = float(disc_vals.quantile(0.97))
+    sel_disc = st.slider("認購折扣範圍 (vs 前日收盤)", -1.0, 0.5, (d_lo, d_hi), step=0.01)
 
-win_mask = (
-    (win_full["ex_date"].dt.year >= sel_years[0]) &
-    (win_full["ex_date"].dt.year <= sel_years[1])
-)
-win = win_full[win_mask].copy()
+
+def apply_filters(df, date_col="ann_date"):
+    m = (df[date_col].dt.year >= sel_years[0]) & (df[date_col].dt.year <= sel_years[1])
+    if sel_mkt != "全部":
+        m &= df["market"] == sel_mkt
+    if "discount_pct" in df.columns:
+        m &= (df["discount_pct"].fillna(-999) >= sel_disc[0]) & \
+             (df["discount_pct"].fillna(999)  <= sel_disc[1])
+    return df[m].copy()
+
+
+h_ann = apply_filters(hor_ann)
+h_exr = apply_filters(hor_exr)
+ev_f  = apply_filters(events)
+wa_f  = win_ann[(win_ann["ann_date"].dt.year >= sel_years[0]) &
+                (win_ann["ann_date"].dt.year <= sel_years[1])]
+we_f  = win_exr[(win_exr["ann_date"].dt.year >= sel_years[0]) &
+                (win_exr["ann_date"].dt.year <= sel_years[1])]
+
 
 # ── Header ────────────────────────────────────────────────────────────────
 st.title("💰 現金增資回測分析")
 st.caption(
-    f"資料: FinLab 上櫃除權日  ·  {meta['n_events']} 筆事件  ·  "
-    f"{meta['date_start']} ~ {meta['date_end']}  ·  更新: {meta['updated_at'][:10]}"
+    f"FinLab · 上市+上櫃+興櫃 · {meta['n_events']} 筆事件 · "
+    f"{meta['date_start']} ~ {meta['date_end']} · 更新 {meta['updated_at'][:10]}"
 )
+
 st.info(
-    "**Day 0 = 除權日**（含機械性稀釋壓力）。Day -1 為基準日（除權前收盤）。"
-    "正報酬代表股價高於基準日。",
+    "**兩種 T=0：**  \n"
+    "🟡 **公告日** = 交易所公告認購條件（距除權約 7-10 天，此時認購價確定）  \n"
+    "🔵 **除權日** = 股票去除認購權利（機械性稀釋壓力）  \n"
+    "⚠️ **董事會決議日（你看到的新聞日，如華通 2026/5/7）**不在此資料中，"
+    "通常比公告日早 2-3 個月，是最早可交易的訊號。",
     icon="ℹ️"
 )
 
-# ── KPIs ──────────────────────────────────────────────────────────────────
-def get_kpi(df, col):
-    s = df[col].dropna()
-    return s.mean() if len(s) > 0 else None
+# ── KPIs ─────────────────────────────────────────────────────────────────
+k0, k1, k2, k3, k4, k5 = st.columns(6)
+k0.metric("篩選事件數", f"{len(h_ann):,}")
 
-k0, k1, k2, k3, k4 = st.columns(5)
-k0.metric("篩選事件數", f"{n_ev:,}")
-for col_ui, day, label in zip([k1,k2,k3,k4], [5,10,20,60], ["+5日","+10日","+20日","+60日"]):
+for col_ui, df_h, day, anchor in [
+    (k1, h_ann, 5,  "📢+5d"),
+    (k2, h_ann, 20, "📢+20d"),
+    (k3, h_exr, 5,  "📋+5d"),
+    (k4, h_exr, 20, "📋+20d"),
+    (k5, h_exr, 60, "📋+60d"),
+]:
     col_name = f"ret_{day:+d}d"
-    if col_name in h.columns:
-        v  = get_kpi(h, col_name)
-        wr = (h[col_name].dropna() > 0).mean()
-        if v is not None:
-            col_ui.metric(f"均報酬 {label}", f"{v*100:.1f}%", f"勝率 {wr*100:.0f}%",
-                          delta_color="normal" if v >= 0 else "inverse")
+    if col_name in df_h.columns:
+        s  = df_h[col_name].dropna()
+        v  = s.mean()
+        wr = (s > 0).mean()
+        col_ui.metric(anchor, f"{v*100:.1f}%", f"勝率 {wr*100:.0f}%",
+                      delta_color="normal" if v >= 0 else "inverse")
 
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3, tab4 = st.tabs(
-    ["📈 價格走勢", "📊 日別細節 -10~+10", "💲 認購價分析", "📋 歷史紀錄"]
+    ["📈 CAR 曲線對比", "📊 日別細節 -10~+10", "💲 認購價分析", "📋 歷史紀錄"]
 )
 
-# ── Tab 1: CAR Curve + Horizon summary ───────────────────────────────────
+
+# ── Tab 1: CAR curves comparison ─────────────────────────────────────────
 with tab1:
     c_left, c_right = st.columns([3, 2])
 
     with c_left:
-        st.subheader("除權日前後平均累積報酬 (CAR)")
-        car = win.groupby("offset")[["cum_ret","mkt_ret","abnormal"]].mean().reset_index()
-        car = car.sort_values("offset")
-        car_long = car.melt(id_vars="offset",
-                            value_vars=["cum_ret","mkt_ret","abnormal"],
-                            var_name="series", value_name="ret")
-        label_map = {"cum_ret":"個股累積報酬","mkt_ret":"市場累積報酬","abnormal":"超額報酬(CAR)"}
-        car_long["series"] = car_long["series"].map(label_map)
+        st.subheader("公告日 vs 除權日 CAR 曲線")
 
-        chart = (
-            alt.Chart(car_long)
+        avg_a = wa_f.groupby("offset")[["cum_ret","abnormal"]].mean().reset_index()
+        avg_e = we_f.groupby("offset")[["cum_ret","abnormal"]].mean().reset_index()
+        avg_a["anchor"] = "公告日"
+        avg_e["anchor"] = "除權日"
+        combined = pd.concat([avg_a, avg_e])
+        combined_long = combined.melt(
+            id_vars=["offset","anchor"], value_vars=["cum_ret","abnormal"],
+            var_name="type", value_name="ret"
+        )
+        combined_long["series"] = combined_long["anchor"] + " " + combined_long["type"].map(
+            {"cum_ret":"個股累積報酬", "abnormal":"超額報酬"})
+
+        color_scale = alt.Scale(
+            domain=["公告日 個股累積報酬","公告日 超額報酬",
+                    "除權日 個股累積報酬","除權日 超額報酬"],
+            range=["#f6c90e","#e67e22","#4a90d9","#e74c3c"]
+        )
+        car_chart = (
+            alt.Chart(combined_long)
             .mark_line(strokeWidth=2)
             .encode(
-                x=alt.X("offset:Q", title="交易日 (0=除權日)",
-                         scale=alt.Scale(domain=[-30, 60])),
+                x=alt.X("offset:Q", title="交易日 (0=各自錨點)",
+                         scale=alt.Scale(domain=[-30,60])),
                 y=alt.Y("ret:Q", title="累積報酬",
                          axis=alt.Axis(format=".1%")),
-                color=alt.Color("series:N",
-                    scale=alt.Scale(
-                        domain=["個股累積報酬","市場累積報酬","超額報酬(CAR)"],
-                        range=["#4a90d9","#95a5a6","#e74c3c"]
-                    ),
-                    legend=alt.Legend(orient="top")
-                ),
-                tooltip=[
-                    alt.Tooltip("offset:Q", title="Day"),
-                    alt.Tooltip("ret:Q", format=".2%", title="報酬"),
-                    "series:N"
-                ]
+                color=alt.Color("series:N", scale=color_scale,
+                                legend=alt.Legend(orient="top", columns=2)),
+                strokeDash=alt.StrokeDash("type:N",
+                    scale=alt.Scale(domain=["cum_ret","abnormal"],
+                                    range=[[1,0],[4,2]]),
+                    legend=None),
+                tooltip=["series:N","offset:Q",
+                         alt.Tooltip("ret:Q", format=".2%")]
             )
             .properties(height=360)
         )
         zero  = alt.Chart(pd.DataFrame({"y":[0]})).mark_rule(
-            color="white", strokeDash=[4,4], opacity=0.3).encode(y="y:Q")
-        event = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(
-            color="#f6c90e", strokeDash=[4,4], opacity=0.6).encode(x="x:Q")
-        st.altair_chart(chart + zero + event, use_container_width=True)
+            color="white",strokeDash=[3,3],opacity=0.3).encode(y="y:Q")
+        ev_r  = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(
+            color="gray",opacity=0.5).encode(x="x:Q")
+        st.altair_chart(car_chart + zero + ev_r, use_container_width=True)
+
+        st.caption(
+            "🟡實線=公告日個股報酬 　🟠虛線=公告日超額報酬  \n"
+            "🔵實線=除權日個股報酬 　🔴虛線=除權日超額報酬"
+        )
 
     with c_right:
-        st.subheader("各期間平均報酬 & 勝率")
-        sum_rows = []
-        for day in SUMMARY_HORIZONS:
+        st.subheader("各期間報酬比較")
+
+        sel_anchor = st.radio("錨點", ["公告日 🟡", "除權日 🔵"],
+                               horizontal=True, label_visibility="collapsed")
+        use_h = h_ann if "公告" in sel_anchor else h_exr
+
+        bar_rows = []
+        for day in [1, 5, 10, 20, 30, 60]:
             col_r = f"ret_{day:+d}d"
-            col_a = f"abn_{day:+d}d"
-            if col_r not in h.columns:
+            if col_r not in use_h.columns:
                 continue
-            s = h[col_r].dropna()
-            a = h[col_a].dropna() if col_a in h.columns else pd.Series([], dtype=float)
+            s = use_h[col_r].dropna()
             if len(s) < 5:
                 continue
-            sum_rows.append({
+            bar_rows.append({
                 "label": f"+{day}d",
-                "day": day,
                 "mean_ret": s.mean(),
                 "win_rate": (s > 0).mean(),
                 "n": len(s),
             })
-        f_sum = pd.DataFrame(sum_rows)
+        bar_df = pd.DataFrame(bar_rows)
 
-        if not f_sum.empty:
-            bar = (
-                alt.Chart(f_sum)
+        if not bar_df.empty:
+            ret_bar = (
+                alt.Chart(bar_df)
                 .mark_bar()
                 .encode(
                     x=alt.X("label:N", sort=None, title="期間"),
@@ -192,10 +220,9 @@ with tab1:
                              axis=alt.Axis(format=".1%")),
                     color=alt.Color("mean_ret:Q",
                         scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
-                        legend=None
-                    ),
+                        legend=None),
                     tooltip=[
-                        alt.Tooltip("label:N", title="期間"),
+                        alt.Tooltip("label:N"),
                         alt.Tooltip("mean_ret:Q", format=".2%", title="平均報酬"),
                         alt.Tooltip("win_rate:Q", format=".0%", title="勝率"),
                         alt.Tooltip("n:Q", title="樣本數"),
@@ -204,7 +231,7 @@ with tab1:
                 .properties(height=185)
             )
             wr_bar = (
-                alt.Chart(f_sum)
+                alt.Chart(bar_df)
                 .mark_bar(color="#4a90d9")
                 .encode(
                     x=alt.X("label:N", sort=None, title=""),
@@ -216,20 +243,22 @@ with tab1:
                 .properties(height=145)
             )
             fifty = alt.Chart(pd.DataFrame({"y":[0.5]})).mark_rule(
-                color="white", strokeDash=[4,4], opacity=0.4).encode(y="y:Q")
-            st.altair_chart(bar, use_container_width=True)
+                color="white",strokeDash=[4,4],opacity=0.4).encode(y="y:Q")
+            st.altair_chart(ret_bar, use_container_width=True)
             st.altair_chart(wr_bar + fifty, use_container_width=True)
 
     # Year heatmap
-    st.subheader("年度 × 期間 平均報酬熱力圖")
+    st.subheader("年度 × 期間 熱力圖")
+    sel_anchor_yr = st.radio("錨點", ["公告日", "除權日"], horizontal=True, key="yr_anchor")
     yr_f = year_df[
+        (year_df["anchor"] == sel_anchor_yr) &
         (year_df["year"] >= sel_years[0]) &
         (year_df["year"] <= sel_years[1]) &
-        (year_df["horizon"] > 0)
+        (year_df["horizon"].isin([1, 5, 10, 20, 30, 60]))
     ].copy()
-    yr_f = yr_f[yr_f["horizon"].isin(SUMMARY_HORIZONS + [1, 10])]
     yr_f["hlabel"] = yr_f["horizon"].apply(lambda x: f"+{x}d")
-    yr_f["text"]   = yr_f["mean_ret"].apply(lambda v: f"{v*100:.1f}%" if pd.notna(v) else "")
+    yr_f["text"]   = yr_f["mean_ret"].apply(
+        lambda v: f"{v*100:.1f}%" if pd.notna(v) else "")
 
     if not yr_f.empty:
         hmap = (
@@ -243,15 +272,11 @@ with tab1:
                 color=alt.Color("mean_ret:Q",
                     scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
                     title="平均報酬"),
-                tooltip=[
-                    alt.Tooltip("year:O"),
-                    alt.Tooltip("hlabel:N", title="期間"),
-                    alt.Tooltip("mean_ret:Q", format=".1%", title="平均報酬"),
-                    alt.Tooltip("n:Q", title="樣本數"),
-                ]
+                tooltip=[alt.Tooltip("year:O"), alt.Tooltip("hlabel:N", title="期間"),
+                         alt.Tooltip("mean_ret:Q", format=".1%"), alt.Tooltip("n:Q")]
             )
         )
-        text_layer = (
+        txt = (
             alt.Chart(yr_f)
             .mark_text(fontSize=9, color="white")
             .encode(
@@ -261,30 +286,29 @@ with tab1:
                 text=alt.Text("text:N"),
             )
         )
-        st.altair_chart((hmap + text_layer).properties(height=420),
-                        use_container_width=True)
+        st.altair_chart((hmap + txt).properties(height=420), use_container_width=True)
 
 
-# ── Tab 2: Day-by-day -10 to +10 ─────────────────────────────────────────
+# ── Tab 2: Day -10 to +10 ─────────────────────────────────────────────────
 with tab2:
-    st.subheader("除權日前後 -10 ~ +10 每日報酬明細")
+    st.subheader("除權日 / 公告日 前後逐日報酬 (-10 ~ +10)")
+    sel_anc2 = st.radio("錨點", ["公告日 🟡", "除權日 🔵"], horizontal=True, key="tab2anc")
+    use_h2 = h_ann if "公告" in sel_anc2 else h_exr
+    color_anc = "#f6c90e" if "公告" in sel_anc2 else "#4a90d9"
 
-    # Build per-day stats from horizon CSV
     day_rows = []
     for day in range(-10, 11):
         col_r = f"ret_{day:+d}d"
         col_a = f"abn_{day:+d}d"
-        if col_r not in h.columns:
+        if col_r not in use_h2.columns:
             continue
-        s = h[col_r].dropna()
-        a = h[col_a].dropna() if col_a in h.columns else pd.Series([], dtype=float)
+        s = use_h2[col_r].dropna()
+        a = use_h2[col_a].dropna() if col_a in use_h2.columns else pd.Series(dtype=float)
         if len(s) == 0:
             continue
         day_rows.append({
-            "day": day,
-            "n": len(s),
-            "mean_ret": s.mean(),
-            "median_ret": s.median(),
+            "day": day, "n": len(s),
+            "mean_ret": s.mean(), "median_ret": s.median(),
             "win_rate": (s > 0).mean(),
             "mean_abn": a.mean() if len(a) > 0 else np.nan,
             "std": s.std(),
@@ -293,108 +317,93 @@ with tab2:
         })
     day_df = pd.DataFrame(day_rows)
 
-    # Chart: mean_ret bar with ±1 std band
     bar_day = (
         alt.Chart(day_df)
-        .mark_bar(width=18)
+        .mark_bar(width=20)
         .encode(
-            x=alt.X("day:Q", title="交易日 (0=除權日)",
-                     scale=alt.Scale(domain=[-10.5, 10.5]),
+            x=alt.X("day:Q", title="交易日 (0=錨點日)",
+                     scale=alt.Scale(domain=[-10.5,10.5]),
                      axis=alt.Axis(tickCount=21)),
             y=alt.Y("mean_ret:Q", title="平均累積報酬",
                      axis=alt.Axis(format=".1%")),
             color=alt.condition(
                 alt.datum.mean_ret >= 0,
-                alt.value("#26c281"),
-                alt.value("#e74c3c")
+                alt.value("#26c281"), alt.value("#e74c3c")
             ),
             tooltip=[
                 alt.Tooltip("day:Q", title="Day"),
                 alt.Tooltip("mean_ret:Q", format=".2%", title="平均報酬"),
                 alt.Tooltip("median_ret:Q", format=".2%", title="中位數"),
                 alt.Tooltip("win_rate:Q", format=".0%", title="勝率"),
-                alt.Tooltip("n:Q", title="樣本數"),
+                alt.Tooltip("n:Q", title="樣本"),
             ]
         )
-        .properties(height=280, title="每日平均累積報酬 (基準 = 除權前一日收盤)")
+        .properties(height=260)
     )
-    zero_rule = alt.Chart(pd.DataFrame({"y":[0]})).mark_rule(
-        color="white", strokeDash=[4,4], opacity=0.4).encode(y="y:Q")
-    ev_rule = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(
-        color="#f6c90e", opacity=0.5).encode(x="x:Q")
-    st.altair_chart(bar_day + zero_rule + ev_rule, use_container_width=True)
-
-    # Win rate line
-    wr_day = (
+    wr_line = (
         alt.Chart(day_df)
-        .mark_line(point=True, color="#4a90d9", strokeWidth=2)
+        .mark_line(point=True, strokeWidth=2, color=color_anc)
         .encode(
-            x=alt.X("day:Q", title="交易日 (0=除權日)",
-                     scale=alt.Scale(domain=[-10.5, 10.5])),
+            x=alt.X("day:Q", scale=alt.Scale(domain=[-10.5,10.5])),
             y=alt.Y("win_rate:Q", title="勝率",
                      axis=alt.Axis(format=".0%"),
                      scale=alt.Scale(domain=[0,1])),
-            tooltip=[
-                alt.Tooltip("day:Q", title="Day"),
-                alt.Tooltip("win_rate:Q", format=".0%", title="勝率"),
-            ]
+            tooltip=[alt.Tooltip("day:Q"), alt.Tooltip("win_rate:Q", format=".0%")]
         )
-        .properties(height=200, title="每日勝率")
+        .properties(height=200)
     )
-    fifty_r = alt.Chart(pd.DataFrame({"y":[0.5]})).mark_rule(
-        color="white", strokeDash=[4,4], opacity=0.4).encode(y="y:Q")
-    st.altair_chart(wr_day + fifty_r + ev_rule, use_container_width=True)
+    zero_r  = alt.Chart(pd.DataFrame({"y":[0]})).mark_rule(color="white",strokeDash=[4,4],opacity=0.3).encode(y="y:Q")
+    ev_rule = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(color="gray",opacity=0.5).encode(x="x:Q")
+    fifty_r = alt.Chart(pd.DataFrame({"y":[0.5]})).mark_rule(color="white",strokeDash=[4,4],opacity=0.3).encode(y="y:Q")
+
+    st.altair_chart(bar_day + zero_r + ev_rule, use_container_width=True)
+    st.altair_chart(wr_line + fifty_r + ev_rule, use_container_width=True)
 
     # Table
-    st.subheader("日別統計表")
     tbl = day_df.copy()
-    tbl["mean_ret"]   = tbl["mean_ret"].apply(lambda x: f"{x*100:.2f}%")
-    tbl["median_ret"] = tbl["median_ret"].apply(lambda x: f"{x*100:.2f}%")
-    tbl["win_rate"]   = tbl["win_rate"].apply(lambda x: f"{x*100:.1f}%")
-    tbl["mean_abn"]   = tbl["mean_abn"].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "—")
-    tbl["std"]        = tbl["std"].apply(lambda x: f"{x*100:.2f}%")
-    tbl["p25"]        = tbl["p25"].apply(lambda x: f"{x*100:.2f}%")
-    tbl["p75"]        = tbl["p75"].apply(lambda x: f"{x*100:.2f}%")
-    tbl.columns       = ["Day","樣本","平均報酬","中位數","勝率","超額報酬(vs市場)","標準差","25%","75%"]
+    for col in ["mean_ret","median_ret","mean_abn","std","p25","p75"]:
+        tbl[col] = tbl[col].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "—")
+    tbl["win_rate"] = tbl["win_rate"].apply(lambda x: f"{x*100:.1f}%")
+    tbl.columns = ["Day","樣本","平均報酬","中位數","勝率","超額報酬","標準差","P25","P75"]
     st.dataframe(tbl, use_container_width=True, hide_index=True)
 
 
-# ── Tab 3: Subscription Price Analysis ───────────────────────────────────
+# ── Tab 3: Subscription Price ─────────────────────────────────────────────
 with tab3:
-    st.subheader("股價 vs 認購價分析")
+    st.subheader("認購價 vs 股價分析")
+    disc = h_ann[h_ann["discount_pct"].notna()].copy()
+    st.caption(f"{len(disc)} 筆有認購價資料")
 
-    disc_data = h[h["discount_pct"].notna()].copy()
-    st.caption(f"共 {len(disc_data)} 筆有認購價資料的事件")
+    ca, cb = st.columns(2)
 
-    col_a, col_b = st.columns(2)
-
-    with col_a:
-        st.markdown("**認購折扣分佈**（認購價 / 除權前收盤 - 1）")
-        dd = disc_data["discount_pct"].clip(-1, 0.5)
-        dist_df = dd.to_frame("disc")
-        hist_disc = (
-            alt.Chart(dist_df)
+    with ca:
+        st.markdown("**認購折扣分佈**（認購價 / 前日收盤 - 1）")
+        dd = disc["discount_pct"].clip(-1, 0.5).to_frame("disc")
+        hist_d = (
+            alt.Chart(dd)
             .mark_bar(opacity=0.8, color="#4a90d9")
             .encode(
-                x=alt.X("disc:Q", bin=alt.Bin(maxbins=40),
-                         title="折扣比例", axis=alt.Axis(format=".0%")),
+                x=alt.X("disc:Q", bin=alt.Bin(maxbins=50),
+                         title="折扣", axis=alt.Axis(format=".0%")),
                 y=alt.Y("count():Q", title="頻次"),
             )
-            .properties(height=280)
+            .properties(height=260)
         )
-        mean_disc = alt.Chart(pd.DataFrame({"x":[disc_data["discount_pct"].mean()]})).mark_rule(
-            color="#f6c90e", strokeDash=[5,3]).encode(x="x:Q")
-        st.altair_chart(hist_disc + mean_disc, use_container_width=True)
-        st.metric("平均折扣", f"{disc_data['discount_pct'].mean()*100:.1f}%")
-        st.metric("中位數折扣", f"{disc_data['discount_pct'].median()*100:.1f}%")
+        mean_r = alt.Chart(pd.DataFrame({"x":[disc["discount_pct"].mean()]})).mark_rule(
+            color="#f6c90e",strokeDash=[5,3]).encode(x="x:Q")
+        st.altair_chart(hist_d + mean_r, use_container_width=True)
+        c1,c2,c3 = st.columns(3)
+        c1.metric("平均折扣",  f"{disc['discount_pct'].mean()*100:.1f}%")
+        c2.metric("中位數折扣", f"{disc['discount_pct'].median()*100:.1f}%")
+        c3.metric(">0（溢價）", f"{(disc['discount_pct']>0).mean()*100:.0f}%")
 
-    with col_b:
+    with cb:
         st.markdown("**折扣深度 vs +20日報酬**")
-        if "ret_+20d" in disc_data.columns:
-            sc_df = disc_data[["discount_pct","ret_+20d","ret_+60d"]].dropna()
+        if "ret_+20d" in disc.columns:
+            sc = disc[["discount_pct","ret_+20d","ret_+60d"]].dropna()
             scatter = (
-                alt.Chart(sc_df)
-                .mark_circle(opacity=0.5, size=45)
+                alt.Chart(sc)
+                .mark_circle(opacity=0.45, size=40)
                 .encode(
                     x=alt.X("discount_pct:Q", title="認購折扣",
                              axis=alt.Axis(format=".0%")),
@@ -402,84 +411,83 @@ with tab3:
                              axis=alt.Axis(format=".0%")),
                     color=alt.Color("ret_+20d:Q",
                         scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
-                        legend=None
-                    ),
+                        legend=None),
                     tooltip=[
                         alt.Tooltip("discount_pct:Q", format=".1%", title="折扣"),
                         alt.Tooltip("ret_+20d:Q", format=".1%", title="+20日"),
                         alt.Tooltip("ret_+60d:Q", format=".1%", title="+60日"),
                     ]
                 )
-                .properties(height=280)
+                .properties(height=260)
             )
-            h_rule = alt.Chart(pd.DataFrame({"y":[0]})).mark_rule(
-                color="white", strokeDash=[4,4], opacity=0.3).encode(y="y:Q")
-            v_rule = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(
-                color="white", strokeDash=[4,4], opacity=0.3).encode(x="x:Q")
-            st.altair_chart(scatter + h_rule + v_rule, use_container_width=True)
+            hr = alt.Chart(pd.DataFrame({"y":[0]})).mark_rule(color="white",strokeDash=[3,3],opacity=0.3).encode(y="y:Q")
+            vr = alt.Chart(pd.DataFrame({"x":[0]})).mark_rule(color="white",strokeDash=[3,3],opacity=0.3).encode(x="x:Q")
+            st.altair_chart(scatter + hr + vr, use_container_width=True)
 
-    # Discount bucket analysis
-    st.subheader("折扣分組 → 後續各期報酬")
-    disc_data["disc_bucket"] = pd.cut(
-        disc_data["discount_pct"],
-        bins=[-1, -0.4, -0.3, -0.2, -0.1, 0, 0.5],
-        labels=["<-40%", "-40~-30%", "-30~-20%", "-20~-10%", "-10~0%", ">0%"]
+    st.subheader("折扣分組 → 後續各期均報 / 勝率")
+    disc["bucket"] = pd.cut(
+        disc["discount_pct"],
+        bins=[-1.1,-0.4,-0.3,-0.2,-0.1,-0.05,0,0.5],
+        labels=["<-40%","-40~-30%","-30~-20%","-20~-10%","-10~-5%","-5~0%",">0%"]
     )
-    bucket_rows = []
-    for bkt, grp in disc_data.groupby("disc_bucket", observed=True):
-        row = {"折扣區間": str(bkt), "樣本數": len(grp)}
+    bkt_rows = []
+    for bkt, grp in disc.groupby("bucket", observed=True):
+        row = {"折扣區間": str(bkt), "樣本": len(grp)}
         for day in [1, 5, 10, 20, 60]:
-            col_r = f"ret_{day:+d}d"
-            if col_r in grp.columns:
-                s = grp[col_r].dropna()
-                row[f"+{day}d均報"] = f"{s.mean()*100:.1f}%" if len(s) > 0 else "—"
-                row[f"+{day}d勝率"] = f"{(s>0).mean()*100:.0f}%" if len(s) > 0 else "—"
-        bucket_rows.append(row)
-    bkt_df = pd.DataFrame(bucket_rows)
-    st.dataframe(bkt_df, use_container_width=True, hide_index=True)
+            c = f"ret_{day:+d}d"
+            if c in grp.columns:
+                s = grp[c].dropna()
+                row[f"+{day}d均報"] = f"{s.mean()*100:.1f}%" if len(s)>0 else "—"
+                row[f"+{day}d勝率"] = f"{(s>0).mean()*100:.0f}%" if len(s)>0 else "—"
+        bkt_rows.append(row)
+    st.dataframe(pd.DataFrame(bkt_rows), use_container_width=True, hide_index=True)
 
 
 # ── Tab 4: Historical Records ─────────────────────────────────────────────
 with tab4:
-    st.subheader("歷史回測紀錄")
+    st.subheader("歷史紀錄 — 完整現金增資事件清單")
+    st.caption("含公司名稱、市場別、公告日、除權日、認購價、各期間報酬")
 
-    disp_cols = (
-        ["ticker", "ex_date", "sub_price", "ref_price", "discount_pct"]
-        + ["ret_-20d"]
-        + [f"ret_{d:+d}d" for d in range(-10, 11) if f"ret_{d:+d}d" in h.columns]
-        + ["ret_+20d", "ret_+30d", "ret_+60d"]
-    )
-    disp_cols = [c for c in disp_cols if c in h.columns]
-    raw = h[disp_cols].copy().sort_values("ex_date", ascending=False)
+    # Select anchor for return columns
+    sel_anc4 = st.radio("報酬錨點", ["公告日 🟡", "除權日 🔵"], horizontal=True, key="rec_anchor")
+    use_h4 = h_ann if "公告" in sel_anc4 else h_exr
+
+    # Build display DF
+    ret_days = [-20, -10, -5] + list(range(-3, 11)) + [20, 30, 60]
+    ret_cols = [f"ret_{d:+d}d" for d in ret_days if f"ret_{d:+d}d" in use_h4.columns]
+
+    base_cols = ["ticker","name","market","ann_date","exr_date",
+                 "sub_price","ref_price","discount_pct","sub_ratio","gap_days","shares"]
+    disp_cols = [c for c in base_cols if c in use_h4.columns] + ret_cols
+    raw = use_h4[disp_cols].copy().sort_values("ann_date", ascending=False)
 
     # Format
-    raw["ex_date"] = raw["ex_date"].dt.strftime("%Y-%m-%d")
-    for c in raw.columns:
-        if c.startswith("ret_") or c == "discount_pct":
-            raw[c] = raw[c].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
-    for c in ["sub_price", "ref_price"]:
+    raw["ann_date"] = raw["ann_date"].dt.strftime("%Y-%m-%d")
+    raw["exr_date"] = raw["exr_date"].dt.strftime("%Y-%m-%d") if "exr_date" in raw else "—"
+    for c in ret_cols + (["discount_pct"] if "discount_pct" in raw.columns else []):
+        raw[c] = raw[c].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
+    for c in ["sub_price","ref_price"]:
         if c in raw.columns:
             raw[c] = raw[c].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+    if "sub_ratio" in raw.columns:
+        raw["sub_ratio"] = raw["sub_ratio"].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "—")
+    if "shares" in raw.columns:
+        raw["shares"] = raw["shares"].apply(lambda x: f"{int(x/1000):,}張" if pd.notna(x) else "—")
 
     rename = {
-        "ticker": "股票代號", "ex_date": "除權日",
-        "sub_price": "認購價", "ref_price": "前日收盤",
-        "discount_pct": "折扣%",
+        "ticker":"代號","name":"公司名稱","market":"市場","ann_date":"公告日",
+        "exr_date":"除權日","sub_price":"認購價","ref_price":"前日收",
+        "discount_pct":"折扣","sub_ratio":"認股比率%","gap_days":"公告→除權天",
+        "shares":"增資規模",
     }
-    rename["ret_-20d"] = "Day-20"
-    for d in range(-10, 11):
+    for d in ret_days:
         rename[f"ret_{d:+d}d"] = f"Day{d:+d}"
-    rename["ret_+20d"] = "Day+20"
-    rename["ret_+30d"] = "Day+30"
-    rename["ret_+60d"] = "Day+60"
     raw = raw.rename(columns=rename)
 
-    # Download button
     st.download_button(
         "⬇️ 下載 CSV",
         data=raw.to_csv(index=False).encode("utf-8-sig"),
-        file_name="cash_increase_backtest.csv",
+        file_name="cash_increase_history.csv",
         mime="text/csv"
     )
-
-    st.dataframe(raw, use_container_width=True, height=560)
+    st.dataframe(raw, use_container_width=True, height=580)
