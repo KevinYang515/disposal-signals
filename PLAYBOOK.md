@@ -55,13 +55,14 @@ T+1 出關日 → 人工壓力消失 → 橡皮筋彈回
 
 ### 每日更新流程
 ```bash
-# VM 上 crontab：UTC 09:00 = 台灣 17:00（finlab 資料更新後）
-0 9 * * 1-5 cd ~/disposal/repo && python update_signals.py && git add data/ && git commit -m "auto: $(date +%Y-%m-%d) 每日更新" && git push
+# VM 上 crontab：UTC 09:05 = 台灣 17:05（finlab 資料 15:00 後更新完，17:05 含緩衝）
+# 期貨日盤 13:45 已收盤，不影響程式交易
+5 9 * * 1-5  /bin/bash ~/disposal/repo/auto_update.sh >> ~/disposal/repo/auto_update.log 2>&1
 
 # 手動執行：
-cd ~/stock/webapp
+cd ~/disposal/repo
 python update_signals.py
-git add data/ && git commit -m "update" && git push
+git add data/ && git commit -m "update $(date +%Y-%m-%d)" && git push
 ```
 
 ### VM 資訊
@@ -220,7 +221,7 @@ git add data/ && git commit -m "update" && git push
 |---|---|
 | 預設只顯示大+中型 | 小型股 WR 55%，訊號弱，不應與主策略混合 |
 | 出場選 T+1 開盤 | 夏普最高（0.771）、勝率最高（82.4%） |
-| Cron 設 台灣 17:00 | finlab 資料在 15:00 後才更新完，過早執行會抓到前一日收盤 |
+| Cron 設 台灣 17:05（UTC 09:05） | finlab 資料在 15:00 後才更新完，17:05 含緩衝；期貨 13:45 已收盤，不影響程式交易 |
 | 用 st.container() 做全寬 KPI | Tab 3 的 KPI 若放在 st.columns 內會太窄，需在 columns 前 container 佔位，計算完再填入 |
 | 不建議停利設定 | 回測顯示任何停利目標均劣於 T+1 開盤直出 |
 
