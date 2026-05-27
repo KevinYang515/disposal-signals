@@ -424,8 +424,11 @@ def build_history(df, price, open_p, whale_dfs):
 
     pool['Dn組別'] = pool['min_dn'].apply(dn_group)
 
+    pool['_exit_date'] = pool['處置起始日'].apply(lambda sd: exit_date(idx, sd))
+
     out = pd.DataFrame({
         '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '出關日':        pool['_exit_date'].apply(lambda d: d.strftime('%Y-%m-%d') if pd.notna(d) else '?'),
         '代號':          pool['股票代號'],
         '名稱':          pool['股票名稱'],
         '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else ('中' if '中型' in str(v) else '小')),
