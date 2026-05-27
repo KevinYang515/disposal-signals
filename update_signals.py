@@ -124,13 +124,13 @@ def cumret(price, idx, sid, sd, nd):
         return np.nan
     return round((pn / p0 - 1) * 100, 2)
 
-def exit_date(idx, sd):
+def exit_date(idx, sd, t1_offset=10):
     pos = idx.searchsorted(sd)
-    if pos + 10 < len(idx):
-        return idx[pos + 10]
+    if pos + t1_offset < len(idx):
+        return idx[pos + t1_offset]
     # feather 不夠長時，用 weekday 往後估算（不含假日）
     days_in = int(((idx >= sd) & (idx <= idx[-1])).sum())
-    remaining = 11 - days_in  # 到第 11 個交易日（出關日）
+    remaining = t1_offset + 1 - days_in  # 到第 t1_offset+1 個交易日（出關日）
     if remaining <= 0:
         return idx[-1]
     cur = idx[-1]
@@ -336,12 +336,16 @@ def build_backtest_grid(df, price, open_p):
 def build_history(df, price, open_p, whale_dfs):
     idx = price.index
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
-              (df['處置類型'] == '20分鐘') &
+              (df['處置類型'].isin(['5分鐘', '20分鐘'])) &
               (df['處置原因'] == '漲多處置')].copy()
 
     def compute_row(row):
-        sid = row['股票代號']
-        sd  = row['處置起始日']
+        sid       = row['股票代號']
+        sd        = row['處置起始日']
+        disp_type = row.get('處置類型', '20分鐘')
+        t1_offset = 5 if disp_type == '5分鐘' else 10   # 出關偏移：5分→T+5, 20分→T+10
+        entry_rng = range(1, 6) if disp_type == '5分鐘' else range(3, 9)
+
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan,
                    actual_ret=np.nan,
                    **{f'_t{k}c': np.nan for k in range(1, 11)})
@@ -359,13 +363,13 @@ def build_history(df, price, open_p, whale_dfs):
         if pd.isna(p0) or p0 <= 0:
             return pd.Series(out)
 
-        t1_open = (open_p[sid].iloc[pos + 10]
-                   if sid in open_p.columns and pos + 10 < len(open_p) else np.nan)
+        t1_open = (open_p[sid].iloc[pos + t1_offset]
+                   if sid in open_p.columns and pos + t1_offset < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
 
-        # 計算 D1~D10 各天累積報酬與出關報酬（自訂策略頁使用）
+        # D1~D(t1_offset) 各天累積報酬與出關報酬
         all_rets = {}
-        for n in range(1, 11):
+        for n in range(1, t1_offset + 1):
             if pos + n - 1 < len(price):
                 pn = price[sid].iloc[pos + n - 1]
                 if pd.notna(pn) and pn > 0:
@@ -375,8 +379,7 @@ def build_history(df, price, open_p, whale_dfs):
                     if has_exit:
                         out[f'_d{n}_ret'] = round((t1_open / pn - 1) * 100, 2)
 
-        # D3~D8 用於主策略（D1/D2 跌深屬真實賣壓）
-        dn_rets = {n: all_rets[n] for n in range(3, 9) if n in all_rets}
+        dn_rets = {n: all_rets[n] for n in entry_rng if n in all_rets}
         if not dn_rets:
             return pd.Series(out)
 
@@ -384,7 +387,7 @@ def build_history(df, price, open_p, whale_dfs):
         out['min_dn']    = round(dn_rets[deepest], 2)
         out['deepest_n'] = deepest
 
-        for n in range(3, 9):
+        for n in sorted(entry_rng):
             if n in dn_rets and dn_rets[n] < -5:
                 out['entry_n']   = n
                 out['entry_cum'] = round(dn_rets[n], 2)
@@ -393,11 +396,11 @@ def build_history(df, price, open_p, whale_dfs):
                     out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
                 break
 
-        ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
+        ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else (1 if disp_type == '5分鐘' else 3)
         if ref_n in all_rets:
             p_ref = price[sid].iloc[pos + ref_n - 1]
             for k in range(1, 11):
-                off = 9 + k  # T+1=pos+10, T+2=pos+11, ..., T+10=pos+19
+                off = (t1_offset - 1) + k  # T+1=pos+t1_offset, T+2=pos+t1_offset+1...
                 if pos + off < len(price):
                     p = price[sid].iloc[pos + off]
                     if pd.notna(p) and p > 0:
@@ -406,8 +409,8 @@ def build_history(df, price, open_p, whale_dfs):
         # 出關後 D1~D5 收盤（基準：T+1 開盤）
         if has_exit:
             for n in range(1, 6):
-                if pos + 9 + n < len(price):
-                    p = price[sid].iloc[pos + 9 + n]
+                if pos + t1_offset + n < len(price):
+                    p = price[sid].iloc[pos + t1_offset + n]
                     if pd.notna(p) and p > 0:
                         out[f'_post_d{n}'] = round((p / t1_open - 1) * 100, 2)
 
@@ -424,11 +427,13 @@ def build_history(df, price, open_p, whale_dfs):
 
     pool['Dn組別'] = pool['min_dn'].apply(dn_group)
 
-    pool['_exit_date'] = pool['處置起始日'].apply(lambda sd: exit_date(idx, sd))
+    pool['_exit_date'] = pool.apply(
+        lambda r: exit_date(idx, r['處置起始日'], t1_offset=5 if r['處置類型'] == '5分鐘' else 10), axis=1)
 
     out = pd.DataFrame({
         '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
         '出關日':        pool['_exit_date'].apply(lambda d: d.strftime('%Y-%m-%d') if pd.notna(d) else '?'),
+        '處置類型':      pool['處置類型'],
         '代號':          pool['股票代號'],
         '名稱':          pool['股票名稱'],
         '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else ('中' if '中型' in str(v) else '小')),

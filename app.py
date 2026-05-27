@@ -515,6 +515,8 @@ with tab3:
             mode_c = st.radio('進場模式', ['固定日進場', '範圍進場'])
             sel_cap_c = st.multiselect('規模', ['大', '中', '小'], default=['大', '中'], key='tab_c_cap')
             st.caption('大 >500億\n中 100~500億\n小 <100億')
+            sel_disp_c = st.multiselect('處置類型', ['20分鐘', '5分鐘'], default=['20分鐘'], key='tab_c_disp')
+            st.caption('20分鐘=第二次處置（主策略）\n5分鐘=第一次處置')
             threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
                                     format='%d%%', key='tab_c_thr')
             exit_mode_c = st.selectbox('出場時間點',
@@ -528,7 +530,11 @@ with tab3:
                 range_days_c = st.slider('進場日範圍', 1, 10, (3, 8), key='tab_c_range')
                 range_start_c, range_end_c = range_days_c
 
-        base_c = hist_c[hist_c['規模'].isin(sel_cap_c)].copy() if sel_cap_c else hist_c.copy()
+        base_c = hist_c.copy()
+        if sel_cap_c:
+            base_c = base_c[base_c['規模'].isin(sel_cap_c)]
+        if sel_disp_c and '處置類型' in base_c.columns:
+            base_c = base_c[base_c['處置類型'].isin(sel_disp_c)]
 
         # ── 計算符合條件的進場紀錄 ──
         eligible = pd.DataFrame()
