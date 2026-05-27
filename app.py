@@ -507,6 +507,9 @@ with tab3:
     else:
         if '規模' in hist_c.columns:
             hist_c['規模'] = hist_c['規模'].apply(lambda v: '大' if '大' in str(v) else ('中' if '中' in str(v) else '小'))
+        if '處置類型' not in hist_c.columns:
+            hist_c['處置類型'] = '20分鐘'
+        hist_c['_year'] = hist_c['起始日'].astype(str).str[:4]
 
         kpi_area = st.container()   # 全寬佔位，稍後填入 KPI
 
@@ -517,6 +520,8 @@ with tab3:
             st.caption('大 >500億\n中 100~500億\n小 <100億')
             sel_disp_c = st.multiselect('處置類型', ['20分鐘', '5分鐘'], default=['20分鐘'], key='tab_c_disp')
             st.caption('20分鐘=第二次處置（主策略）\n5分鐘=第一次處置')
+            year_opts_c = ['全部'] + sorted(hist_c['_year'].dropna().unique().tolist(), reverse=True)
+            sel_year_c = st.selectbox('年份', year_opts_c, key='tab_c_year')
             threshold_c = st.slider('門檻：Dn累積跌幅 <', -25, 0, -5, 1,
                                     format='%d%%', key='tab_c_thr')
             exit_mode_c = st.selectbox('出場時間點',
@@ -533,8 +538,10 @@ with tab3:
         base_c = hist_c.copy()
         if sel_cap_c:
             base_c = base_c[base_c['規模'].isin(sel_cap_c)]
-        if sel_disp_c and '處置類型' in base_c.columns:
+        if sel_disp_c:
             base_c = base_c[base_c['處置類型'].isin(sel_disp_c)]
+        if sel_year_c != '全部':
+            base_c = base_c[base_c['_year'] == sel_year_c]
 
         # ── 計算符合條件的進場紀錄 ──
         eligible = pd.DataFrame()
@@ -617,7 +624,8 @@ with tab3:
         with main_col:
             if not eligible.empty:
                 # ── 各天進場對比表 ──
-                st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，出場：{exit_mode_c}，同規模篩選）')
+                year_label_c = f'，{sel_year_c}年' if sel_year_c != '全部' else ''
+                st.markdown(f'**各天進場效果對比**（門檻 {threshold_c}%，出場：{exit_mode_c}，同規模篩選{year_label_c}）')
                 cmp_rows_c = []
                 for n in range(1, 11):
                     cc = f'D{n}累積(%)'
