@@ -7,7 +7,7 @@ update_signals.py
 import pandas as pd
 import numpy as np
 import warnings, os, json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 warnings.filterwarnings("ignore")
 
 V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
@@ -496,7 +496,7 @@ def main():
 
     # 更新時間
     meta = {
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'updated_at': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M'),
         'data_date': price.index[-1].strftime('%Y-%m-%d'),
         'cmp_stats': cmp_stats,
     }
