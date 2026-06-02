@@ -302,7 +302,7 @@ with tab2:
     if hist.empty:
         st.warning('尚無歷史資料，請先執行 update_signals.py')
     else:
-        st.subheader('漲多處置 × 大+中型 × 20分鐘　歷史交易紀錄')
+        st.subheader('漲多處置 × 歷史交易紀錄')
 
         # ── 確保規模欄格式一致（舊版 CSV 可能是'大型股'）──
         if '規模' in hist.columns:
@@ -323,11 +323,15 @@ with tab2:
                     except: return 'Dn無資料'
                 hist['Dn組別'] = hist['D3累積(%)'].apply(_dng)
 
+        # ── 確保 處置類型 欄位存在（舊版 CSV 相容）──
+        if '處置類型' not in hist.columns:
+            hist['處置類型'] = '20分鐘'
+
         # ── 篩選器 ──
         hist['年份'] = hist['起始日'].str[:4]
         DN_OPTIONS = ['Dn < -5%', 'Dn -5%~0%', 'Dn ≥ 0%', '全部漲多']
 
-        col_f1, col_f2, col_f3 = st.columns([2, 5, 2])
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 5, 2, 2])
         with col_f1:
             sel_year = st.selectbox('年份', ['全部'] + sorted(hist['年份'].unique().tolist(), reverse=True))
         with col_f2:
@@ -339,6 +343,9 @@ with tab2:
         with col_f3:
             sel_cap = st.multiselect('規模', ['大', '中', '小'], default=['大', '中'], key='tab2_cap')
             st.caption('大 >500億 ｜ 中 100~500億 ｜ 小 <100億')
+        with col_f4:
+            sel_disp = st.multiselect('處置類型', ['20分鐘', '5分鐘'], default=['20分鐘'], key='tab2_disp')
+            st.caption('20分鐘=第二次處置\n5分鐘=第一次處置')
 
         view_h = hist.copy()
         if sel_year != '全部':
@@ -347,6 +354,8 @@ with tab2:
             view_h = view_h[view_h['Dn組別'].isin(sel_dn)]
         if sel_cap:
             view_h = view_h[view_h['規模'].isin(sel_cap)]
+        if sel_disp:
+            view_h = view_h[view_h['處置類型'].isin(sel_disp)]
 
         # ── KPI（依篩選結果動態更新）──
         if len(view_h) == 0:
