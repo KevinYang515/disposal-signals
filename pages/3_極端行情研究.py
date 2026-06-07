@@ -131,8 +131,8 @@ def color_return(val):
     return ""
 
 styled = display_stats.style \
-    .applymap(color_prob, subset=["上漲機率"]) \
-    .applymap(color_return, subset=["平均報酬", "中位數", "最差", "最佳"])
+    .map(color_prob, subset=["上漲機率"]) \
+    .map(color_return, subset=["平均報酬", "中位數", "最差", "最佳"])
 st.dataframe(styled, use_container_width=True, hide_index=True)
 
 # ── 平均報酬走勢圖 ────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ def color_fwd(val):
     return ""
 
 st.dataframe(
-    events_df.style.applymap(color_fwd, subset=fwd_cols),
+    events_df.style.map(color_fwd, subset=fwd_cols),
     use_container_width=True,
     hide_index=True,
     height=500,
