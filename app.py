@@ -1171,9 +1171,77 @@ with tab_lab:
             st.caption('💡 大戶增持（≥0%）時期望報酬明顯較高，但樣本僅 ~20 筆，需持續累積觀察。')
 
         st.divider()
-        st.markdown('### 📐 研發方向二：類似策略探索')
-        st.caption('（開發中）大戶篩選、出關後反彈獨立策略')
-        st.info('待開發')
+        st.markdown('### 📐 研發方向二：出關後反彈（大戶增持篩選）')
+        st.caption('假設：處置期間大戶逆勢增持 → 出關後補漲動能更強。進場：T+1 開盤；與主策略為不同時段的獨立交易。')
+
+        lab2_base = hist_lab[
+            (hist_lab['處置類型'] == '20分鐘') &
+            (hist_lab['規模'].isin(['大', '中'])) &
+            (hist_lab['結果'].astype(str).str.startswith('✅') | hist_lab['結果'].astype(str).str.startswith('❌'))
+        ].copy()
+        lab2_base['_whale'] = pd.to_numeric(lab2_base['大戶(%)'], errors='coerce')
+        lab2_base['_深']   = pd.to_numeric(lab2_base['期間最深(%)'], errors='coerce')
+
+        l2ctrl, l2main = st.columns([1, 3])
+        with l2ctrl:
+            lab2_whale_thr = st.slider('大戶篩選 ≥', -10, 5, 0, 1, format='%d%%', key='lab2_whale')
+            st.caption('0% = 大戶增持/中性\n負值 = 包含更多減持案例')
+            lab2_deep_thr = st.slider('期間最深 <（可選）', -40, 0, 0, 1, format='%d%%', key='lab2_deep')
+            st.caption('0 = 不限深度\n-10% = 至少跌10%')
+
+        with l2main:
+            mask = lab2_base['_whale'] >= lab2_whale_thr
+            if lab2_deep_thr < 0:
+                mask = mask & (lab2_base['_深'] < lab2_deep_thr)
+            filtered = lab2_base[mask].copy()
+
+            st.markdown(f'**出關後持有效果**（大戶 ≥ {lab2_whale_thr}%{"，期間最深 < " + str(lab2_deep_thr) + "%" if lab2_deep_thr < 0 else ""}，樣本 {len(filtered)} 筆）')
+
+            # 對比表：無篩選 vs 篩選後
+            compare_rows = []
+            for label, subset in [('全體基準', lab2_base), (f'大戶≥{lab2_whale_thr}% 篩選後', filtered)]:
+                row = {'條件': label, '樣本N': len(subset)}
+                for c in ['出關後D1(%)', '出關後D2(%)', '出關後D3(%)', '出關後D4(%)', '出關後D5(%)']:
+                    if c not in subset.columns: continue
+                    s = pd.to_numeric(subset[c], errors='coerce').dropna()
+                    day = c.replace('出關後', '').replace('(%)', '')
+                    row[f'{day} 勝率'] = round((s > 0).mean() * 100, 1) if len(s) >= 3 else np.nan
+                    row[f'{day} 期望'] = round(s.mean(), 2) if len(s) >= 3 else np.nan
+                compare_rows.append(row)
+
+            if compare_rows:
+                cdf2 = pd.DataFrame(compare_rows).set_index('條件')
+                wr_cols = [c for c in cdf2.columns if '勝率' in c]
+                ret_cols = [c for c in cdf2.columns if '期望' in c]
+
+                def _wr2(v):
+                    try:
+                        if v >= 80: return 'background-color:#1a5c38;color:white;font-weight:700'
+                        if v >= 65: return 'background-color:#26c281;color:black'
+                        if v >= 50: return 'background-color:#f6c90e;color:black'
+                        return 'background-color:#c0392b;color:white'
+                    except: return ''
+
+                def _ret2(v):
+                    try:
+                        if v >= 8:  return 'background-color:#1a5c38;color:white;font-weight:700'
+                        if v >= 3:  return 'background-color:#26c281;color:black'
+                        if v >= 0:  return 'background-color:#f6c90e;color:black'
+                        return 'background-color:#c0392b;color:white'
+                    except: return ''
+
+                fmt = {c: '{:.1f}' for c in wr_cols}
+                fmt.update({c: '{:+.2f}' for c in ret_cols})
+                st.dataframe(
+                    cdf2.style.map(_wr2, subset=wr_cols).map(_ret2, subset=ret_cols)
+                              .format(fmt, na_rep='-'),
+                    use_container_width=True
+                )
+
+            if len(filtered) < 10:
+                st.warning(f'⚠️ 目前樣本僅 {len(filtered)} 筆，統計尚不穩定，持續累積中。')
+            else:
+                st.info(f'💡 大戶增持篩選後，出關後 D2 勝率與期望報酬顯著提升。樣本 {len(filtered)} 筆，建議累積至 50+ 再考慮實盤。')
 
 # TAB 6：使用方式
 # ════════════════════════════════════════════════════════
