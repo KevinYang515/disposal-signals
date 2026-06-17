@@ -98,7 +98,7 @@ def sharpe_pf(s):
     pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
     return sharpe, pf
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
+tab_lab, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -1025,6 +1025,98 @@ with tab5:
 """)
 
 # ════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════
+# TAB LAB：策略研發（實驗區，不影響主策略）
+# ════════════════════════════════════════════════════════
+with tab_lab:
+    st.subheader('🧪 策略研發實驗區')
+    st.caption('此頁為探索新方向用，不影響主策略。確認有效後再考慮整合。')
+
+    hist_lab = load_history()
+    if hist_lab.empty or '出關後D1(%)' not in hist_lab.columns:
+        st.warning('缺少出關後欄位，請更新 history.csv')
+    else:
+        if '處置類型' not in hist_lab.columns:
+            hist_lab['處置類型'] = '20分鐘'
+        if '規模' in hist_lab.columns:
+            hist_lab['規模'] = hist_lab['規模'].apply(lambda v: '大' if '大' in str(v) else ('中' if '中' in str(v) else '小'))
+
+        # ── 研發項目一：出關後繼續持有 ──────────────────────────
+        st.markdown('### 📐 研發方向三：出關後延長持有')
+        st.caption('主策略在 T+1 開盤出場，此分析探索「出場後繼續持有 N 天」是否有額外優勢')
+
+        lab_base = hist_lab[
+            (hist_lab['處置類型'] == '20分鐘') &
+            (hist_lab['規模'].isin(['大', '中'])) &
+            (hist_lab['結果'].astype(str).str.startswith('✅') | hist_lab['結果'].astype(str).str.startswith('❌'))
+        ].copy()
+
+        post_cols = [f'出關後D{n}(%)' for n in range(1, 6)]
+        available_post = [c for c in post_cols if c in lab_base.columns]
+
+        if not available_post:
+            st.warning('缺少 出關後D1~D5 欄位')
+        else:
+            orig_s = pd.to_numeric(lab_base['出關報酬(%)'], errors='coerce').dropna()
+
+            lc1, lc2 = st.columns(2)
+
+            with lc1:
+                st.markdown('**出關後獨立報酬（從 T+1 開盤算起）**')
+                post_rows = []
+                for c in available_post:
+                    s = pd.to_numeric(lab_base[c], errors='coerce').dropna()
+                    if len(s) < 5: continue
+                    sp, pf = sharpe_pf(s)
+                    post_rows.append({
+                        '持有期': c.replace('出關後', '').replace('(%)', ''),
+                        '樣本N': len(s),
+                        '勝率(%)': round((s > 0).mean() * 100, 1),
+                        '期望報酬(%)': round(s.mean(), 2),
+                        '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
+                        '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0,
+                    })
+                if post_rows:
+                    pdf = pd.DataFrame(post_rows).set_index('持有期')
+                    st.dataframe(pdf.style.format({
+                        '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
+                        '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'
+                    }, na_rep='-'), use_container_width=True)
+
+            with lc2:
+                st.markdown('**延長持有總報酬（原策略 + 繼續持有 N 天）**')
+                ext_rows = [{'出場時機': 'T+1 開盤（原策略）',
+                              '樣本N': len(orig_s),
+                              '勝率(%)': round((orig_s > 0).mean() * 100, 1),
+                              '期望報酬(%)': round(orig_s.mean(), 2)}]
+                for c in available_post:
+                    merged = lab_base.copy()
+                    merged['_orig'] = pd.to_numeric(merged['出關報酬(%)'], errors='coerce')
+                    merged['_post'] = pd.to_numeric(merged[c], errors='coerce')
+                    merged = merged.dropna(subset=['_orig', '_post'])
+                    total = ((1 + merged['_orig'] / 100) * (1 + merged['_post'] / 100) - 1) * 100
+                    label = '延長至 ' + c.replace('出關後', '').replace('(%)', '')
+                    ext_rows.append({'出場時機': label,
+                                     '樣本N': len(total),
+                                     '勝率(%)': round((total > 0).mean() * 100, 1),
+                                     '期望報酬(%)': round(total.mean(), 2)})
+                edf = pd.DataFrame(ext_rows).set_index('出場時機')
+                st.dataframe(edf.style.format({
+                    '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+                }, na_rep='-'), use_container_width=True)
+
+            st.info('💡 結論：T+1 開盤出場勝率最高（80%+）。延長持有期望報酬略升但勝率明顯下降，建議維持原策略。')
+
+        st.divider()
+        st.markdown('### 📐 研發方向一：進場參數優化')
+        st.caption('（開發中）進場日精選、漲幅門檻篩選、出場時間點最優化')
+        st.info('待開發')
+
+        st.divider()
+        st.markdown('### 📐 研發方向二：類似策略探索')
+        st.caption('（開發中）大戶篩選、出關後反彈獨立策略')
+        st.info('待開發')
+
 # TAB 6：使用方式
 # ════════════════════════════════════════════════════════
 with tab6:
