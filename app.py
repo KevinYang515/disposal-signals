@@ -1108,94 +1108,67 @@ with tab_lab:
             st.info('💡 結論：T+1 開盤出場勝率最高（80%+）。延長持有期望報酬略升但勝率明顯下降，建議維持原策略。')
 
         st.divider()
-        st.markdown('### 📐 研發方向一：進場參數優化')
-        st.caption('主策略基準：D3~D8、門檻 < -5%。此分析探索最佳進場日與跌幅門檻組合。')
+        st.markdown('### 📐 研發方向一：輔助篩選因子')
+        st.caption('探索「近20日漲幅」與「大戶持股變化」是否能作為額外篩選條件，提升期望報酬。')
 
         lab1_base = hist_lab[
             (hist_lab['處置類型'] == '20分鐘') &
             (hist_lab['規模'].isin(['大', '中'])) &
             (hist_lab['結果'].astype(str).str.startswith('✅') | hist_lab['結果'].astype(str).str.startswith('❌'))
         ].copy()
+        lab1_base['_ret'] = pd.to_numeric(lab1_base['出關報酬(%)'], errors='coerce')
+        lab1_base['_rise'] = pd.to_numeric(lab1_base['近20日漲幅'], errors='coerce')
+        lab1_base['_whale'] = pd.to_numeric(lab1_base['大戶(%)'], errors='coerce')
 
-        l1c1, l1c2 = st.columns([1, 3])
-        with l1c1:
-            lab1_thr = st.slider('跌幅門檻 <', -20, -1, -5, 1, format='%d%%', key='lab1_thr')
-            lab1_min_n = st.number_input('最少樣本數', 5, 50, 10, key='lab1_min_n')
+        l1a, l1b = st.columns(2)
 
-        with l1c2:
-            st.markdown(f'**各進場日效果對比**（門檻 {lab1_thr}%，大+中型，T+1 開盤出場）')
-            lab1_rows = []
-            for n in range(1, 11):
-                cum_c = f'D{n}累積(%)'
-                ret_c = f'D{n}報酬(%)'
-                if cum_c not in lab1_base.columns or ret_c not in lab1_base.columns:
-                    continue
-                sub = lab1_base[pd.to_numeric(lab1_base[cum_c], errors='coerce') < lab1_thr]
-                s = pd.to_numeric(sub[ret_c], errors='coerce').dropna()
-                if len(s) < lab1_min_n:
-                    continue
-                sp_n, pf_n = sharpe_pf(s)
-                lab1_rows.append({
-                    '進場日': f'D{n}',
-                    '樣本N': len(s),
-                    '勝率(%)': round((s > 0).mean() * 100, 1),
-                    '期望報酬(%)': round(s.mean(), 2),
-                    '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
-                    '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0,
-                    '夏普值': sp_n,
-                })
-            if lab1_rows:
-                l1df = pd.DataFrame(lab1_rows).set_index('進場日')
-                best_wr = l1df['勝率(%)'].max()
-                best_ret = l1df['期望報酬(%)'].max()
+        # ── 近20日漲幅篩選 ──
+        with l1a:
+            st.markdown('**近20日漲幅門檻篩選**')
+            st.caption(f'樣本中位數：{lab1_base["_rise"].median():.0f}%（多數股票處置前已大漲）')
+            rise_rows = [{'漲幅門檻': '不篩選（全部）',
+                          '樣本N': len(lab1_base['_ret'].dropna()),
+                          '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 1),
+                          '期望報酬(%)': round(lab1_base['_ret'].dropna().mean(), 2)}]
+            for th in [20, 30, 40, 50, 70, 100]:
+                sub = lab1_base[lab1_base['_rise'] >= th]['_ret'].dropna()
+                if len(sub) < 5: continue
+                rise_rows.append({'漲幅門檻': f'>= {th}%', '樣本N': len(sub),
+                                  '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                  '期望報酬(%)': round(sub.mean(), 2)})
+            rdf = pd.DataFrame(rise_rows).set_index('漲幅門檻')
+            st.dataframe(rdf.style.format({
+                '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+            }, na_rep='-'), use_container_width=True)
+            st.caption('💡 近20日漲幅篩選對結果影響有限，不建議作為主要濾網。')
 
-                def _l1_wr(v):
-                    if v >= best_wr - 2: return 'background-color:#1a5c38;color:white;font-weight:700'
-                    if v >= 75: return 'background-color:#26c281;color:black'
-                    if v >= 65: return 'background-color:#f6c90e;color:black'
-                    return 'background-color:#c0392b;color:white'
-
-                def _l1_ret(v):
-                    if v >= best_ret - 1: return 'background-color:#1a5c38;color:white;font-weight:700'
-                    if v >= 10: return 'background-color:#26c281;color:black'
-                    if v >= 5:  return 'background-color:#f6c90e;color:black'
-                    return 'background-color:#c0392b;color:white'
-
-                st.dataframe(
-                    l1df.style
-                        .map(_l1_wr, subset=['勝率(%)'])
-                        .map(_l1_ret, subset=['期望報酬(%)'])
-                        .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
-                                 '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
-                                 '夏普值': '{:.3f}'}, na_rep='-'),
-                    use_container_width=True
-                )
-
-        # ── 各門檻下特定進場日的掃描 ──
-        st.markdown('**門檻掃描**（固定進場日，看不同門檻的效果）')
-        l1b_col, l1b_main = st.columns([1, 3])
-        with l1b_col:
-            lab1_day = st.selectbox('進場日', [f'D{n}' for n in range(1, 11)], index=2, key='lab1_day')
-        with l1b_main:
-            entry_n = int(lab1_day[1:])
-            cum_c = f'D{entry_n}累積(%)'
-            ret_c = f'D{entry_n}報酬(%)'
-            if cum_c in lab1_base.columns and ret_c in lab1_base.columns:
-                thr_rows = []
-                for th in [-3, -5, -7, -10, -12, -15, -20]:
-                    sub = lab1_base[pd.to_numeric(lab1_base[cum_c], errors='coerce') < th]
-                    s = pd.to_numeric(sub[ret_c], errors='coerce').dropna()
-                    if len(s) < 5: continue
-                    sp_t, pf_t = sharpe_pf(s)
-                    thr_rows.append({'門檻': f'< {th}%', '樣本N': len(s),
-                                     '勝率(%)': round((s > 0).mean() * 100, 1),
-                                     '期望報酬(%)': round(s.mean(), 2),
-                                     '夏普值': sp_t})
-                if thr_rows:
-                    tdf = pd.DataFrame(thr_rows).set_index('門檻')
-                    st.dataframe(tdf.style.format({
-                        '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}', '夏普值': '{:.3f}'
-                    }, na_rep='-'), use_container_width=True)
+        # ── 大戶持股變化篩選 ──
+        with l1b:
+            st.markdown('**大戶持股變化篩選**')
+            st.caption('大戶(%)為進場時大戶持股變化；正值=大戶增持，負值=大戶減持')
+            whale_rows = [{'大戶條件': '不篩選（全部）',
+                           '樣本N': len(lab1_base['_ret'].dropna()),
+                           '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 1),
+                           '期望報酬(%)': round(lab1_base['_ret'].dropna().mean(), 2)}]
+            # 大戶減持（負值，多數情況）
+            for th in [-1, -2, -3, -5]:
+                sub = lab1_base[lab1_base['_whale'] <= th]['_ret'].dropna()
+                if len(sub) < 5: continue
+                whale_rows.append({'大戶條件': f'<= {th}%（減持）', '樣本N': len(sub),
+                                   '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                   '期望報酬(%)': round(sub.mean(), 2)})
+            # 大戶增持（正值，較少）
+            for th in [0, 1]:
+                sub = lab1_base[lab1_base['_whale'] >= th]['_ret'].dropna()
+                if len(sub) < 5: continue
+                whale_rows.append({'大戶條件': f'>= {th}%（增持/中性）', '樣本N': len(sub),
+                                   '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                   '期望報酬(%)': round(sub.mean(), 2)})
+            wdf = pd.DataFrame(whale_rows).set_index('大戶條件')
+            st.dataframe(wdf.style.format({
+                '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+            }, na_rep='-'), use_container_width=True)
+            st.caption('💡 大戶增持（≥0%）時期望報酬明顯較高，但樣本僅 ~20 筆，需持續累積觀察。')
 
         st.divider()
         st.markdown('### 📐 研發方向二：類似策略探索')
