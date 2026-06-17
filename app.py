@@ -1109,8 +1109,93 @@ with tab_lab:
 
         st.divider()
         st.markdown('### 📐 研發方向一：進場參數優化')
-        st.caption('（開發中）進場日精選、漲幅門檻篩選、出場時間點最優化')
-        st.info('待開發')
+        st.caption('主策略基準：D3~D8、門檻 < -5%。此分析探索最佳進場日與跌幅門檻組合。')
+
+        lab1_base = hist_lab[
+            (hist_lab['處置類型'] == '20分鐘') &
+            (hist_lab['規模'].isin(['大', '中'])) &
+            (hist_lab['結果'].astype(str).str.startswith('✅') | hist_lab['結果'].astype(str).str.startswith('❌'))
+        ].copy()
+
+        l1c1, l1c2 = st.columns([1, 3])
+        with l1c1:
+            lab1_thr = st.slider('跌幅門檻 <', -20, -1, -5, 1, format='%d%%', key='lab1_thr')
+            lab1_min_n = st.number_input('最少樣本數', 5, 50, 10, key='lab1_min_n')
+
+        with l1c2:
+            st.markdown(f'**各進場日效果對比**（門檻 {lab1_thr}%，大+中型，T+1 開盤出場）')
+            lab1_rows = []
+            for n in range(1, 11):
+                cum_c = f'D{n}累積(%)'
+                ret_c = f'D{n}報酬(%)'
+                if cum_c not in lab1_base.columns or ret_c not in lab1_base.columns:
+                    continue
+                sub = lab1_base[pd.to_numeric(lab1_base[cum_c], errors='coerce') < lab1_thr]
+                s = pd.to_numeric(sub[ret_c], errors='coerce').dropna()
+                if len(s) < lab1_min_n:
+                    continue
+                sp_n, pf_n = sharpe_pf(s)
+                lab1_rows.append({
+                    '進場日': f'D{n}',
+                    '樣本N': len(s),
+                    '勝率(%)': round((s > 0).mean() * 100, 1),
+                    '期望報酬(%)': round(s.mean(), 2),
+                    '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
+                    '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0,
+                    '夏普值': sp_n,
+                })
+            if lab1_rows:
+                l1df = pd.DataFrame(lab1_rows).set_index('進場日')
+                best_wr = l1df['勝率(%)'].max()
+                best_ret = l1df['期望報酬(%)'].max()
+
+                def _l1_wr(v):
+                    if v >= best_wr - 2: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 75: return 'background-color:#26c281;color:black'
+                    if v >= 65: return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+
+                def _l1_ret(v):
+                    if v >= best_ret - 1: return 'background-color:#1a5c38;color:white;font-weight:700'
+                    if v >= 10: return 'background-color:#26c281;color:black'
+                    if v >= 5:  return 'background-color:#f6c90e;color:black'
+                    return 'background-color:#c0392b;color:white'
+
+                st.dataframe(
+                    l1df.style
+                        .map(_l1_wr, subset=['勝率(%)'])
+                        .map(_l1_ret, subset=['期望報酬(%)'])
+                        .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
+                                 '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
+                                 '夏普值': '{:.3f}'}, na_rep='-'),
+                    use_container_width=True
+                )
+
+        # ── 各門檻下特定進場日的掃描 ──
+        st.markdown('**門檻掃描**（固定進場日，看不同門檻的效果）')
+        l1b_col, l1b_main = st.columns([1, 3])
+        with l1b_col:
+            lab1_day = st.selectbox('進場日', [f'D{n}' for n in range(1, 11)], index=2, key='lab1_day')
+        with l1b_main:
+            entry_n = int(lab1_day[1:])
+            cum_c = f'D{entry_n}累積(%)'
+            ret_c = f'D{entry_n}報酬(%)'
+            if cum_c in lab1_base.columns and ret_c in lab1_base.columns:
+                thr_rows = []
+                for th in [-3, -5, -7, -10, -12, -15, -20]:
+                    sub = lab1_base[pd.to_numeric(lab1_base[cum_c], errors='coerce') < th]
+                    s = pd.to_numeric(sub[ret_c], errors='coerce').dropna()
+                    if len(s) < 5: continue
+                    sp_t, pf_t = sharpe_pf(s)
+                    thr_rows.append({'門檻': f'< {th}%', '樣本N': len(s),
+                                     '勝率(%)': round((s > 0).mean() * 100, 1),
+                                     '期望報酬(%)': round(s.mean(), 2),
+                                     '夏普值': sp_t})
+                if thr_rows:
+                    tdf = pd.DataFrame(thr_rows).set_index('門檻')
+                    st.dataframe(tdf.style.format({
+                        '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}', '夏普值': '{:.3f}'
+                    }, na_rep='-'), use_container_width=True)
 
         st.divider()
         st.markdown('### 📐 研發方向二：類似策略探索')
