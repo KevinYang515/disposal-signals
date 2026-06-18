@@ -65,6 +65,14 @@ def load_meta():
     with open(p) as f:
         return json.load(f)
 
+@st.cache_data(ttl=3600)
+def load_exit_timing():
+    s = f'{DATA_DIR}/exit_timing_summary.csv'
+    d = f'{DATA_DIR}/exit_timing_d1strat.csv'
+    if not os.path.exists(s) or not os.path.exists(d):
+        return pd.DataFrame(), pd.DataFrame()
+    return pd.read_csv(s), pd.read_csv(d)
+
 # ── Header ──────────────────────────────────────────────────────────────
 meta = load_meta()
 st.title('📈 處置股橡皮筋訊號系統')
@@ -98,7 +106,7 @@ def sharpe_pf(s):
     pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
     return sharpe, pf
 
-tab_lab, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '⚙️ 使用方式'])
+tab_lab, tab1, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -1242,6 +1250,90 @@ with tab_lab:
                 st.warning(f'⚠️ 目前樣本僅 {len(filtered)} 筆，統計尚不穩定，持續累積中。')
             else:
                 st.info(f'💡 大戶增持篩選後，出關後 D2 勝率與期望報酬顯著提升。樣本 {len(filtered)} 筆，建議累積至 50+ 再考慮實盤。')
+
+# TAB 出清時機
+# ════════════════════════════════════════════════════════
+with tab_exit:
+    st.subheader('📤 持有者出清時機分析')
+    st.caption('漲多處置 × 20分鐘撮合，基準：進處置前一天收盤（pre-disposal close）')
+
+    et_summary, et_strat = load_exit_timing()
+
+    if et_summary.empty:
+        st.info('資料尚未產生，請執行 update_signals.py 後重整。')
+    else:
+        st.markdown('#### 各時間點出清報酬（相對 pre-disposal 收盤）')
+
+        col_a, col_b = st.columns([3, 2])
+
+        with col_a:
+            def style_exit_table(df):
+                def color_mean(val):
+                    try:
+                        v = float(val)
+                        if v > 2:   return 'color:#26c281;font-weight:700'
+                        if v > 0:   return 'color:#7dcea0'
+                        if v > -2:  return 'color:#e59866'
+                        return 'color:#e74c3c;font-weight:700'
+                    except:
+                        return ''
+                return df.style.applymap(color_mean, subset=['平均報酬(%)','中位數(%)'])
+
+            display_cols = ['時間點','平均報酬(%)','中位數(%)','上漲機率(%)','跌>3%機率(%)','跌>5%機率(%)']
+            st.dataframe(
+                style_exit_table(et_summary[display_cols]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_b:
+            st.markdown("""
+**重點結論**
+
+- **D1 收盤**：平均 -2.7%，70% 機率下跌
+- **D3 / D5**：略優於 D1，但差異不大
+- **持到出關**：平均 +4.9%，反超 pre-disposal
+
+> 出清最佳順序：
+> **D0（今日，正常交易）> D1 第一盤 > 持到出關**
+>
+> 若今天還沒賣：D1 第一盤比 D1 收盤好
+> 若能撐過整個處置期：出關比 D1 賣好 7~8%
+""")
+
+        st.divider()
+        st.markdown('#### D1 跌幅分層 → D3 後續走勢')
+        st.caption('D1 跌很深，D3 有機會回來嗎？')
+
+        if not et_strat.empty:
+            def style_strat(df):
+                def color_d3(val):
+                    try:
+                        v = float(val)
+                        if v > 0:   return 'color:#26c281'
+                        if v > -3:  return 'color:#e59866'
+                        return 'color:#e74c3c'
+                    except:
+                        return ''
+                return df.style.applymap(color_d3, subset=['D3均值(%)'])
+            st.dataframe(
+                style_strat(et_strat),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption('D3比D1好機率：不論 D1 跌多少，D3 回升機率都只有 50~60%，沒有明顯時機優勢——D1 跌深後等 D3 是賭局，不是策略。')
+
+        st.divider()
+        st.markdown("""
+#### 實務建議
+
+| 情境 | 建議 |
+|------|------|
+| 今天盤中知道明天進處置 | 今天盤中找相對強勢時賣（D0，正常流動性） |
+| 收盤後才知道 | 明天 D1 第一盤賣（9:20 撮合），不等 D1 收盤 |
+| 想扛過整個處置期 | 出關 Day1 開盤賣，歷史平均 +4.9%，但需要承受 D1~D5 帳面虧損 |
+| 分批策略 | D1 第一盤先出一半鎖定，剩一半等出關賣 |
+""")
 
 # TAB 6：使用方式
 # ════════════════════════════════════════════════════════
