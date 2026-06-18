@@ -1277,7 +1277,7 @@ with tab_exit:
                         return 'color:#e74c3c;font-weight:700'
                     except:
                         return ''
-                return df.style.applymap(color_mean, subset=['平均報酬(%)','中位數(%)'])
+                return df.style.map(color_mean, subset=['平均報酬(%)','中位數(%)'])
 
             display_cols = ['時間點','平均報酬(%)','中位數(%)','上漲機率(%)','跌>3%機率(%)','跌>5%機率(%)']
             st.dataframe(
@@ -1315,7 +1315,7 @@ with tab_exit:
                         return 'color:#e74c3c'
                     except:
                         return ''
-                return df.style.applymap(color_d3, subset=['D3均值(%)'])
+                return df.style.map(color_d3, subset=['D3均值(%)'])
             st.dataframe(
                 style_strat(et_strat),
                 use_container_width=True,
