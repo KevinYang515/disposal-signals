@@ -511,7 +511,7 @@ def main():
     with open(f'{OUT_DIR}/meta.json', 'w') as f:
         json.dump(meta, f)
     print(f'  → meta.json')
-    print('完成 ✅')
+    print('完成')
 
 if __name__ == '__main__':
     main()
