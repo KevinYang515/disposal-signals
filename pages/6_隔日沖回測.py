@@ -66,13 +66,13 @@ except FileNotFoundError:
     st.error('找不到資料檔，請先執行 overnight_bt/generate_trade_log.py')
     st.stop()
 
-# 成本參數（隔日沖，非當沖，證交稅不打折）
-COST_DISC_PCT = 0.000285 * 2 + 0.003   # 手續費 2折: 0.357%
-COST_STD_PCT  = 0.001425 * 2 + 0.003   # 標準費率: 0.585%
+# 成本（從 stats 讀取，由 generate_trade_log.py 寫入）
+COST_DISC_PCT = stats.get('cost_disc_pct', 0.357) / 100   # 手續費 2折
+COST_STD_PCT  = stats.get('cost_std_pct',  0.585) / 100   # 標準費率
 
-avg_gross_pct = stats['avg_bps'] / 100
-net_yf_pct    = avg_gross_pct - COST_DISC_PCT * 100
-net_std_pct   = avg_gross_pct - COST_STD_PCT * 100
+# avg_bps 已是淨值（generate_trade_log 扣費後計算）
+net_yf_pct    = stats['avg_bps'] / 100          # 淨日均報酬（2折）
+avg_gross_pct = stats.get('avg_gross_bps', stats['avg_bps'] + COST_DISC_PCT * 10000) / 100
 
 # ── 標題 ────────────────────────────────────────────────
 st.title('⚡ 隔日沖回測')
@@ -96,15 +96,16 @@ def mbox(col, val, label, positive_good=True):
     )
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
-mbox(c1, stats['sharpe'],                       'Sharpe Ratio')
-mbox(c2, f"{stats['win_rate_pct']}%",           '勝率')
+mbox(c1, stats['sharpe'],                       'Sharpe（扣費後）')
+mbox(c2, f"{stats['win_rate_pct']}%",           '勝率（扣費後）')
 mbox(c3, f"{avg_gross_pct:.2f}%",               '日均毛報酬')
-mbox(c4, f"{net_yf_pct:.2f}%",                  '日均淨報酬（手續費 2折）')
-mbox(c5, f"{stats['max_dd_pct']}%",             '最大回撤', positive_good=False)
+mbox(c4, f"{net_yf_pct:.2f}%",                  '日均淨報酬（2折）')
+mbox(c5, f"{stats['max_dd_pct']}%",             '最大回撤（扣費後）', positive_good=False)
 mbox(c6, f"{stats['n_trades']}",                f'總交易筆數 ({stats["n_days"]}天)')
 
 st.caption(
     f"手續費：2折 {COST_DISC_PCT*100:.3f}% | 標準 {COST_STD_PCT*100:.3f}%（買+賣，含 0.3% 證交稅）"
+    f"　　Sharpe / 勝率 / DD 均已扣費計算"
 )
 
 st.divider()
@@ -187,9 +188,11 @@ st.divider()
 
 # ── 資金曲線 ────────────────────────────────────────────
 st.subheader('📈 資金曲線')
-daily_avg = trades.groupby('signal_date')['ret_pct'].mean().reset_index()
+daily_gross = trades.groupby('signal_date')['ret_pct'].mean().reset_index()
+daily_net   = trades.groupby('signal_date')['net_ret_pct'].mean().reset_index()
+daily_avg   = daily_gross.merge(daily_net, on='signal_date')
 daily_avg['cumret']     = (1 + daily_avg['ret_pct'] / 100).cumprod()
-daily_avg['cumret_net'] = (1 + daily_avg['ret_pct'] / 100 - COST_DISC_PCT).cumprod()
+daily_avg['cumret_net'] = (1 + daily_avg['net_ret_pct'] / 100).cumprod()
 
 chart_data = daily_avg.melt(
     id_vars='signal_date',
@@ -198,7 +201,7 @@ chart_data = daily_avg.melt(
 )
 chart_data['series'] = chart_data['series'].map({
     'cumret'    : '毛報酬',
-    'cumret_net': f'淨報酬（手續費 2折 {COST_DISC_PCT*100:.2f}%/回合）',
+    'cumret_net': f'淨報酬（2折 {COST_DISC_PCT*100:.2f}%/回合）',
 })
 
 chart = (
@@ -249,13 +252,13 @@ if stock_filter:
          df_show['stock_name'].str.contains(stock_filter, na=False))
     df_show = df_show[m]
 if result_filter == '獲利':
-    df_show = df_show[df_show['ret_pct'] > 0]
+    df_show = df_show[df_show['net_ret_pct'] > 0]
 elif result_filter == '虧損':
-    df_show = df_show[df_show['ret_pct'] <= 0]
+    df_show = df_show[df_show['net_ret_pct'] <= 0]
 
-# 加入每筆 NT$ 損益（依本金計算）
+# 加入每筆 NT$ 損益（用淨報酬計算）
 df_show = df_show.copy()
-df_show['損益_NT'] = (df_show['ret_pct'] / 100 * (capital / 5)).round(0).astype(int)
+df_show['損益_NT'] = (df_show['net_ret_pct'] / 100 * (capital / 5)).round(0).astype(int)
 
 rename_map = {
     'signal_date'        : '訊號日',
@@ -271,8 +274,9 @@ rename_map = {
     'exit_close'         : '次日收盤',
     'exit_close_ret_pct' : '次日收盤漲跌',
     'exit_vol_ratio'     : '次日量比',
-    'ret_pct'            : '損益%',
-    '損益_NT'            : f'損益(元)',
+    'ret_pct'            : '毛損益%',
+    'net_ret_pct'        : '淨損益%',
+    '損益_NT'            : '淨損益(元)',
 }
 display_cols = [c for c in rename_map if c in df_show.columns]
 df_disp = df_show[display_cols].rename(columns=rename_map).sort_values('訊號日', ascending=False)
@@ -285,8 +289,8 @@ def style_ret(val):
     except:
         return ''
 
-pct_cols = ['訊號日漲跌', '開盤漲跌', '次日收盤漲跌', '損益%']
-nt_cols  = ['損益(元)']
+pct_cols = ['訊號日漲跌', '開盤漲跌', '次日收盤漲跌', '毛損益%', '淨損益%']
+nt_cols  = ['淨損益(元)']
 
 styled = (
     df_disp.style
@@ -300,22 +304,23 @@ styled = (
         '開盤漲跌'     : '{:+.2f}%',
         '次日收盤漲跌' : '{:+.2f}%',
         '次日量比'     : '{:.1f}x',
-        '損益%'        : '{:+.2f}%',
-        '損益(元)'     : '{:+,.0f}',
+        '毛損益%'      : '{:+.2f}%',
+        '淨損益%'      : '{:+.2f}%',
+        '淨損益(元)'   : '{:+,.0f}',
         '成交金額(萬)' : '{:,.0f}',
     }, na_rep='—')
 )
 
-st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆　　每筆部位：{capital//5:,.0f} 元')
+st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆　　每筆部位：{capital//5:,.0f} 元　　損益欄已扣手續費 2折 + 證交稅')
 st.dataframe(styled, use_container_width=True, height=480)
 
 if len(df_show) > 0:
-    avg_pct = df_show['ret_pct'].mean()
-    net_pct = avg_pct - COST_DISC_PCT * 100
-    wr      = (df_show['ret_pct'] > 0).mean() * 100
-    total_nt = df_show['損益_NT'].sum()
+    gross_pct = df_show['ret_pct'].mean()
+    net_pct   = df_show['net_ret_pct'].mean()
+    wr        = (df_show['net_ret_pct'] > 0).mean() * 100
+    total_nt  = df_show['損益_NT'].sum()
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('期間平均損益', f'{avg_pct:+.2f}%')
-    c2.metric('淨報酬（手續費 2折）', f'{net_pct:+.2f}%')
-    c3.metric('勝率', f'{wr:.1f}%')
-    c4.metric('期間累計損益(元)', f'{total_nt:+,.0f}')
+    c1.metric('期間平均毛損益', f'{gross_pct:+.2f}%')
+    c2.metric('期間平均淨損益（2折）', f'{net_pct:+.2f}%')
+    c3.metric('勝率（扣費後）', f'{wr:.1f}%')
+    c4.metric('期間累計淨損益(元)', f'{total_nt:+,.0f}')
