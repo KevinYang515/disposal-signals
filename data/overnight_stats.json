@@ -1,0 +1,14 @@
+{
+  "period": "2023-01-01 ~ 2026-06-18",
+  "n_trades": 4051,
+  "n_days": 812,
+  "sharpe": 7.268,
+  "ann_ret_pct": 532.8,
+  "max_dd_pct": -12.7,
+  "win_rate_pct": 71.6,
+  "avg_bps": 74.8,
+  "latest_date": "2026-06-18",
+  "n_candidates": 5,
+  "candidate_date": "2026-06-18",
+  "strategy": "F1+F2+F3 | 漲幅排名 | 隔日開盤賣"
+}
