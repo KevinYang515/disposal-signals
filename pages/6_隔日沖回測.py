@@ -1,5 +1,5 @@
 """
-隔日沖回測  — 策略：F1+F2+F3 + 今日漲幅排名 + 隔日開盤賣
+隔日沖回測  — 策略：F1+F2+F3 + 今日漲幅排名 + 隔日開盤賣（排除漲停）
 資料由 overnight_bt/generate_trade_log.py 產生，每日收盤後重跑更新。
 """
 
@@ -32,14 +32,18 @@ st.markdown("""
 }
 .cand-stock { font-size: 1.1em; font-weight: 700; color: #f1f5f9; }
 .cand-meta  { font-size: 0.85em; color: #94a3b8; margin-top: 4px; }
+.pnl-box {
+    background: #1a2535; border-radius: 10px;
+    padding: 16px 20px; margin: 6px 0;
+    border: 1px solid #2d3748;
+}
+.pnl-title { font-size: 0.85em; color: #94a3b8; }
+.pnl-val   { font-size: 1.5em; font-weight: 700; color: #4ade80; margin-top: 4px; }
 .up   { color: #f87171; font-weight: 600; }
 .down { color: #4ade80; font-weight: 600; }
-.neu  { color: #94a3b8; }
-.stDataFrame { font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── 路徑 ────────────────────────────────────────────────
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 
 @st.cache_data(ttl=600)
@@ -62,6 +66,14 @@ except FileNotFoundError:
     st.error('找不到資料檔，請先執行 overnight_bt/generate_trade_log.py')
     st.stop()
 
+# 成本參數（隔日沖，非當沖，證交稅不打折）
+COST_DISC_PCT = 0.000285 * 2 + 0.003   # 手續費 2折: 0.357%
+COST_STD_PCT  = 0.001425 * 2 + 0.003   # 標準費率: 0.585%
+
+avg_gross_pct = stats['avg_bps'] / 100
+net_yf_pct    = avg_gross_pct - COST_DISC_PCT * 100
+net_std_pct   = avg_gross_pct - COST_STD_PCT * 100
+
 # ── 標題 ────────────────────────────────────────────────
 st.title('⚡ 隔日沖回測')
 st.caption(
@@ -70,56 +82,102 @@ st.caption(
     f"最後更新：{stats['latest_date']}"
 )
 
-COST_YF  = 35.7   # 永豐隔日沖 bps
-COST_STD = 58.5   # 標準費率 bps
-
 # ── 績效指標 ────────────────────────────────────────────
-st.subheader('績效摘要（未扣成本）')
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+st.subheader('績效摘要')
 
 def mbox(col, val, label, positive_good=True):
-    cls = 'metric-val' if (positive_good and str(val)[0] != '-') or \
-          (not positive_good and str(val)[0] == '-') else 'metric-val2'
+    v = str(val)
+    cls = 'metric-val' if (positive_good and not v.startswith('-')) or \
+          (not positive_good and v.startswith('-')) else 'metric-val2'
     col.markdown(
-        f'<div class="metric-box">'
-        f'<div class="{cls}">{val}</div>'
-        f'<div class="metric-lab">{label}</div>'
-        f'</div>', unsafe_allow_html=True
+        f'<div class="metric-box"><div class="{cls}">{val}</div>'
+        f'<div class="metric-lab">{label}</div></div>',
+        unsafe_allow_html=True
     )
 
-mbox(c1, stats['sharpe'],          'Sharpe Ratio')
-mbox(c2, f"{stats['win_rate_pct']}%",  '勝率')
-mbox(c3, f"{stats['avg_bps']} bps",    '平均日報酬（毛）')
-mbox(c4, f"{stats['avg_bps'] - COST_YF:.1f} bps", '永豐淨報酬')
-mbox(c5, f"{stats['max_dd_pct']}%",    '最大回撤', positive_good=False)
-mbox(c6, f"{stats['n_trades']}",       f'總交易筆數 ({stats["n_days"]}天)')
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+mbox(c1, stats['sharpe'],                       'Sharpe Ratio')
+mbox(c2, f"{stats['win_rate_pct']}%",           '勝率')
+mbox(c3, f"{avg_gross_pct:.2f}%",               '日均毛報酬')
+mbox(c4, f"{net_yf_pct:.2f}%",                  '日均淨報酬（手續費 2折）')
+mbox(c5, f"{stats['max_dd_pct']}%",             '最大回撤', positive_good=False)
+mbox(c6, f"{stats['n_trades']}",                f'總交易筆數 ({stats["n_days"]}天)')
 
 st.caption(
-    f"💡 成本參考：永豐隔日沖 {COST_YF} bps | 標準費率 {COST_STD} bps（含 0.3% 證交稅）"
+    f"手續費：2折 {COST_DISC_PCT*100:.3f}% | 標準 {COST_STD_PCT*100:.3f}%（買+賣，含 0.3% 證交稅）"
+)
+
+st.divider()
+
+# ── 資金試算 ────────────────────────────────────────────
+st.subheader('💰 資金試算')
+st.caption('5 檔等金額部位，每日全額投入（手續費兩折，毛報酬扣成本後的保守估計）')
+
+cap_col, note_col = st.columns([1, 2])
+with cap_col:
+    capital = st.number_input(
+        '投入本金（元）', min_value=100_000, max_value=50_000_000,
+        value=1_000_000, step=100_000, format='%d'
+    )
+with note_col:
+    st.markdown(f"""
+每檔部位 **{capital // 5:,.0f} 元**（5 檔等權）
+
+> ⚠️ 下列試算為回測歷史均值，實際損益受市況、滑價影響而不同。
+> 未計入尾盤買進的滑價成本（估計額外 5–10 bps）。
+""")
+
+per_trade_nt  = capital / 5
+daily_net_nt  = capital * net_yf_pct / 100
+monthly_net   = daily_net_nt * 21
+annual_factor = (1 + net_yf_pct / 100) ** 252 - 1
+annual_net_nt = capital * annual_factor
+
+b1, b2, b3, b4 = st.columns(4)
+b1.markdown(
+    f'<div class="pnl-box"><div class="pnl-title">每日平均淨損益</div>'
+    f'<div class="pnl-val">+{daily_net_nt:,.0f} 元</div></div>',
+    unsafe_allow_html=True
+)
+b2.markdown(
+    f'<div class="pnl-box"><div class="pnl-title">每月平均淨損益（21交易日）</div>'
+    f'<div class="pnl-val">+{monthly_net:,.0f} 元</div></div>',
+    unsafe_allow_html=True
+)
+b3.markdown(
+    f'<div class="pnl-box"><div class="pnl-title">年化報酬（複利）</div>'
+    f'<div class="pnl-val">+{annual_factor*100:.1f}%</div></div>',
+    unsafe_allow_html=True
+)
+b4.markdown(
+    f'<div class="pnl-box"><div class="pnl-title">年化淨損益（估算）</div>'
+    f'<div class="pnl-val">+{annual_net_nt:,.0f} 元</div></div>',
+    unsafe_allow_html=True
 )
 
 st.divider()
 
 # ── 候選股 ──────────────────────────────────────────────
 st.subheader(f'📋 最新候選股  {stats["candidate_date"]}  收盤買進 → 隔日開盤賣')
-st.caption('⚠️ 回測訊號，非投資建議。實際執行前請自行評估風險。')
+st.caption('⚠️ 回測訊號，非投資建議。已排除當日漲停股（尾盤無法成交）。')
 
 if len(cands) == 0:
     st.info('目前無候選股')
 else:
     cols = st.columns(len(cands))
     for i, (_, row) in enumerate(cands.iterrows()):
-        ret_str = f"+{row['signal_day_ret_pct']:.2f}%" if row['signal_day_ret_pct'] > 0 \
-                  else f"{row['signal_day_ret_pct']:.2f}%"
-        ret_cls = 'up' if row['signal_day_ret_pct'] > 0 else 'down'
+        ret = row['signal_day_ret_pct']
+        ret_str = f"+{ret:.2f}%" if ret > 0 else f"{ret:.2f}%"
+        ret_cls = 'up' if ret > 0 else 'down'
+        pos_nt  = capital // 5
         cols[i].markdown(
             f'<div class="cand-card">'
             f'<div class="cand-stock">{row["stock_id"]} {row["stock_name"]}</div>'
             f'<div class="cand-meta">'
-            f'收盤 <b style="color:#f1f5f9">{row["entry_price"]}</b> 元　'
-            f'<span class="{ret_cls}">{ret_str}</span><br>'
-            f'量比 <b>{row["signal_vol_ratio"]:.1f}x</b>　'
-            f'成交 <b>{int(row["signal_amount_wan"] or 0):,}</b> 萬元'
+            f'建議進場 <b style="color:#f1f5f9">{row["entry_price"]:.2f}</b> 元<br>'
+            f'今日 <span class="{ret_cls}">{ret_str}</span>　'
+            f'量比 <b>{row["signal_vol_ratio"]:.1f}x</b><br>'
+            f'部位大小 <b>{pos_nt:,.0f}</b> 元'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True
@@ -130,17 +188,17 @@ st.divider()
 # ── 資金曲線 ────────────────────────────────────────────
 st.subheader('📈 資金曲線')
 daily_avg = trades.groupby('signal_date')['ret_pct'].mean().reset_index()
-daily_avg['cumret'] = (1 + daily_avg['ret_pct'] / 100).cumprod()
-daily_avg['cumret_net_yf'] = (1 + (daily_avg['ret_pct'] / 100 - COST_YF / 10000)).cumprod()
+daily_avg['cumret']     = (1 + daily_avg['ret_pct'] / 100).cumprod()
+daily_avg['cumret_net'] = (1 + daily_avg['ret_pct'] / 100 - COST_DISC_PCT).cumprod()
 
 chart_data = daily_avg.melt(
     id_vars='signal_date',
-    value_vars=['cumret', 'cumret_net_yf'],
+    value_vars=['cumret', 'cumret_net'],
     var_name='series', value_name='value'
 )
 chart_data['series'] = chart_data['series'].map({
-    'cumret'        : '毛報酬',
-    'cumret_net_yf' : f'淨報酬（永豐 {COST_YF} bps）',
+    'cumret'    : '毛報酬',
+    'cumret_net': f'淨報酬（手續費 2折 {COST_DISC_PCT*100:.2f}%/回合）',
 })
 
 chart = (
@@ -150,8 +208,11 @@ chart = (
         x=alt.X('signal_date:T', title='日期'),
         y=alt.Y('value:Q', title='累積倍數', scale=alt.Scale(type='log')),
         color=alt.Color('series:N', legend=alt.Legend(orient='top-left')),
-        tooltip=['signal_date:T', 'series:N',
-                 alt.Tooltip('value:Q', format='.2f', title='倍數')],
+        tooltip=[
+            alt.Tooltip('signal_date:T', title='日期'),
+            'series:N',
+            alt.Tooltip('value:Q', format='.2f', title='倍數'),
+        ],
     )
     .properties(height=320)
     .interactive()
@@ -177,7 +238,6 @@ with col_f2:
 with col_f3:
     result_filter = st.selectbox('損益篩選', ['全部', '獲利', '虧損'])
 
-# 篩選
 df_show = trades.copy()
 if len(date_range) == 2:
     df_show = df_show[
@@ -185,73 +245,77 @@ if len(date_range) == 2:
         (df_show['signal_date'].dt.date <= date_range[1])
     ]
 if stock_filter:
-    mask = (
-        df_show['stock_id'].str.contains(stock_filter, na=False) |
-        df_show['stock_name'].str.contains(stock_filter, na=False)
-    )
-    df_show = df_show[mask]
+    m = (df_show['stock_id'].str.contains(stock_filter, na=False) |
+         df_show['stock_name'].str.contains(stock_filter, na=False))
+    df_show = df_show[m]
 if result_filter == '獲利':
-    df_show = df_show[df_show['ret_bps'] > 0]
+    df_show = df_show[df_show['ret_pct'] > 0]
 elif result_filter == '虧損':
-    df_show = df_show[df_show['ret_bps'] <= 0]
+    df_show = df_show[df_show['ret_pct'] <= 0]
 
-st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆')
+# 加入每筆 NT$ 損益（依本金計算）
+df_show = df_show.copy()
+df_show['損益_NT'] = (df_show['ret_pct'] / 100 * (capital / 5)).round(0).astype(int)
 
-# 欄位重命名方便閱讀
 rename_map = {
-    'signal_date'       : '訊號日',
-    'exit_date'         : '出場日',
-    'stock_id'          : '代號',
-    'stock_name'        : '名稱',
-    'entry_price'       : '進場收盤',
-    'signal_day_ret_pct': '訊號日漲跌%',
-    'signal_vol_ratio'  : '訊號日量比',
-    'signal_amount_wan' : '訊號日成交(萬)',
-    'exit_open'         : '出場開盤',
-    'exit_open_ret_pct' : '開盤漲跌%',
-    'exit_close'        : '次日收盤',
-    'exit_close_ret_pct': '次日收盤漲跌%',
-    'exit_vol_ratio'    : '次日量比',
-    'ret_bps'           : '損益(bps)',
-    'ret_pct'           : '損益(%)',
+    'signal_date'        : '訊號日',
+    'exit_date'          : '出場日',
+    'stock_id'           : '代號',
+    'stock_name'         : '名稱',
+    'entry_price'        : '進場收盤',
+    'signal_day_ret_pct' : '訊號日漲跌',
+    'signal_vol_ratio'   : '訊號日量比',
+    'signal_amount_wan'  : '成交金額(萬)',
+    'exit_open'          : '出場開盤',
+    'exit_open_ret_pct'  : '開盤漲跌',
+    'exit_close'         : '次日收盤',
+    'exit_close_ret_pct' : '次日收盤漲跌',
+    'exit_vol_ratio'     : '次日量比',
+    'ret_pct'            : '損益%',
+    '損益_NT'            : f'損益(元)',
 }
-display_cols = list(rename_map.keys())
-df_display = df_show[display_cols].rename(columns=rename_map).sort_values('訊號日', ascending=False)
+display_cols = [c for c in rename_map if c in df_show.columns]
+df_disp = df_show[display_cols].rename(columns=rename_map).sort_values('訊號日', ascending=False)
 
-# 格式化數值顯示
 def style_ret(val):
     if pd.isna(val):
         return ''
-    color = '#f87171' if val > 0 else '#4ade80' if val < 0 else '#94a3b8'
-    return f'color: {color}'
+    try:
+        return f'color: {"#f87171" if float(val) > 0 else "#4ade80" if float(val) < 0 else "#94a3b8"}'
+    except:
+        return ''
+
+pct_cols = ['訊號日漲跌', '開盤漲跌', '次日收盤漲跌', '損益%']
+nt_cols  = ['損益(元)']
 
 styled = (
-    df_display.style
-    .applymap(style_ret, subset=['訊號日漲跌%', '開盤漲跌%', '次日收盤漲跌%', '損益(%)', '損益(bps)'])
+    df_disp.style
+    .applymap(style_ret, subset=pct_cols + nt_cols)
     .format({
-        '進場收盤'      : '{:.2f}',
-        '出場開盤'      : '{:.2f}',
-        '次日收盤'      : '{:.2f}',
-        '訊號日漲跌%'   : '{:+.2f}',
-        '訊號日量比'    : '{:.1f}x',
-        '開盤漲跌%'    : '{:+.2f}',
-        '次日收盤漲跌%': '{:+.2f}',
+        '進場收盤'     : '{:.2f}',
+        '出場開盤'     : '{:.2f}',
+        '次日收盤'     : '{:.2f}',
+        '訊號日漲跌'   : '{:+.2f}%',
+        '訊號日量比'   : '{:.1f}x',
+        '開盤漲跌'     : '{:+.2f}%',
+        '次日收盤漲跌' : '{:+.2f}%',
         '次日量比'     : '{:.1f}x',
-        '損益(bps)'   : '{:+.0f}',
-        '損益(%)'     : '{:+.2f}',
-        '訊號日成交(萬)': '{:,.0f}',
+        '損益%'        : '{:+.2f}%',
+        '損益(元)'     : '{:+,.0f}',
+        '成交金額(萬)' : '{:,.0f}',
     }, na_rep='—')
 )
 
+st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆　　每筆部位：{capital//5:,.0f} 元')
 st.dataframe(styled, use_container_width=True, height=480)
 
-# 篩選期間小結
 if len(df_show) > 0:
-    period_avg = df_show['ret_bps'].mean()
-    period_wr  = (df_show['ret_bps'] > 0).mean() * 100
-    net_yf     = period_avg - COST_YF
+    avg_pct = df_show['ret_pct'].mean()
+    net_pct = avg_pct - COST_DISC_PCT * 100
+    wr      = (df_show['ret_pct'] > 0).mean() * 100
+    total_nt = df_show['損益_NT'].sum()
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('期間平均損益', f'{period_avg:.1f} bps')
-    c2.metric('永豐淨報酬', f'{net_yf:.1f} bps')
-    c3.metric('勝率', f'{period_wr:.1f}%')
-    c4.metric('筆數', len(df_show))
+    c1.metric('期間平均損益', f'{avg_pct:+.2f}%')
+    c2.metric('淨報酬（手續費 2折）', f'{net_pct:+.2f}%')
+    c3.metric('勝率', f'{wr:.1f}%')
+    c4.metric('期間累計損益(元)', f'{total_nt:+,.0f}')
