@@ -290,7 +290,7 @@ nt_cols  = ['損益(元)']
 
 styled = (
     df_disp.style
-    .applymap(style_ret, subset=pct_cols + nt_cols)
+    .map(style_ret, subset=pct_cols + nt_cols)
     .format({
         '進場收盤'     : '{:.2f}',
         '出場開盤'     : '{:.2f}',
