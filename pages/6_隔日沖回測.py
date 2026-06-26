@@ -112,7 +112,7 @@ st.divider()
 
 # ── 資金試算 ────────────────────────────────────────────
 st.subheader('💰 資金試算')
-st.caption('5 檔等金額部位，每日全額投入（手續費兩折，毛報酬扣成本後的保守估計）')
+st.caption('2 檔等金額部位，每檔 50% 本金（手續費兩折，扣費後淨報酬）')
 
 cap_col, note_col = st.columns([1, 2])
 with cap_col:
@@ -122,13 +122,13 @@ with cap_col:
     )
 with note_col:
     st.markdown(f"""
-每檔部位 **{capital // 5:,.0f} 元**（5 檔等權）
+每檔部位 **{capital // 2:,.0f} 元**（2 檔各 50%）
 
 > ⚠️ 下列試算為回測歷史均值，實際損益受市況、滑價影響而不同。
 > 未計入尾盤買進的滑價成本（估計額外 5–10 bps）。
 """)
 
-per_trade_nt  = capital / 5
+per_trade_nt  = capital / 2
 daily_net_nt  = capital * net_yf_pct / 100
 monthly_net   = daily_net_nt * 21
 annual_factor = (1 + net_yf_pct / 100) ** 252 - 1
@@ -170,7 +170,7 @@ else:
         ret = row['signal_day_ret_pct']
         ret_str = f"+{ret:.2f}%" if ret > 0 else f"{ret:.2f}%"
         ret_cls = 'up' if ret > 0 else 'down'
-        pos_nt  = capital // 5
+        pos_nt  = capital // 2
         cols[i].markdown(
             f'<div class="cand-card">'
             f'<div class="cand-stock">{row["stock_id"]} {row["stock_name"]}</div>'
@@ -258,7 +258,7 @@ elif result_filter == '虧損':
 
 # 加入每筆 NT$ 損益（用淨報酬計算）
 df_show = df_show.copy()
-df_show['損益_NT'] = (df_show['net_ret_pct'] / 100 * (capital / 5)).round(0).astype(int)
+df_show['損益_NT'] = (df_show['net_ret_pct'] / 100 * (capital / 2)).round(0).astype(int)
 
 rename_map = {
     'signal_date'        : '訊號日',
@@ -311,7 +311,7 @@ styled = (
     }, na_rep='—')
 )
 
-st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆　　每筆部位：{capital//5:,.0f} 元　　損益欄已扣手續費 2折 + 證交稅')
+st.caption(f'顯示 {len(df_show)} 筆 / 共 {len(trades)} 筆　　每筆部位：{capital//2:,.0f} 元（各 50%）　　損益欄已扣手續費 2折 + 證交稅')
 st.dataframe(styled, use_container_width=True, height=480)
 
 if len(df_show) > 0:
