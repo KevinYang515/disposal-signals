@@ -1,14 +1,14 @@
 {
   "period": "2023-01-01 ~ 2026-06-26",
-  "n_trades": 3632,
-  "n_days": 797,
-  "sharpe": 6.423,
-  "ann_ret_pct": 328.8,
-  "max_dd_pct": -11.6,
-  "win_rate_pct": 69.6,
-  "avg_bps": 59.0,
+  "n_trades": 3427,
+  "n_days": 794,
+  "sharpe": 6.542,
+  "ann_ret_pct": 323.9,
+  "max_dd_pct": -11.5,
+  "win_rate_pct": 71.0,
+  "avg_bps": 58.5,
   "latest_date": "2026-06-26",
-  "n_candidates": 2,
+  "n_candidates": 1,
   "candidate_date": "2026-06-26",
-  "strategy": "中型50-300億 | F1+F2+F3 | 漲幅>=2% | 超大量2.5x | NH20突破 | 漲幅排名"
+  "strategy": "中型50-300億 | F1+F2+F3 | 漲幅>=2% | 超大量3x | NH20突破 | 漲幅排名"
 }
