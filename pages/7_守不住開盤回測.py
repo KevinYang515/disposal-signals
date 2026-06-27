@@ -18,9 +18,10 @@ from pathlib import Path
 st.set_page_config(page_title="守不住開盤", page_icon="🩸", layout="wide",
                    initial_sidebar_state="expanded")
 
-FINAL_DAILY = Path(r"D:\stock\守不住開盤_FINAL_500萬.csv")
-ALL_SIGNALS = Path(r"D:\stock\守不住開盤_上線版_signals.csv")
-TRADES_V2   = Path(r"D:\stock\守不住開盤_空_回測結果_v2.csv")
+_DATA = Path(__file__).parent.parent / "data"
+FINAL_DAILY = _DATA / "守不住開盤_FINAL_500萬.csv"
+ALL_SIGNALS = _DATA / "守不住開盤_上線版_signals.csv"
+TRADES_V2   = _DATA / "守不住開盤_空_回測結果_v2.csv"
 
 BUDGET_DEFAULT = 5_000_000
 N_MAX_DEFAULT  = 5

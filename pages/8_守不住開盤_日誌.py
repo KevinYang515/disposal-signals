@@ -13,7 +13,7 @@ from pathlib import Path
 st.set_page_config(page_title="守不住開盤 日誌", page_icon="📋", layout="wide",
                    initial_sidebar_state="expanded")
 
-SIGNALS_CSV = Path(r"D:\stock\守不住開盤_上線版_signals.csv")
+SIGNALS_CSV = Path(__file__).parent.parent / "data" / "守不住開盤_上線版_signals.csv"
 BUDGET      = 5_000_000
 N_MAX       = 5
 LOT         = 1000
