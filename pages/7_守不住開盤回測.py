@@ -1,13 +1,13 @@
 """
 守不住開盤（Gap-Up-Fade-Short）策略回測
 
-核心邏輯：
-  個股 gap up 開盤 + 09:35 前漲不動 + 09:35–09:40 跌破開盤價 → 空 → 13:25 回補
+核心邏輯（V2：不破高點）：
+  個股 gap up 開盤 + 09:35 前漲不動 + 09:35–09:40 從早盤高回落 0.2% → 空 → 13:25 回補
+  停損：morning_high + 2 ticks（自動依股價區段算 tick，永遠 < 漲停 - 1 tick）
 
-最終配置（2026-06-27，WAIT_MIN=35 優化後）：
-  資金 500 萬、N_MAX=5、stock_aor<1% filter、gap/aor 排序、WAIT_MIN=35
-  → CAGR +110.2%、Sharpe 16.25、MaxDD -1.1%、月勝率 100%
-  Walk-forward TEST Sharpe 16.89（>TRAIN 15.84）
+最終配置（2026-06-27，V2 升級）：
+  → CAGR +113.1%、Sharpe 17.28、MaxDD -0.8%、WR 88.7%、月勝率 100%
+  Walk-forward TEST Sharpe 17.73（>TRAIN 17.01）
 """
 
 import streamlit as st
@@ -114,7 +114,8 @@ with st.sidebar:
 
     st.divider()
     st.caption(
-        "策略：個股 gap up + 09:35 前漲不動（WAIT_MIN=35）+ 09:35–09:40 跌破開盤價 → 空 → 13:25 回補\n\n"
+        "V2 策略：個股 gap up + 09:35 前漲不動 + **09:35–09:40 從早盤高回落 0.2%**（不破高點）→ 空 → 13:25 回補\n\n"
+        "停損：morning_high + 2 ticks（無漲停鎖死風險）\n"
         "資料：319 檔台股 1 分 K\n"
         "期間：2023-01 ~ 2026-06"
     )

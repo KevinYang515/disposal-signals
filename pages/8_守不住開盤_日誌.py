@@ -99,10 +99,10 @@ with st.sidebar:
                            format_func=lambda x: f"< {x*100:.1f}%" if x < 1 else "無")
     st.divider()
     st.caption(
-        "進場：09:35–09:40 跌破 open×0.998（WAIT_MIN=35）\n"
-        "停損：max(morning_high×1.005, open×1.003)\n"
+        "V2：09:35–09:40 從早盤高回落 0.2%（不破高點）\n"
+        "停損：morning_high + 2 ticks（自動依股價算 tick，無漲停鎖死風險）\n"
         "出場：13:25 強制回補\n\n"
-        "⚠ 漲停鎖死：stop_price > 漲停價，即使觸停損也無法以停損價成交"
+        "⚠ V2 已自動 clip 停損 ≤ 漲停 - 1 tick"
     )
 
 # ── 取當日資料 ──────────────────────────────────────────────
@@ -329,7 +329,7 @@ if not selected.empty and n_fills > 0:
 
 st.divider()
 st.caption(
-    f"🩸 守不住開盤 日誌 v1.2 (WAIT_MIN=35) · "
+    f"🩸 守不住開盤 日誌 v2.0 (V2 不破高點) · "
     f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.1f}%），選入 top-{n_max}  |  "
-    "🔴 停損超漲停 = stop_price > prev_close×1.1，無法以停損價出場"
+    "停損已自動 clip ≤ 漲停 - 1 tick，無鎖死風險"
 )
