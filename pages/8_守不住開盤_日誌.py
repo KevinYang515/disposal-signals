@@ -3,7 +3,7 @@
 
 顯示任一交易日的：
   選股清單 / 進場時間 & 價格 / 停損防守 / 出場時間 & 價格 / 損益
-  + 股票名稱 / 漲停鎖死風險警示
+  + 股票名稱 / 漲停近接警示（停損本身 V3b 後自動 clip 安全）
 """
 import streamlit as st
 import pandas as pd
@@ -70,11 +70,20 @@ def calc_pnl(row, per_slot):
 
 
 def limit_badge(row):
-    """回傳 (html badge, 說明文字)，None 表示無風險"""
+    """回傳 (html badge, 說明文字)，None 表示無風險
+
+    V3b 已自動 clip 停損 ≤ 漲停 - 1 tick，danger 不會觸發。
+    Orange 是「進場後若被鎖漲停，部位無法出場」的潛在風險（與停損價無關）。
+    """
     if row["stop_vs_limit"] > 0:
-        return "badge-danger", f"停損({row['stop_price']:.2f}) 超出漲停({row['limit_price']:.1f})，鎖死無法出場"
+        # V3b 後不會發生（保留邏輯防止資料異常）
+        return "badge-danger", f"⚠ 異常：停損({row['stop_price']:.2f}) 超出漲停({row['limit_price']:.1f})"
     if row["gap_to_limit"] < 0.02:
-        return "badge-orange", f"開盤距漲停僅 {row['gap_to_limit']*100:.1f}%，漲停鎖死風險高"
+        return "badge-orange", (
+            f"開盤距漲停僅 {row['gap_to_limit']*100:.1f}%。停損價({row['stop_price']:.2f}) "
+            f"低於漲停({row['limit_price']:.1f}) {abs(row['stop_vs_limit'])*100:.1f}%，**停損本身安全**；"
+            f"但若進場後被鎖漲停，部位卡到收盤前無法出場（強制承受最大損失）"
+        )
     return None, None
 
 
@@ -139,8 +148,9 @@ c2.metric("實際成交", f"{n_fills} 檔")
 c3.metric("日淨 PnL", f"{total_net:+,.0f}", delta=f"{total_net/budget*100:+.2f}%")
 c4.metric("勝率", f"{wr*100:.0f}%" if not np.isnan(wr) else "—")
 c5.metric("停損觸發", f"{stopped} 次")
-c6.metric("漲停鎖死風險", f"{n_limit_risk} 檔",
-          delta="需注意" if n_limit_risk > 0 else "無", delta_color="inverse")
+c6.metric("停損超漲停", f"{n_limit_risk} 檔",
+          delta="V3b 已自動 clip" if n_limit_risk == 0 else "需注意",
+          delta_color="inverse")
 
 if n_limit_risk > 0:
     st.warning(
@@ -171,7 +181,7 @@ else:
 
         with st.container():
             h1, h2 = st.columns([4, 1])
-            limit_html = f"&nbsp;<span class='{lbadge}'>{'🔴 停損超漲停' if r['stop_vs_limit']>0 else '🟡 接近漲停'}</span>" if lbadge else ""
+            limit_html = f"&nbsp;<span class='{lbadge}'>{'🔴 停損超漲停' if r['stop_vs_limit']>0 else '🟡 開盤接近漲停'}</span>" if lbadge else ""
             h1.markdown(
                 f"**#{rank}&nbsp; {ticker} {name}**&nbsp;&nbsp;"
                 f"<span class='{status_cls}'>{status_txt}</span>&nbsp;"
@@ -209,9 +219,13 @@ else:
                 st.markdown(f"停損價：`{r['stop_price']:.2f}`")
                 st.markdown(f"停損距離（多方）：`+{stop_dist:.2f}%`")
                 if r["stop_vs_limit"] > 0:
-                    st.markdown(f":red[🔴 停損超出漲停 {r['stop_vs_limit']*100:+.1f}%，鎖死無法出]")
+                    st.markdown(f":red[🔴 停損超出漲停 {r['stop_vs_limit']*100:+.1f}%（V3b 後不應發生）]")
                 elif r["gap_to_limit"] < 0.02:
-                    st.markdown(f":orange[🟡 距漲停僅 {r['gap_to_limit']*100:.1f}%，風險高]")
+                    st.markdown(
+                        f":orange[🟡 開盤距漲停僅 {r['gap_to_limit']*100:.1f}%]  "
+                        f"（停損價低於漲停 {abs(r['stop_vs_limit'])*100:.1f}% 仍安全，"
+                        f"但進場後若鎖漲停，部位卡到收盤承擔最大損失）"
+                    )
                 if stopped_out:
                     st.markdown(":red[⚠ 本日實際觸及停損]")
 
@@ -329,7 +343,7 @@ if not selected.empty and n_fills > 0:
 
 st.divider()
 st.caption(
-    f"🩸 守不住開盤 日誌 v3.0 (V3b sweep優化) · "
+    f"🩸 守不住開盤 日誌 v3.1 (V3b sweep優化) · "
     f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.1f}%），選入 top-{n_max}  |  "
-    "11:30 出場 + 1-tick 緊停損"
+    "11:30 出場 + 1-tick 緊停損 + 停損已 clip 安全"
 )
