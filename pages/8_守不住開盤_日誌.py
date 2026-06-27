@@ -20,7 +20,7 @@ NAMES_CSV   = _DATA / "stock_names.csv"
 LOT         = 1000
 BUY_R       = 0.001425 * 0.20
 SELL_R      = 0.001425 * 0.20 + 0.0015
-EXIT_TIME   = "13:25"
+EXIT_TIME   = "11:30"
 
 st.markdown("""
 <style>
@@ -99,10 +99,10 @@ with st.sidebar:
                            format_func=lambda x: f"< {x*100:.1f}%" if x < 1 else "無")
     st.divider()
     st.caption(
-        "V2：09:35–09:40 從早盤高回落 0.2%（不破高點）\n"
-        "停損：morning_high + 2 ticks（自動依股價算 tick，無漲停鎖死風險）\n"
-        "出場：13:25 強制回補\n\n"
-        "⚠ V2 已自動 clip 停損 ≤ 漲停 - 1 tick"
+        "V3b：09:35–09:40 從早盤高回落 **0.1%**\n"
+        "停損：morning_high + **1 tick**（緊停損，自動 clip ≤ 漲停 - 1 tick）\n"
+        "出場：**11:30** 強制回補（早盤賣壓消化完，避免午盤反彈）\n\n"
+        "⚠ 漲不動 filter 放寬至 < 2.0%（V2 精準 entry/stop 允許更大訊號池）"
     )
 
 # ── 取當日資料 ──────────────────────────────────────────────
@@ -217,7 +217,7 @@ else:
 
             with c4:
                 st.markdown("**出場**")
-                st.markdown(f"時間：`{'13:25' if not stopped_out else '停損觸發'}`")
+                st.markdown(f"時間：`{'11:30' if not stopped_out else '停損觸發'}`")
                 st.markdown(f"出場價：`{r['exit_price']:.2f}`")
                 ret_pct = float(r["return"]) * 100
                 arrow = "▲" if ret_pct > 0 else "▼"
@@ -329,7 +329,7 @@ if not selected.empty and n_fills > 0:
 
 st.divider()
 st.caption(
-    f"🩸 守不住開盤 日誌 v2.0 (V2 不破高點) · "
+    f"🩸 守不住開盤 日誌 v3.0 (V3b sweep優化) · "
     f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.1f}%），選入 top-{n_max}  |  "
-    "停損已自動 clip ≤ 漲停 - 1 tick，無鎖死風險"
+    "11:30 出場 + 1-tick 緊停損"
 )
