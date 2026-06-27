@@ -1,13 +1,15 @@
 """
 守不住開盤（Gap-Up-Fade-Short）策略回測
 
-核心邏輯（V3b：sweep 全面優化）：
-  個股 gap up + 09:35 前漲不動 (< 2.0%) + 09:35–09:40 從早盤高回落 0.1% → 空 → 11:30 回補
-  停損：morning_high + 1 tick（永遠 < 漲停 - 1 tick）
+核心邏輯（V4：V3b + Trail Stop）：
+  個股 gap up + 09:35 前漲不動 (<2%) + 09:35–09:40 從早盤高回落 0.1% → 空
+  Trail stop：價格新低 → 停損下移到 (low + 1 tick)，鎖住獲利
+  若未觸發 → 11:30 強制平倉
 
-最終配置（2026-06-28，V3b 升級）：
-  → CAGR +116.3%、Sharpe 20.83、MaxDD -0.5%、WR 94.7%、月勝率 100%
-  Walk-forward TEST Sharpe 20.93（>TRAIN 20.82）
+最終配置（2026-06-28，V4 升級）：
+  → CAGR +116.5%、Sharpe 27.17、MaxDD -0.3%、WR 99.6%
+  Walk-forward TEST Sharpe 27.47（>TRAIN 27.17）
+  99.8% 的 trade 以 trail stop 鎖獲利出場
 """
 
 import streamlit as st
@@ -114,8 +116,9 @@ with st.sidebar:
 
     st.divider()
     st.caption(
-        "V3b 策略：gap up + 漲不動<2% + **09:35–09:40 從早盤高回落 0.1%** → 空 → **11:30 回補**\n\n"
-        "停損：morning_high + 1 tick（緊停損，無漲停鎖死風險）\n"
+        "V4 策略：gap up + 漲不動<2% + **09:35–09:40 從早盤高回落 0.1%** → 空\n\n"
+        "**Trail stop**：價格新低 → 停損下移到 (low + 1 tick)，鎖住獲利\n"
+        "若未觸發 → 11:30 強制平倉\n"
         "資料：319 檔台股 1 分 K\n"
         "期間：2023-01 ~ 2026-06"
     )
