@@ -177,8 +177,13 @@ else:
         stop_dist = (r["stop_price"] / r["entry_price"] - 1) * 100
         lbadge, lmsg = limit_badge(r)
 
-        status_cls = "badge-red" if stopped_out else ("badge-green" if net > 0 else "badge-red")
-        status_txt = "停損" if stopped_out else ("獲利" if net > 0 else "虧損")
+        # V4: stopped_out 可能是 trail stop 鎖獲利（不是虧損）
+        is_loss = net < 0
+        status_cls = "badge-green" if not is_loss else "badge-red"
+        if stopped_out:
+            status_txt = "Trail 鎖獲利" if not is_loss else "真實停損"
+        else:
+            status_txt = "時間出場-獲利" if not is_loss else "時間出場-虧損"
 
         with st.container():
             h1, h2 = st.columns([4, 1])
@@ -228,11 +233,16 @@ else:
                         f"但進場後若鎖漲停，部位卡到收盤承擔最大損失）"
                     )
                 if stopped_out:
-                    st.markdown(":red[⚠ 本日實際觸及停損]")
+                    # V4 下，"stopped" 大多是 trail stop 鎖獲利出場（非虧損停損）
+                    is_profit = float(r["exit_price"]) < float(r["entry_price"])
+                    if is_profit:
+                        st.markdown(":green[✓ Trail stop 觸發 — 鎖獲利出場（非虧損）]")
+                    else:
+                        st.markdown(":red[⚠ 真實停損觸發（exit > entry）]")
 
             with c4:
                 st.markdown("**出場**")
-                st.markdown(f"時間：`{'11:30' if not stopped_out else '停損觸發'}`")
+                st.markdown(f"時間：`{'11:30 時間出場' if not stopped_out else 'Trail/停損觸發'}`")
                 st.markdown(f"出場價：`{r['exit_price']:.2f}`")
                 ret_pct = float(r["return"]) * 100
                 arrow = "▲" if ret_pct > 0 else "▼"
