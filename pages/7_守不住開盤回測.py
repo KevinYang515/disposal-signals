@@ -1,16 +1,16 @@
 """
 守不住開盤（Gap-Up-Fade-Short）策略回測
 
-核心邏輯（V7：V6 細微調，entry 0.05% + aor 2.5%）：
-  個股 gap up + 漲不動 <2.5% + morning_high 距漲停 ≥1%
+核心邏輯（V8：V7 + aor 放寬至 3.0%）：
+  個股 gap up + 漲不動 <3.0% + morning_high 距漲停 ≥1%
   + 09:35–09:37 從早盤高回落 0.05% → 空
   + Trail stop（價格新低時停損下移）+ 未觸發 11:30 強制平倉
 
-最終配置（2026-06-28，V7 升級）：
-  → CAGR +116.5%、Sharpe 29.17、MaxDD ~0%、WR 99.9%
-  Walk-forward TEST Sharpe 29.57（>TRAIN 28.96）
+最終配置（2026-06-28，V8 升級）：
+  → CAGR +116.6%、Sharpe 29.28、MaxDD ~0%、WR 99.9%
+  Walk-forward TEST Sharpe 29.65（>TRAIN 29.10）
   漲停鎖死真實風險 0%
-  Slippage 0.05% 估計後仍 Sharpe ~27（世界級）
+  Slippage 0.05% 估計後仍 Sharpe ~28（世界級）
 """
 
 import streamlit as st
@@ -117,7 +117,7 @@ with st.sidebar:
 
     st.divider()
     st.caption(
-        "V7 策略：gap up + 漲不動<2.5% + 漲停安全 + **09:35–09:37 從早盤高回落 0.05%** → 空\n\n"
+        "V8 策略：gap up + 漲不動<3.0% + 漲停安全 + **09:35–09:37 從早盤高回落 0.05%** → 空\n\n"
         "**Trail stop**：價格新低 → 停損下移到 (low + 1 tick)，鎖獲利\n"
         "未觸發 → 11:30 強制平倉\n"
         "資料：319 檔台股 1 分 K，期間：2023-01 ~ 2026-06"

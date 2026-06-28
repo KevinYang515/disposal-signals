@@ -108,11 +108,11 @@ with st.sidebar:
                            format_func=lambda x: f"< {x*100:.1f}%" if x < 1 else "無")
     st.divider()
     st.caption(
-        "V7：gap+漲不動<2.5%+漲停安全+ **09:35–09:37 從早盤高回落 0.05%** → 空\n"
+        "V8：gap+漲不動<3.0%+漲停安全+ **09:35–09:37 從早盤高回落 0.05%** → 空\n"
         "停損：morning_high + 1 tick (clip ≤ 漲停 - 1 tick)\n"
         "**Trail stop**：價格新低 → 停損下移到 (low + 1 tick)，鎖獲利\n"
         "未觸發 → 11:30 強制回補\n\n"
-        "⚠ V7 entry 收緊到 0.05%, aor 放寬到 2.5% (Sharpe 29.17)"
+        "⚠ V8 aor 放寬至 3.0% (Sharpe 29.28)"
     )
 
 # ── 取當日資料 ──────────────────────────────────────────────
@@ -354,7 +354,7 @@ if not selected.empty and n_fills > 0:
 
 st.divider()
 st.caption(
-    f"🩸 守不住開盤 日誌 v7.0 (V7 entry 0.05% + aor 2.5%) · "
+    f"🩸 守不住開盤 日誌 v8.0 (V8 aor 3.0%) · "
     f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.1f}%），選入 top-{n_max}  |  "
-    "Trail stop + 11:30 強制平倉 + 漲停安全 + Sharpe 29.17"
+    "Trail stop + 11:30 強制平倉 + 漲停安全 + Sharpe 29.28"
 )
