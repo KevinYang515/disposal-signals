@@ -301,7 +301,14 @@ if not selected.empty:
     show["entry_min"]    = show["entry_min"].map(lambda x: fmt_min(int(x)))
     show["gap_to_limit"] = show["gap_to_limit"].map(lambda x: f"{x*100:.1f}%")
     show["return"]       = show["return"].map(lambda x: f"{x*100:+.2f}%")
-    show["stopped_out"]  = show["stopped_out"].map(lambda x: "⚠ 停損" if x else "✓ 正常")
+    # V4+ Trail Stop: stopped_out 大多是 trail 鎖獲利（exit < entry, net > 0）
+    def _status(row):
+        stopped = bool(row["stopped_out"])
+        is_loss = float(row["exit_price"]) > float(row["entry_price"])
+        if stopped:
+            return "⚠ 真實停損" if is_loss else "✓ Trail 鎖獲利"
+        return "⏱ 時間出場" if not is_loss else "⏱ 時間-虧損"
+    show["stopped_out"] = selected.apply(_status, axis=1)
     show["lots"]         = show["lots"].map(lambda x: f"{int(x)} 張")
     show["net"]          = show["net"].map(lambda x: f"{x:+,.0f}")
     # 漲停風險欄
