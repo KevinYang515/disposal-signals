@@ -21,6 +21,7 @@ WHALE_FILES = {
     1000: os.path.expanduser('~/finlab_db/etl#inventory#大於一千張佔比.feather'),
 }
 _WHALE_THRESHOLDS = sorted(WHALE_FILES)
+BASIC_F  = os.path.expanduser('~/finlab_db/company_basic_info.feather')
 OUT_DIR  = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -184,6 +185,72 @@ def grade(row):
         return '❌ 避開'
     return '🟡 觀察中'
 
+# ── 補上 v2 尚未收錄的新處置事件 ─────────────────────────────────────────
+def merge_upcoming(df, price):
+    """v2 每晚才重建，且只收「起始日已有收盤價」的事件。
+    這裡直接從 finlab disposal_information 補上剛公告、今天/明天才開始的處置，
+    讓訊號表在 D0 晚上就看得到（僅供 build_signals 使用）。"""
+    try:
+        from finlab import data
+        disp = pd.DataFrame(data.get('disposal_information'))
+    except Exception as e:
+        print(f'  讀取 disposal_information 失敗，跳過新事件補充: {e}')
+        return df
+
+    d = disp.copy()
+    d.columns = [c.strip() for c in d.columns]
+    d['stock_id'] = d['stock_id'].astype(str).str.strip()
+    d['start_date'] = pd.to_datetime(d['處置開始時間'], errors='coerce')
+    d = d[d['stock_id'].str.match(r'^\d{4}$')]
+    d = d[d['處置措施'].str.contains('第一次|第二次', na=False)]
+    d = d[d['分時交易'].notna()]
+    type_map = {5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
+                30.0: '30分鐘', 45.0: '45分鐘', 60.0: '60分鐘'}
+    d['處置類型'] = d['分時交易'].map(type_map)
+    today = pd.Timestamp(datetime.today().date())
+    d = d[d['start_date'] >= today - pd.Timedelta(days=20)]
+    d = d.drop_duplicates(subset=['stock_id', 'start_date'])
+
+    existing = set(zip(df['股票代號'], df['處置起始日']))
+    new = d[[(r.zfill(4), s) not in existing
+             for r, s in zip(d['stock_id'], d['start_date'])]]
+    if len(new) == 0:
+        return df
+
+    shares_map = {}
+    if os.path.exists(BASIC_F):
+        basic = pd.read_feather(BASIC_F)
+        basic['shares'] = pd.to_numeric(
+            basic['已發行普通股數或TDR原發行股數'].astype(str).str.replace(',', ''), errors='coerce')
+        shares_map = dict(zip(basic['stock_id'].astype(str), basic['shares']))
+
+    idx = price.index
+    rows = []
+    for _, r in new.iterrows():
+        sid = r['stock_id'].zfill(4)
+        pr  = prerun20(price, idx, sid, r['start_date'])
+        ser = price[sid].dropna() if sid in price.columns else pd.Series(dtype=float)
+        p_last = float(ser.iloc[-1]) if len(ser) else np.nan
+        shares = shares_map.get(sid, np.nan)
+        if pd.notna(p_last) and pd.notna(shares):
+            mkt = p_last * shares
+            cap = ('大型股(>500億)' if mkt >= 5e10 else
+                   '中型股(100~500億)' if mkt >= 1e10 else '小型股(<100億)')
+        else:
+            cap = '小型股(<100億)'
+        rows.append({
+            '市值規模':   cap,
+            '股票代號':   sid,
+            '股票名稱':   r.get('證券名稱', ''),
+            '處置類型':   r['處置類型'],
+            '處置原因':   '跌深處置' if pd.notna(pr) and pr < 0 else '漲多處置',
+            '處置起始日': r['start_date'],
+        })
+    add = pd.DataFrame(rows)
+    names = ', '.join(add['股票代號'] + ' ' + add['股票名稱'].astype(str))
+    print(f'  補上 {len(add)} 筆 v2 尚未收錄的新處置事件: {names}')
+    return pd.concat([df, add], ignore_index=True)
+
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
 def build_signals(df, price, open_p, whale_dfs):
     idx = price.index
@@ -214,7 +281,7 @@ def build_signals(df, price, open_p, whale_dfs):
             '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
             '起始日':  sd.strftime('%m/%d'),
-            '今D幾':   f'D{nd}',
+            '今D幾':   f'D{nd}' if sd <= today else '未開始',
             '出關日':  ex.strftime('%m/%d') if pd.notna(ex) else '?',
         }
         for n in range(1, 9):
@@ -488,7 +555,8 @@ def main():
     price, open_p, whale_dfs = load_price()
 
     print('產生訊號表...')
-    sig = build_signals(df, price, open_p, whale_dfs)
+    sig_df = merge_upcoming(df, price)
+    sig = build_signals(sig_df, price, open_p, whale_dfs)
     sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals.csv ({len(sig)} 筆)')
 

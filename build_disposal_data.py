@@ -182,10 +182,13 @@ def compute_row(r, close, open_p, inst_f, inst_t, volume, basic_shares_map):
     close_idx = {d: i for i, d in enumerate(close.index)}
     open_idx  = {d: i for i, d in enumerate(open_p.index)}
 
-    if sd not in close_idx:
+    if sd in close_idx:
+        ci = close_idx[sd]
+    elif sd > close.index[-1]:
+        # 已公告但起始日還沒有收盤價（今天/未來才開始）→ 保留事件，報酬欄位先留 NaN
+        ci = len(close.index)
+    else:
         return None
-
-    ci = close_idx[sd]
     ci_e = close_idx.get(ed, None)
 
     # ── 市值
