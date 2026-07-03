@@ -28,12 +28,13 @@ with st.sidebar:
                              index=1, format_func=lambda x: f"{x:.1%}")
     vol_mult  = st.selectbox("量能倍率", [1.0, 1.5, 2.0],
                              index=1, format_func=lambda x: f"> 均量 {x:.1f}x")
-    sig_win   = st.selectbox("信號窗口", [60, 90, 120],
+    sig_win   = st.selectbox("信號窗口", [15, 20, 30, 45, 60, 90, 120],
                              index=0, format_func=lambda x: f"前 {x} 分鐘")
     st.divider()
     st.caption("資料期間：2023-01 ~ 2026-06\n758 支個股 1-min K\n"
                "2026-07-03 修正：量能改用可知窗口量(非全天量)、"
-               "進場改用停損市價單滑1檔(非精準觸價)、加處置股/可空性過濾")
+               "進場改用停損市價單滑1檔(非精準觸價)、加處置股/可空性過濾\n"
+               "信號窗口邊際分析：15分鐘全面優於60/90/120分鐘 (PF 10.2 vs 7.2 vs 4.8)，已設為預設值")
 
 # ── 讀取信號庫 ────────────────────────────────────────────
 @st.cache_data
