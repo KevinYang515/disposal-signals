@@ -13,8 +13,9 @@ from pathlib import Path
 st.set_page_config(page_title="急拉高空方", page_icon="📉", layout="wide",
                    initial_sidebar_state="expanded")
 
-SIGNAL_LIB = Path(r"D:\stock\急拉高_信號庫.parquet")
-SWEEP_CSV  = Path(r"D:\stock\急拉高參數掃描結果.csv")
+DATA_DIR   = Path(__file__).parent.parent / "data"
+SIGNAL_LIB = DATA_DIR / "急拉高_信號庫_HONEST.parquet"
+SWEEP_CSV  = DATA_DIR / "急拉高參數掃描結果_HONEST.csv"
 
 # ── 側欄參數 ─────────────────────────────────────────────
 with st.sidebar:
@@ -30,7 +31,9 @@ with st.sidebar:
     sig_win   = st.selectbox("信號窗口", [60, 90, 120],
                              index=0, format_func=lambda x: f"前 {x} 分鐘")
     st.divider()
-    st.caption("資料期間：2023-01 ~ 2026-06\n319 支個股 1-min K")
+    st.caption("資料期間：2023-01 ~ 2026-06\n758 支個股 1-min K\n"
+               "2026-07-03 修正：量能改用可知窗口量(非全天量)、"
+               "進場改用停損市價單滑1檔(非精準觸價)、加處置股/可空性過濾")
 
 # ── 讀取信號庫 ────────────────────────────────────────────
 @st.cache_data
@@ -50,18 +53,20 @@ lib["date"] = pd.to_datetime(lib["date"].astype(str))
 lib["year"] = lib["date"].dt.year
 
 # ── 套用參數 ──────────────────────────────────────────────
-ep_col   = f"entry_min_{entry_pb}"
-exp_col  = f"exit_price_{entry_pb}_{stop_lvl}"
-stop_col = f"stopped_{entry_pb}_{stop_lvl}"
+ep_col     = f"entry_min_{entry_pb}"
+fill_col   = f"entry_fill_{entry_pb}"
+exp_col    = f"exit_price_{entry_pb}_{stop_lvl}"
+stop_col   = f"stopped_{entry_pb}_{stop_lvl}"
+volr_col   = f"vol_ratio_{sig_win}"
 
 mask = (
     (lib["surge_pct"]  >= surge_thr) &
-    (lib["vol_ratio"]  >= vol_mult) &
+    (lib[volr_col]     >= vol_mult) &
     (lib["surge_min"]  <= 9*60 + sig_win) &
     (lib[ep_col].notna())
 )
 sub = lib[mask].copy()
-sub["entry_price"] = sub["surge_high"] * (1 - entry_pb)
+sub["entry_price"] = sub[fill_col]   # 停損市價單, 滑1檔的誠實成交價 (非精準觸價幻覺)
 sub["exit_price"]  = sub[exp_col]
 sub["ret"]         = (sub["entry_price"] - sub["exit_price"]) / sub["entry_price"]
 sub["win"]         = sub["ret"] > 0
@@ -226,13 +231,18 @@ with st.expander("策略說明"):
 
 **信號條件**
 - 前 N 分鐘（預設 60min）出現急拉：最高價 > 前收 × (1 + 急拉幅度)
-- 當日量 > 20日均量 × 量能倍率
+- 該 N 分鐘窗口內成交量 > 20日同窗口均量 × 量能倍率（**非全天量**，
+  避免決策時間點不可知的未來資訊）
 
-**進場**：從急拉高點回落 X% 時做空（觸價單）
+**進場**：從急拉高點回落 X% 觸發停損市價單做空，成交價估算為觸價
+再滑 1 檔（假設當日成交量足夠承接部位；量太薄的股票滑價可能更大）
 
 **出場**
-- 停損：高點 × (1 + 停損距離)，一旦觸及立即平倉
+- 停損：高點 × (1 + 停損距離) 觸發後，以下一根 1 分鐘 K 的開盤價
+  市價回補（模擬 1 分鐘輪詢延遲的真實滑價，而非精準停損價成交）
 - 收盤：13:25 強制平倉
+
+**可交易性過濾**：已排除處置股期間、非資券標的（無法融券/現股當沖先賣）
 
 **核心邏輯**
 爆量急拉代表主力可能在出貨。股價推不動後，追高的多方開始套牢。
@@ -240,4 +250,10 @@ with st.expander("策略說明"):
 
 **成本估算（永豐 2折）**
 手續費 0.057% + 交易稅 0.15% ≒ 0.207%/筆
+
+**⚠️ 2026-07-03 修正說明**：舊版信號庫用「當日全天量」篩選（決策時
+無法得知的未來資訊）且假設進場精準成交在觸價（現實中限價單會在
+高點附近就被動成交，或停損市價單有滑價）。本頁已改用誠實成交模型
+重新計算，數字比舊版保守，但更接近真實可執行的績效。**投組層級的
+高 Sharpe 尚未經過 tick 級試撮驗證，正式上真金前建議先用 XQ 驗證。**
 """)
