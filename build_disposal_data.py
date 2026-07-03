@@ -155,7 +155,8 @@ def classify_cap(sid, sd, close, basic_shares_map):
     price  = float(avail.iloc[-1])
     shares = basic_shares_map.get(sid, np.nan)
     if np.isnan(shares) or price <= 0:
-        return '未知'
+        # basic_info 只有現存上市公司；下市股撈不到股本 → 當小型股保留，避免 survivorship bias
+        return '小型股(<100億)'
     mkt = price * shares
     if mkt >= 5e10:   return '大型股(>500億)'
     if mkt >= 1e10:   return '中型股(100~500億)'
@@ -182,13 +183,10 @@ def compute_row(r, close, open_p, inst_f, inst_t, volume, basic_shares_map):
     close_idx = {d: i for i, d in enumerate(close.index)}
     open_idx  = {d: i for i, d in enumerate(open_p.index)}
 
-    if sd in close_idx:
-        ci = close_idx[sd]
-    elif sd > close.index[-1]:
-        # 已公告但起始日還沒有收盤價（今天/未來才開始）→ 保留事件，報酬欄位先留 NaN
-        ci = len(close.index)
-    else:
-        return None
+    # searchsorted 統一處理三種情況：
+    #   起始日=交易日 → 對到當天；起始日=停市日(颱風假) → 對到下一個交易日
+    #   起始日還沒有收盤價(今天/未來才開始) → ci=len，報酬欄位留 NaN
+    ci = close.index.searchsorted(sd)
     ci_e = close_idx.get(ed, None)
 
     # ── 市值
