@@ -10,6 +10,13 @@ import warnings, os, json
 from datetime import datetime, timezone, timedelta
 warnings.filterwarnings("ignore")
 
+TW_TZ = timezone(timedelta(hours=8))
+
+def tw_today():
+    """台灣日期，不依賴主機系統時區（VM 系統時區是 UTC，00:01 TW 那次 cron
+    若用 datetime.today() 會拿到還沒跨日的 UTC 日期，天數會晚一天才更新）"""
+    return pd.Timestamp(datetime.now(TW_TZ).date())
+
 V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
 PRICE_F  = os.path.expanduser('~/finlab_db/price#收盤價.feather')
 OPEN_F   = os.path.expanduser('~/finlab_db/price#開盤價.feather')
@@ -143,7 +150,7 @@ def exit_date(idx, sd, t1_offset=10):
     return cur
 
 def trading_day_n(idx, sd):
-    today = pd.Timestamp(datetime.today().date())
+    today = tw_today()
     last_data = idx[-1]
     # Count trading days in feather from sd to last available date
     count = int(((idx >= sd) & (idx <= last_data)).sum())
@@ -207,7 +214,7 @@ def merge_upcoming(df, price):
     type_map = {5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
                 30.0: '30分鐘', 45.0: '45分鐘', 60.0: '60分鐘'}
     d['處置類型'] = d['分時交易'].map(type_map)
-    today = pd.Timestamp(datetime.today().date())
+    today = tw_today()
     d = d[d['start_date'] >= today - pd.Timedelta(days=20)]
     d = d.drop_duplicates(subset=['stock_id', 'start_date'])
 
@@ -254,7 +261,7 @@ def merge_upcoming(df, price):
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
 def build_signals(df, price, open_p, whale_dfs):
     idx = price.index
-    today = pd.Timestamp(datetime.today().date())
+    today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
     active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
