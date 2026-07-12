@@ -329,6 +329,8 @@ with tab_5m:
 
 **進場條件：處置起始前一日漲 3~9%（強但未漲停）**　｜　**D1（第一個處置日）收盤買 → 出關D1 收盤賣**（約 11 個交易日）
 
+⭐ **加強訊號：D1 開盤沒跳空上漲（跳空 ≤ 0）**——高開 = 市場搶跑、收盤買貴；弱開 = 處置恐慌折價，動能在處置期間重新展開。歷史 +7.2%/筆、勝率 67%、5/5 年正。
+
 ⚠️ 前一日**漲停（>9%）反而不買**——漲停隔天易被出貨，統計上明顯較差。
 """)
 
@@ -339,6 +341,8 @@ with tab_5m:
         h['策略報酬(%)'] = pd.to_numeric(h['策略報酬(%)'], errors='coerce')
         hit = h[h['符合因子'] == '✅']
 
+        star = h[h.get('加強訊號', pd.Series(dtype=str)).eq('⭐')] if '加強訊號' in h.columns else pd.DataFrame()
+
         # ── KPI ──
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric('歷史樣本（符合因子）', f"{len(hit)} 筆")
@@ -347,6 +351,14 @@ with tab_5m:
         c4.metric('中位數', f"{hit['策略報酬(%)'].median():+.2f}%")
         yr_mean = hit.groupby('年份')['策略報酬(%)'].mean()
         c5.metric('正報酬年數', f"{(yr_mean > 0).sum()}/{len(yr_mean)}")
+        if len(star) >= 20:
+            s1, s2, s3, s4, s5 = st.columns(5)
+            s1.metric('⭐ 加強訊號樣本', f"{len(star)} 筆")
+            s2.metric('⭐ 勝率', f"{(star['策略報酬(%)'] > 0).mean()*100:.0f}%")
+            s3.metric('⭐ 平均報酬', f"{star['策略報酬(%)'].mean():+.2f}%")
+            s4.metric('⭐ 中位數', f"{star['策略報酬(%)'].median():+.2f}%")
+            syr = star.groupby('年份')['策略報酬(%)'].mean()
+            s5.metric('⭐ 正報酬年數', f"{(syr > 0).sum()}/{len(syr)}")
         st.caption('已扣成本 0.357%（手續費2折雙邊 + 證交稅0.3%）；處置股買進需預收全額款券')
 
         # ── 今日訊號 ──
@@ -356,20 +368,25 @@ with tab_5m:
         else:
             s5 = sig5.copy()
             s5['符合因子'] = s5['符合因子'].fillna('')
+            if '加強訊號' in s5.columns:
+                s5['加強訊號'] = s5['加強訊號'].fillna('')
 
             def hl_hit(row):
+                if row.get('加強訊號', '') == '⭐':
+                    return ['background-color: #1a4a35'] * len(row)
                 if row['符合因子'] == '✅':
                     return ['background-color: #14342b'] * len(row)
                 return [''] * len(row)
 
-            num_cols5 = [c for c in ['前日漲幅(%)', '進場價(D1收)', '目前損益(%)', '今日漲跌'] if c in s5.columns]
             st.dataframe(
                 s5.style.apply(hl_hit, axis=1)
-                  .format({c: '{:+.2f}' for c in ['前日漲幅(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns}, na_rep='-')
+                  .format({c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1跳空(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns}, na_rep='-')
                   .format({'進場價(D1收)': '{:.2f}'}, na_rep='-'),
                 use_container_width=True, hide_index=True)
             n_hit = (s5['符合因子'] == '✅').sum()
-            st.caption(f'綠底 = 符合進場因子（前日漲3~9%），共 {n_hit} 檔。未開始的股票：起始日前一天收盤若漲 3~9%，隔天（D1）收盤買進。')
+            n_star = (s5['加強訊號'] == '⭐').sum() if '加強訊號' in s5.columns else 0
+            st.caption(f'綠底 = 符合進場因子（前日漲3~9%）共 {n_hit} 檔；深綠 ⭐ = 加強訊號（+D1未跳空上漲）共 {n_star} 檔。'
+                       f'未開始的股票：起始日前一天收盤若漲 3~9%，隔天觀察 D1 開盤——沒跳空上漲就收盤買進。')
 
         # ── 逐年績效 ──
         st.markdown('#### 📊 逐年績效（符合因子 vs 全部5分盤）')
@@ -392,6 +409,20 @@ with tab_5m:
             中位=lambda x: round(x.median(), 2))
         st.dataframe(btbl, use_container_width=True)
         st.caption('獲利峰值在「強但未鎖死」：還有續航力、又沒吸引到漲停隔日的出貨賣壓。')
+
+        # ── D1 跳空分組（加強訊號依據）──
+        if 'D1跳空(%)' in hit.columns and hit['D1跳空(%)'].notna().sum() > 50:
+            st.markdown('#### ⭐ 為什麼要等 D1 弱開？符合因子內的 D1 跳空分組')
+            hb = hit.copy()
+            hb['gq'] = pd.cut(hb['D1跳空(%)'], bins=[-100, -2, -0.5, 0.5, 2, 100],
+                              labels=['跳空<-2%', '-2~-0.5%', '-0.5~0.5%', '0.5~2%', '跳空>2%'])
+            gtbl = hb.groupby('gq', observed=True)['策略報酬(%)'].agg(
+                n='size',
+                勝率=lambda x: round((x > 0).mean()*100, 1),
+                平均=lambda x: round(x.mean(), 2),
+                中位=lambda x: round(x.median(), 2))
+            st.dataframe(gtbl, use_container_width=True)
+            st.caption('單調遞減：D1 跳空越高越差。高開 = 搶跑買盤墊高進場成本；弱開才有處置恐慌折價可賺。')
 
         # ── 歷史明細 ──
         with st.expander(f'📜 歷史明細（{len(h)} 筆，2022 至今）'):

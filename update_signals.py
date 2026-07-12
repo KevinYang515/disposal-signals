@@ -292,7 +292,7 @@ def next_trading_day(idx, after):
         if cur.weekday() < 5:
             return cur
 
-def build_5min(df, price):
+def build_5min(df, price, open_p):
     disp = load_disposal_raw()
     if disp is None:
         return pd.DataFrame(), pd.DataFrame()
@@ -328,9 +328,14 @@ def build_5min(df, price):
 
         exit_d = next_trading_day(idx, ed)       # 出關D1（實際結束日的下個交易日）
 
-        # D1 進場價（第一個處置日收盤）
+        # D1 進場價（第一個處置日收盤）與 D1 開盤跳空
         e_pos = pos
         entry = ser.iloc[e_pos] if e_pos < len(idx) else np.nan
+        gap = np.nan
+        if e_pos < len(idx) and sid in open_p.columns:
+            o1 = open_p[sid].iloc[e_pos]
+            if pd.notna(o1) and o1 > 0:
+                gap = round((o1/p0 - 1) * 100, 2)
 
         base = {
             '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
@@ -338,6 +343,8 @@ def build_5min(df, price):
             '起始日': sd, '出關日': exit_d,
             '前日漲幅(%)': prev1,
             '符合因子': '✅' if hit else '',
+            'D1跳空(%)': gap,
+            '加強訊號': '⭐' if hit and pd.notna(gap) and gap <= 0 else '',
         }
 
         if exit_d <= idx[-1]:
@@ -382,12 +389,12 @@ def build_5min(df, price):
     hist = pd.DataFrame(hist_rows)
     sig = pd.DataFrame(sig_rows)
     if len(sig):
-        sig = sig.sort_values(['符合因子', '起始日'], ascending=[False, False])
-        sig = sig[['代號', '名稱', '規模', '前日漲幅(%)', '符合因子', '起始日', '今D幾',
-                   '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
+        sig = sig.sort_values(['加強訊號', '符合因子', '起始日'], ascending=[False, False, False])
+        sig = sig[['代號', '名稱', '規模', '前日漲幅(%)', 'D1跳空(%)', '符合因子', '加強訊號',
+                   '起始日', '今D幾', '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
     if len(hist):
         hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '前日漲幅(%)',
-                     '符合因子', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
+                     'D1跳空(%)', '符合因子', '加強訊號', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
         hist = hist.sort_values('起始日', ascending=False)
     return sig, hist
 
@@ -711,7 +718,7 @@ def main():
     print(f'  → history.csv ({len(hist)} 筆)')
 
     print('產生 5分盤動能資料...')
-    sig5, hist5 = build_5min(df, price)
+    sig5, hist5 = build_5min(df, price, open_p)
     sig5.to_csv(f'{OUT_DIR}/signals_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     hist5.to_csv(f'{OUT_DIR}/history_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals_5min.csv ({len(sig5)} 筆) / history_5min.csv ({len(hist5)} 筆)')
