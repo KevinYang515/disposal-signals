@@ -327,9 +327,15 @@ with tab_5m:
 5分盤跟 20分盤是**完全不同的邏輯**：20分盤買「深跌反彈」，5分盤買「**動能延續**」。
 26% 的 5分盤事件會惡化成二次處置（續飆到被關 20分盤），這群平均 **+10.6%（勝率 70%）**；沒惡化的只有 +0.1%。
 
-**進場條件：處置起始前一日漲 3~9%（強但未漲停）**　｜　**D1（第一個處置日）收盤買 → 出關D1 收盤賣**（約 11 個交易日）
+#### 📌 操作 SOP（白話版）
 
-⭐ **加強訊號：D1 開盤沒跳空上漲（跳空 ≤ 0）**——高開 = 市場搶跑、收盤買貴；弱開 = 處置恐慌折價，動能在處置期間重新展開。歷史 +7.2%/筆、勝率 67%、5/5 年正。
+| 步驟 | 動作 |
+|---|---|
+| **① 處置公告日**（進處置前一天） | 看這檔**今天漲多少**：漲 **3% ~ 9%**（強勢但沒漲停）→ 列入觀察。漲停(>9%)或漲不到3% → 放棄 |
+| **② D1 = 第一個處置日開盤** | 看**開盤價有沒有比昨天收盤高**：開平盤或開低 → 準備買。開高（跳空上漲）→ 放棄，因為你會買貴 |
+| **③ D1 收盤前** | **收盤買進**（若收盤漲停鎖死就買不到，放棄） |
+| **④ 抱著不動** | 約 11 個交易日，中間震盪**不要停損**（見下方風險說明） |
+| **⑤ 出關日或前一天** | **最後處置日收盤 或 出關第一天收盤 賣出**（兩者績效相同），不要抱更久 |
 
 ⚠️ 前一日**漲停（>9%）反而不買**——漲停隔天易被出貨，統計上明顯較差。
 """)
@@ -354,25 +360,27 @@ with tab_5m:
         h['策略報酬(%)'] = pd.to_numeric(h['策略報酬(%)'], errors='coerce')
         hit = h[h['符合因子'] == '✅']
 
+        # ⭐ = 完整買進訊號（前日3~9% + D1未跳空上漲），已排除 D1 收盤漲停買不到的
         star = h[h.get('加強訊號', pd.Series(dtype=str)).eq('⭐')] if '加強訊號' in h.columns else pd.DataFrame()
 
-        # ── KPI ──
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric('歷史樣本（符合因子）', f"{len(hit)} 筆")
-        c2.metric('勝率', f"{(hit['策略報酬(%)'] > 0).mean()*100:.0f}%")
-        c3.metric('平均報酬', f"{hit['策略報酬(%)'].mean():+.2f}%")
-        c4.metric('中位數', f"{hit['策略報酬(%)'].median():+.2f}%")
-        yr_mean = hit.groupby('年份')['策略報酬(%)'].mean()
-        c5.metric('正報酬年數', f"{(yr_mean > 0).sum()}/{len(yr_mean)}")
-        if len(star) >= 20:
-            s1, s2, s3, s4, s5 = st.columns(5)
-            s1.metric('⭐ 加強訊號樣本', f"{len(star)} 筆")
-            s2.metric('⭐ 勝率', f"{(star['策略報酬(%)'] > 0).mean()*100:.0f}%")
-            s3.metric('⭐ 平均報酬', f"{star['策略報酬(%)'].mean():+.2f}%")
-            s4.metric('⭐ 中位數', f"{star['策略報酬(%)'].median():+.2f}%")
-            syr = star.groupby('年份')['策略報酬(%)'].mean()
-            s5.metric('⭐ 正報酬年數', f"{(syr > 0).sum()}/{len(syr)}")
-        st.caption('已扣成本 0.357%（手續費2折雙邊 + 證交稅0.3%）；處置股買進需預收全額款券')
+        # ── KPI（完整買進訊號，2022~至今全歷史）──
+        kpi = star if len(star) >= 20 else hit
+        kpi_name = '買進訊號' if len(star) >= 20 else '符合因子'
+        r_kpi = kpi['策略報酬(%)'].dropna()
+        sharpe, pf = sharpe_pf(r_kpi)
+        yr_mean = kpi.groupby('年份')['策略報酬(%)'].mean()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(f'歷史樣本（{kpi_name}）', f"{len(r_kpi)} 筆")
+        c2.metric('勝率', f"{(r_kpi > 0).mean()*100:.2f}%")
+        c3.metric('平均報酬', f"{r_kpi.mean():+.2f}%")
+        c4.metric('中位數', f"{r_kpi.median():+.2f}%")
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric('夏普值（每筆）', f"{sharpe:.2f}" if pd.notna(sharpe) else '-')
+        c6.metric('賺賠比', f"{pf:.2f}" if pd.notna(pf) else '-')
+        c7.metric('正報酬年數', f"{(yr_mean > 0).sum()}/{len(yr_mean)}")
+        c8.metric('最差單筆', f"{r_kpi.min():+.2f}%")
+        st.caption(f'統計期間 2022 ~ 至今**全歷史**（非單一年度），已扣成本 0.357%（手續費2折雙邊 + 證交稅0.3%）。'
+                   f'D1 收盤漲停買不到的事件已從統計中排除。處置股買進需預收全額款券。')
 
         # ── 今日訊號 ──
         st.markdown('#### 🔔 目前處置中（5分盤）')
@@ -380,15 +388,16 @@ with tab_5m:
             st.info('目前沒有進行中的 5分盤處置')
         else:
             s5 = sig5.copy()
-            s5['符合因子'] = s5['符合因子'].fillna('')
-            if '加強訊號' in s5.columns:
-                s5['加強訊號'] = s5['加強訊號'].fillna('')
+            sig_col = '訊號' if '訊號' in s5.columns else None
+            if sig_col:
+                s5[sig_col] = s5[sig_col].fillna('—')
 
             def hl_hit(row):
-                if row.get('加強訊號', '') == '⭐':
+                v = row.get('訊號', '')
+                if isinstance(v, str) and v.startswith('🟢'):
                     return ['background-color: #1a4a35'] * len(row)
-                if row['符合因子'] == '✅':
-                    return ['background-color: #14342b'] * len(row)
+                if isinstance(v, str) and v.startswith('🟡'):
+                    return ['background-color: #3d3517'] * len(row)
                 return [''] * len(row)
 
             st.dataframe(
@@ -396,20 +405,30 @@ with tab_5m:
                   .format({c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1跳空(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns}, na_rep='-')
                   .format({'進場價(D1收)': '{:.2f}'}, na_rep='-'),
                 use_container_width=True, hide_index=True)
-            n_hit = (s5['符合因子'] == '✅').sum()
-            n_star = (s5['加強訊號'] == '⭐').sum() if '加強訊號' in s5.columns else 0
-            st.caption(f'綠底 = 符合進場因子（前日漲3~9%）共 {n_hit} 檔；深綠 ⭐ = 加強訊號（+D1未跳空上漲）共 {n_star} 檔。'
-                       f'未開始的股票：起始日前一天收盤若漲 3~9%，隔天觀察 D1 開盤——沒跳空上漲就收盤買進。')
+            st.markdown("""
+**訊號欄說明**：
+🟢 **買進** = 前一日漲3~9% ✚ D1開盤沒跳空上漲，兩個條件都成立 → D1收盤買（若已過D1則顯示歷史觸發狀態）
+🟡 **等D1開盤確認** = 前一日漲幅符合，但還沒到D1開盤，明天開盤見真章
+🔒 = 條件都符合但D1收盤漲停鎖死，實際買不到 → 放棄
+❌ = D1開高（跳空上漲），會買貴 → 放棄
+— = 前一日漲幅不符合（不到3%或超過9%）
+""")
 
         # ── 逐年績效 ──
-        st.markdown('#### 📊 逐年績效（符合因子 vs 全部5分盤）')
+        st.markdown('#### 📊 逐年績效（買進訊號 vs 全部5分盤）— 證明不是只靠某一年')
+        src = star if len(star) >= 20 else hit
         ytbl = pd.DataFrame({
-            '符合因子 n': hit.groupby('年份')['策略報酬(%)'].size(),
-            '符合因子 平均%': hit.groupby('年份')['策略報酬(%)'].mean().round(2),
-            '符合因子 勝率%': hit.groupby('年份')['策略報酬(%)'].apply(lambda x: round((x > 0).mean()*100, 1)),
+            '買進訊號 n': src.groupby('年份')['策略報酬(%)'].size(),
+            '買進訊號 平均%': src.groupby('年份')['策略報酬(%)'].mean().round(2),
+            '買進訊號 勝率%': src.groupby('年份')['策略報酬(%)'].apply(lambda x: round((x > 0).mean()*100, 2)),
+            '買進訊號 夏普': src.groupby('年份')['策略報酬(%)'].apply(lambda x: sharpe_pf(x)[0]),
+            '買進訊號 賺賠比': src.groupby('年份')['策略報酬(%)'].apply(lambda x: sharpe_pf(x)[1]),
             '全部 平均%': h.groupby('年份')['策略報酬(%)'].mean().round(2),
         })
-        st.dataframe(ytbl, use_container_width=True)
+        st.dataframe(ytbl.style.format({'買進訊號 平均%': '{:+.2f}', '全部 平均%': '{:+.2f}',
+                                        '買進訊號 勝率%': '{:.2f}', '買進訊號 夏普': '{:.2f}',
+                                        '買進訊號 賺賠比': '{:.2f}'}, na_rep='-'),
+                     use_container_width=True)
 
         # ── 前日漲幅分組對照 ──
         st.markdown('#### 🧲 為什麼是 3~9%？前日漲幅分組對照')
@@ -417,10 +436,13 @@ with tab_5m:
                         labels=['前日下跌', '0~3%（溫和）', '3~9%（強但未漲停）', '>9%（漲停）'])
         btbl = h.groupby('g', observed=True)['策略報酬(%)'].agg(
             n='size',
-            勝率=lambda x: round((x > 0).mean()*100, 1),
+            勝率=lambda x: round((x > 0).mean()*100, 2),
             平均=lambda x: round(x.mean(), 2),
-            中位=lambda x: round(x.median(), 2))
-        st.dataframe(btbl, use_container_width=True)
+            中位=lambda x: round(x.median(), 2),
+            賺賠比=lambda x: sharpe_pf(x)[1])
+        st.dataframe(btbl.style.format({'勝率': '{:.2f}', '平均': '{:+.2f}', '中位': '{:+.2f}',
+                                        '賺賠比': '{:.2f}'}, na_rep='-'),
+                     use_container_width=True)
         st.caption('獲利峰值在「強但未鎖死」：還有續航力、又沒吸引到漲停隔日的出貨賣壓。')
 
         # ── D1 跳空分組（加強訊號依據）──
@@ -431,27 +453,103 @@ with tab_5m:
                               labels=['跳空<-2%', '-2~-0.5%', '-0.5~0.5%', '0.5~2%', '跳空>2%'])
             gtbl = hb.groupby('gq', observed=True)['策略報酬(%)'].agg(
                 n='size',
-                勝率=lambda x: round((x > 0).mean()*100, 1),
+                勝率=lambda x: round((x > 0).mean()*100, 2),
                 平均=lambda x: round(x.mean(), 2),
                 中位=lambda x: round(x.median(), 2))
-            st.dataframe(gtbl, use_container_width=True)
+            st.dataframe(gtbl.style.format({'勝率': '{:.2f}', '平均': '{:+.2f}', '中位': '{:+.2f}'},
+                                           na_rep='-'), use_container_width=True)
             st.caption('單調遞減：D1 跳空越高越差。高開 = 搶跑買盤墊高進場成本；弱開才有處置恐慌折價可賺。')
 
-        # ── 歷史明細 ──
-        with st.expander(f'📜 歷史明細（{len(h)} 筆，2022 至今）'):
-            only_hit = st.checkbox('只看符合因子', value=True, key='h5_hit')
-            show = hit if only_hit else h
-            show = show.sort_values('起始日', ascending=False)
+        # ── 歷史回測紀錄（樣式對齊 20分盤歷史頁）──
+        st.divider()
+        st.markdown('#### 📜 歷史回測紀錄')
+        hf = h.drop(columns=['g'], errors='ignore').copy()
+        hf['結果'] = hf['策略報酬(%)'].apply(
+            lambda v: f'✅ 獲利 {v:+.2f}%' if pd.notna(v) and v > 0
+            else (f'❌ 虧損 {v:+.2f}%' if pd.notna(v) else '—'))
+
+        f1, f2, f3 = st.columns([2, 4, 2])
+        with f1:
+            yr_sel5 = st.selectbox('年份', ['全部'] + sorted(hf['年份'].astype(str).unique().tolist(), reverse=True), key='h5_yr')
+        with f2:
+            SIG_OPTS = ['🟢 買進訊號（前日3~9% + D1未跳空）', '符合前日3~9%（不看D1跳空）', '全部5分盤']
+            sig_sel5 = st.selectbox('訊號條件', SIG_OPTS, index=0, key='h5_sig')
+        with f3:
+            cap_sel5 = st.multiselect('規模', ['大', '中', '小'], default=['大', '中', '小'], key='h5_cap')
+
+        v5 = hf.copy()
+        if yr_sel5 != '全部':
+            v5 = v5[v5['年份'].astype(str) == yr_sel5]
+        if sig_sel5 == SIG_OPTS[0] and '加強訊號' in v5.columns:
+            v5 = v5[v5['加強訊號'] == '⭐']
+        elif sig_sel5 == SIG_OPTS[1]:
+            v5 = v5[v5['符合因子'] == '✅']
+        if cap_sel5:
+            v5 = v5[v5['規模'].isin(cap_sel5)]
+
+        if len(v5) == 0:
+            st.warning('目前篩選條件無資料')
+        else:
+            r5 = v5['策略報酬(%)'].dropna()
+            sp5, pf5 = sharpe_pf(r5)
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric('總筆數', f'{len(r5)} 筆')
+            k2.metric('勝率', f'{(r5 > 0).mean()*100:.2f}%')
+            k3.metric('期望報酬', f'{r5.mean():+.2f}%')
+            k4.metric('夏普值', f'{sp5:.2f}' if pd.notna(sp5) else '-')
+            k5.metric('賺賠比', f'{pf5:.2f}' if pd.notna(pf5) else '-')
+            k6, k7, k8, k9, k10 = st.columns(5)
+            k6.metric('獲利筆', int((r5 > 0).sum()))
+            k7.metric('虧損筆', int((r5 <= 0).sum()))
+            k8.metric('均獲利', f'{r5[r5 > 0].mean():+.2f}%' if (r5 > 0).any() else '-')
+            k9.metric('均虧損', f'{r5[r5 <= 0].mean():+.2f}%' if (r5 <= 0).any() else '-')
+            k10.metric('最大虧損', f'{r5.min():+.2f}%')
+
+            def _c_res5(val):
+                if str(val).startswith('✅'): return 'color: #26c281; font-weight: 700'
+                if str(val).startswith('❌'): return 'color: #e74c3c; font-weight: 700'
+                return ''
+
+            def _c_ret5(val):
+                try:
+                    v = float(str(val).replace('%', ''))
+                    if v > 10:  return 'color: #26c281; font-weight: 700'
+                    if v > 0:   return 'color: #2ecc71'
+                    if v > -5:  return 'color: #e67e22'
+                    return 'color: #e74c3c; font-weight: 700'
+                except:
+                    return ''
+
+            disp5 = v5.sort_values('起始日', ascending=False).reset_index(drop=True)
+            pct_cols5 = ['前日漲幅(%)', 'D1跳空(%)', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']
+            for c in pct_cols5:
+                if c in disp5.columns:
+                    disp5[c] = disp5[c].apply(fmt_pct)
             st.dataframe(
-                show.drop(columns=['g'], errors='ignore').style
-                    .format({c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']}, na_rep='-'),
-                use_container_width=True, hide_index=True, height=420)
+                disp5.style
+                    .map(_c_res5, subset=['結果'])
+                    .map(_c_ret5, subset=[c for c in ['策略報酬(%)', 'D1%', 'D3%', 'D5%', 'D8%'] if c in disp5.columns]),
+                use_container_width=True, hide_index=True, height=520)
+            st.caption('策略報酬 = D1收盤買 → 出關D1收盤賣，已扣成本 0.357%；D1%~D8% = 相對處置前一日收盤的累積漲跌')
+            st.download_button('📥 下載此表 CSV', disp5.to_csv(index=False, encoding='utf-8-sig'),
+                               'history_5min.csv', 'text/csv', key='dl_h5')
+
+            # 累積報酬走勢
+            st.markdown('**累積報酬走勢**（假設每筆等權重）')
+            cum5 = (v5.sort_values('起始日')['策略報酬(%)'].dropna() / 100 + 1).cumprod() - 1
+            cum5.index = range(len(cum5))
+            st.line_chart(pd.DataFrame({'累積報酬(%)': (cum5 * 100).values}))
 
         st.markdown("""
-##### ⚠️ 風險提醒
-- **尾部厚**：符合因子的歷史 p5 = -19.6%、最差單筆 -27.7%（金寶 2026-01）→ 單筆倉位要控
-- **必須抱滿**：獲利集中在處置後期（D3 出場 ≈ 0%、D5 +1.9%、D8 +3.9%、出關 +6.6%），中途下車等於白做
-- 頻率約每月 4~5 筆；年度平均有遞增趨勢（2022 較弱），regime 依賴需持續監控
+##### ⚠️ 風險提醒（輸家歸因結論，2026-07 完整分析）
+- **約 12% 的訊號會大賠（<-10%，平均 -16.87%）**，且**無法預先識別**：20 個籌碼/技術因子
+  （外資、投信、融資、大戶、散戶、量能、波動…）在大賠組 vs 其他組全部無顯著差異（p 值全 > 0.2）
+- **不要停損**：測過 7 組停損規則（D2~D8 觸發 -8% ~ -15%），**全部讓平均報酬變差**
+  （+6.71% 掉到 +4.53 ~ +6.03%）。原因：贏家在 D3~D4 的中位數也是 -1.5 ~ -5%，
+  停損砍掉的常是後來的大贏家——這個策略的本質是「抱過震盪，換 32% 機率的惡化大獎」
+- **風控唯一手段 = 倉位**：單筆投入固定小額（例如總資金 5~10%），靠 152 筆的大數法則賺期望值
+- 歷史 p5 = -17.05%、最差單筆 -26.54%（金寶 2026-01）
+- 頻率約每月 2~3 筆；獲利集中在處置後期（D3 出場 ≈ 0%、出關 +6.6%），中途下車等於白做
 """)
 
 # ════════════════════════════════════════════════════════

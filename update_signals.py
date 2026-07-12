@@ -337,6 +337,10 @@ def build_5min(df, price, open_p):
             if pd.notna(o1) and o1 > 0:
                 gap = round((o1/p0 - 1) * 100, 2)
 
+        # D1 收盤近漲停（>= +9.5% vs 前日收盤）→ 收盤鎖死買不到，訊號作廢
+        d1_ret = (entry/p0 - 1) * 100 if pd.notna(entry) and p0 > 0 else np.nan
+        d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
+
         base = {
             '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
             '處置原因': reason if reason else '漲多處置',
@@ -344,7 +348,9 @@ def build_5min(df, price, open_p):
             '前日漲幅(%)': prev1,
             '符合因子': '✅' if hit else '',
             'D1跳空(%)': gap,
-            '加強訊號': '⭐' if hit and pd.notna(gap) and gap <= 0 else '',
+            '加強訊號': ('🔒漲停買不到' if hit and pd.notna(gap) and gap <= 0 and d1_locked
+                         else '⭐' if hit and pd.notna(gap) and gap <= 0 and not d1_locked
+                         else ''),
         }
 
         if exit_d <= idx[-1]:
@@ -377,6 +383,18 @@ def build_5min(df, price, open_p):
             row['起始日'] = sd.strftime('%m/%d')
             row['出關日'] = exit_d.strftime('%m/%d')
             row['今D幾'] = f'D{nd}' if nd else '未開始'
+            # 白話訊號狀態
+            if not hit:
+                status = '—'
+            elif nd == 0 or pd.isna(gap):
+                status = '🟡 等D1開盤確認'
+            elif gap > 0:
+                status = '❌ D1開高，不買'
+            elif d1_locked:
+                status = '🔒 D1漲停買不到'
+            else:
+                status = '🟢 買進（D1收盤）'
+            row['訊號'] = status
             row['進場價(D1收)'] = round(float(entry), 2) if nd >= 1 and pd.notna(entry) else np.nan
             last = ser.dropna().iloc[-1] if len(ser.dropna()) else np.nan
             if nd >= 1 and pd.notna(entry) and entry > 0 and pd.notna(last):
@@ -389,8 +407,11 @@ def build_5min(df, price, open_p):
     hist = pd.DataFrame(hist_rows)
     sig = pd.DataFrame(sig_rows)
     if len(sig):
-        sig = sig.sort_values(['加強訊號', '符合因子', '起始日'], ascending=[False, False, False])
-        sig = sig[['代號', '名稱', '規模', '前日漲幅(%)', 'D1跳空(%)', '符合因子', '加強訊號',
+        order = {'🟢 買進（D1收盤）': 0, '🟡 等D1開盤確認': 1, '🔒 D1漲停買不到': 2,
+                 '❌ D1開高，不買': 3, '—': 4}
+        sig['_o'] = sig['訊號'].map(order)
+        sig = sig.sort_values(['_o', '起始日'], ascending=[True, False]).drop(columns=['_o'])
+        sig = sig[['代號', '名稱', '規模', '訊號', '前日漲幅(%)', 'D1跳空(%)',
                    '起始日', '今D幾', '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
     if len(hist):
         hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '前日漲幅(%)',
