@@ -260,7 +260,7 @@ def merge_upcoming(df, price):
 
 # ── 5分盤（第一次處置）動能策略 ──────────────────────────────────────────
 # 策略：漲多處置 × 5分鐘 × D1收盤買 → 出關D1收盤賣
-# 因子：處置起始前一日漲 3~9%（強但未漲停）→ 2022-2026 每年皆正
+# 因子：處置起始前一日漲 2~9%（強但未漲停）→ 2022-2026 每年皆正
 COST_5MIN = 0.357  # 永豐2折手續費雙邊 + 證交稅 0.3%（非當沖）
 
 def load_disposal_raw():
@@ -320,7 +320,7 @@ def build_5min(df, price, open_p):
         if pd.isna(p0) or p0 <= 0 or pd.isna(p_2) or p_2 <= 0:
             continue
         prev1 = round((p0/p_2 - 1) * 100, 2)
-        hit = 3 <= prev1 <= 9
+        hit = 2 <= prev1 <= 9
 
         reason = reason_map.get((sid, sd), '')
         cap = cap_map.get((sid, sd), '')
