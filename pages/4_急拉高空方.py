@@ -100,15 +100,24 @@ gw = sub.loc[sub["win"], "ret"].sum()
 gl = abs(sub.loc[~sub["win"], "ret"].sum())
 pf = gw / gl if gl > 0 else float("inf")
 n_days = sub["date"].nunique()
-per_day = n / max(sub["date"].dt.year.nunique() * 250, 1)
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("交易次數", f"{n:,}")
-col2.metric("訊號天數", f"{n_days:,}")
-col3.metric("勝率", f"{wr:.1%}")
-col4.metric("Profit Factor", f"{pf:.2f}")
-col5.metric("均報酬/筆", f"{avg_r:.2%}")
-col6.metric("每日候選(約)", f"{n/n_days:.2f}" if n_days else "—")
+col2.metric("投組層級 Sharpe", f"{h['sharpe']}",
+            help="每日取當日所有候選、平均分配部位計算的投組層級年化Sharpe，3.5年(2023-01~2026-07)全期")
+col3.metric("期望報酬(均報酬/筆)", f"{avg_r:.2%}",
+            help="所有交易的報酬平均值 = 每筆交易的期望值。這跟Profit Factor是不同的指標，見右方說明")
+col4.metric("勝率", f"{wr:.1%}")
+
+col5, col6, col7, col8 = st.columns(4)
+col5.metric("Profit Factor", f"{pf:.2f}",
+            help="= 所有獲利交易的報酬總和 ÷ 所有虧損交易的報酬總和(絕對值)。"
+                 "PF=1.23代表贏的錢是輸的錢的1.23倍，跟「期望報酬(均報酬/筆)」是不同概念——"
+                 "PF只看總贏/總輸的比例，不管勝率高低；期望報酬才是平均每筆實際賺賠多少。"
+                 "兩者要一起看：高PF+低勝率可能代表靠少數大賺撐住，低PF+高勝率可能代表小賺多次。")
+col6.metric("訊號天數", f"{n_days:,}")
+col7.metric("每日候選(約)", f"{n/n_days:.2f}" if n_days else "—")
+col8.metric("累積報酬(投組層級)", f"+{h['cum']:.1f}%", help="3.5年全期，非本頁逐筆複利近似")
 
 st.divider()
 
@@ -241,15 +250,40 @@ else:
         st.dataframe(daily, use_container_width=True, hide_index=True, height=300)
     st.caption("報酬合計為當日/當月所有交易筆數的單純加總（非資金加權），僅供觀察走勢用，非真實資金曲線。")
 
+# ── 停損失效風險揭露 ──────────────────────────────────────
+st.subheader("⚠️ 停損失效風險：進場前已接近漲停時，停損可能完全無效")
+if "stop_above_limit" in sub.columns:
+    n_unreachable = int(sub["stop_above_limit"].sum())
+    n_locked_unprotected = int((sub["locked"] & ~sub["stopped"]).sum())
+    pct_unreachable = n_unreachable / n * 100 if n else 0
+    st.error(
+        f"**停損價=進場前累積高點+1 tick。若進場前股價已經很接近10%漲停，這個停損價換算後"
+        f"可能超過漲停價本身——股價依法規不可能交易超過漲停，停損永遠碰不到，完全失去防護。**\n\n"
+        f"實測結果（{variant}版全部{n:,}筆交易）：有 **{n_unreachable}筆({pct_unreachable:.1f}%)** "
+        f"停損價本身就設在漲停之上（一開始就無效），其中 **{n_locked_unprotected}筆** 最終真的鎖漲停收盤、"
+        f"完全沒有防護，改用-4.18%估算強迫成本。**這{n_locked_unprotected}筆「locked且未觸發停損」的交易，"
+        f"100%都屬於這種停損失效的情況**（非巧合，是同一個機制造成的）。\n\n"
+        f"目前Q8/Q10設計**沒有針對這個風險做修正**（例如進場前價位已太接近漲停就跳過、或把停損"
+        f"夾在漲停價之下），這是已知但尚未處理的執行面缺口，非本頁展示疏漏。"
+    )
+else:
+    st.info("此版本資料尚未包含停損價欄位")
+
 # ── 近期交易明細 ─────────────────────────────────────────
 st.subheader("近期交易明細（回測）")
 recent = sub.sort_values("date", ascending=False).head(50).copy()
 recent["名稱"] = recent["ticker"].map(lambda t: names.get(str(t), ""))
-recent = recent[["date", "ticker", "名稱", "surge_pct", "entry", "ret", "win", "stopped", "locked", "cap_pct_rank_yearly"]]
-recent.columns = ["日期", "股票", "名稱", "急拉幅度", "進場價", "報酬", "勝", "停損", "鎖漲停", "市值百分位"]
+cols = ["date", "ticker", "名稱", "surge_pct", "entry", "stop_price", "limit_up_price",
+        "ret", "win", "stopped", "locked", "stop_above_limit", "cap_pct_rank_yearly"]
+cols = [c for c in cols if c in recent.columns or c == "名稱"]
+recent = recent[cols]
+recent.columns = ["日期", "股票", "名稱", "急拉幅度", "進場價", "停損價", "漲停價",
+                   "報酬", "勝", "停損", "鎖漲停", "停損失效", "市值百分位"]
 recent["日期"] = recent["日期"].dt.strftime("%Y-%m-%d")
 recent["急拉幅度"] = recent["急拉幅度"].map("{:.1%}".format)
 recent["進場價"] = recent["進場價"].map("{:.2f}".format)
+recent["停損價"] = recent["停損價"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+recent["漲停價"] = recent["漲停價"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
 recent["報酬"] = recent["報酬"].map("{:.2%}".format)
 recent["市值百分位"] = recent["市值百分位"].map("{:.1%}".format)
 
