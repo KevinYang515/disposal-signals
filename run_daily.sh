@@ -10,7 +10,7 @@ mkdir -p $HOME/disposal/logs
   echo "=== 更新訊號資料 ==="
   $HOME/disposal/venv/bin/python update_signals.py
   echo "=== git commit & push ==="
-  git add data/signals.csv data/history.csv data/backtest_grid.csv data/meta.json
+  git add data/signals.csv data/history.csv data/backtest_grid.csv data/meta.json data/signals_5min.csv data/history_5min.csv
   if git diff --cached --quiet; then
     echo '無新資料，跳過 commit'
   else

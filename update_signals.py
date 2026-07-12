@@ -258,6 +258,139 @@ def merge_upcoming(df, price):
     print(f'  補上 {len(add)} 筆 v2 尚未收錄的新處置事件: {names}')
     return pd.concat([df, add], ignore_index=True)
 
+# ── 5分盤（第一次處置）動能策略 ──────────────────────────────────────────
+# 策略：漲多處置 × 5分鐘 × D1收盤買 → 出關D1收盤賣
+# 因子：處置起始前一日漲 3~9%（強但未漲停）→ 2022-2026 每年皆正
+COST_5MIN = 0.357  # 永豐2折手續費雙邊 + 證交稅 0.3%（非當沖）
+
+def load_disposal_raw():
+    """finlab disposal_information；線上失敗時 fallback 本機 feather"""
+    try:
+        from finlab import data
+        disp = pd.DataFrame(data.get('disposal_information'))
+    except Exception as e:
+        local = os.path.expanduser('~/finlab_db/disposal_information.feather')
+        if not os.path.exists(local):
+            print(f'  disposal_information 無法取得: {e}')
+            return None
+        disp = pd.DataFrame(pd.read_feather(local))
+    disp.columns = [c.strip() for c in disp.columns]
+    disp['stock_id'] = disp['stock_id'].astype(str).str.strip()
+    disp = disp[disp['stock_id'].str.match(r'^\d{4}$')]
+    disp['start'] = pd.to_datetime(disp['處置開始時間'], errors='coerce')
+    disp['end']   = pd.to_datetime(disp['處置結束時間'], errors='coerce')
+    return disp
+
+def next_trading_day(idx, after):
+    """after（含當天不算）之後第一個交易日；超出資料範圍用平日估算"""
+    pos = idx.searchsorted(after, side='right')
+    if pos < len(idx):
+        return idx[pos]
+    cur = max(after, idx[-1])
+    while True:
+        cur += pd.Timedelta(days=1)
+        if cur.weekday() < 5:
+            return cur
+
+def build_5min(df, price):
+    disp = load_disposal_raw()
+    if disp is None:
+        return pd.DataFrame(), pd.DataFrame()
+
+    d5 = disp[(disp['分時交易'] == 5.0) & (disp['start'] >= '2022-01-01')].copy()
+    d5 = d5.drop_duplicates(subset=['stock_id', 'start'])
+
+    cap_map = dict(zip(zip(df['股票代號'], df['處置起始日']), df['市值規模']))
+    reason_map = dict(zip(zip(df['股票代號'], df['處置起始日']), df['處置原因']))
+
+    idx = price.index
+    today = tw_today()
+    hist_rows, sig_rows = [], []
+
+    for _, r in d5.iterrows():
+        sid, sd, ed = r['stock_id'], r['start'], r['end']
+        if sid not in price.columns or pd.isna(ed):
+            continue
+        pos = idx.searchsorted(sd)
+        if pos < 2:
+            continue
+        ser = price[sid]
+        p0 = ser.iloc[pos-1]                     # T-1 收盤
+        p_2 = ser.iloc[pos-2]
+        if pd.isna(p0) or p0 <= 0 or pd.isna(p_2) or p_2 <= 0:
+            continue
+        prev1 = round((p0/p_2 - 1) * 100, 2)
+        hit = 3 <= prev1 <= 9
+
+        reason = reason_map.get((sid, sd), '')
+        cap = cap_map.get((sid, sd), '')
+        cap_s = '大' if '大型' in cap else ('中' if '中型' in cap else '小')
+
+        exit_d = next_trading_day(idx, ed)       # 出關D1（實際結束日的下個交易日）
+
+        # D1 進場價（第一個處置日收盤）
+        e_pos = pos
+        entry = ser.iloc[e_pos] if e_pos < len(idx) else np.nan
+
+        base = {
+            '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
+            '處置原因': reason if reason else '漲多處置',
+            '起始日': sd, '出關日': exit_d,
+            '前日漲幅(%)': prev1,
+            '符合因子': '✅' if hit else '',
+        }
+
+        if exit_d <= idx[-1]:
+            # ── 已出關 → 歷史 ──
+            if reason == '跌深處置':
+                continue
+            x_pos = idx.searchsorted(exit_d)
+            px = ser.iloc[x_pos]
+            if pd.isna(entry) or entry <= 0 or pd.isna(px):
+                continue
+            net = round((px/entry - 1) * 100 - COST_5MIN, 2)
+            row = dict(base)
+            row['起始日'] = sd.strftime('%Y-%m-%d')
+            row['出關日'] = exit_d.strftime('%Y-%m-%d')
+            row['年份'] = sd.year
+            row['策略報酬(%)'] = net
+            for n in [1, 3, 5, 8]:
+                if pos + n - 1 < len(idx):
+                    pn = ser.iloc[pos+n-1]
+                    row[f'D{n}%'] = round((pn/p0-1)*100, 2) if pd.notna(pn) else np.nan
+                else:
+                    row[f'D{n}%'] = np.nan
+            hist_rows.append(row)
+        elif today <= exit_d:
+            # ── 進行中 / 未開始 → 今日訊號 ──
+            if reason == '跌深處置':
+                continue
+            nd = trading_day_n(idx, sd) if sd <= today else 0
+            row = dict(base)
+            row['起始日'] = sd.strftime('%m/%d')
+            row['出關日'] = exit_d.strftime('%m/%d')
+            row['今D幾'] = f'D{nd}' if nd else '未開始'
+            row['進場價(D1收)'] = round(float(entry), 2) if nd >= 1 and pd.notna(entry) else np.nan
+            last = ser.dropna().iloc[-1] if len(ser.dropna()) else np.nan
+            if nd >= 1 and pd.notna(entry) and entry > 0 and pd.notna(last):
+                row['目前損益(%)'] = round((last/entry - 1) * 100, 2)
+            else:
+                row['目前損益(%)'] = np.nan
+            row['今日漲跌'] = today_change(price, sid)
+            sig_rows.append(row)
+
+    hist = pd.DataFrame(hist_rows)
+    sig = pd.DataFrame(sig_rows)
+    if len(sig):
+        sig = sig.sort_values(['符合因子', '起始日'], ascending=[False, False])
+        sig = sig[['代號', '名稱', '規模', '前日漲幅(%)', '符合因子', '起始日', '今D幾',
+                   '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
+    if len(hist):
+        hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '前日漲幅(%)',
+                     '符合因子', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
+        hist = hist.sort_values('起始日', ascending=False)
+    return sig, hist
+
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
 def build_signals(df, price, open_p, whale_dfs):
     idx = price.index
@@ -576,6 +709,12 @@ def main():
     hist, cmp_stats = build_history(df, price, open_p, whale_dfs)
     hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → history.csv ({len(hist)} 筆)')
+
+    print('產生 5分盤動能資料...')
+    sig5, hist5 = build_5min(df, price)
+    sig5.to_csv(f'{OUT_DIR}/signals_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    hist5.to_csv(f'{OUT_DIR}/history_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    print(f'  → signals_5min.csv ({len(sig5)} 筆) / history_5min.csv ({len(hist5)} 筆)')
 
     # 更新時間
     meta = {

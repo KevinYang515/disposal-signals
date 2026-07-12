@@ -65,6 +65,20 @@ def load_meta():
     with open(p) as f:
         return json.load(f)
 
+@st.cache_data(ttl=300)
+def load_signals_5min():
+    p = f'{DATA_DIR}/signals_5min.csv'
+    if not os.path.exists(p):
+        return pd.DataFrame()
+    return pd.read_csv(p, dtype={'代號': str})
+
+@st.cache_data(ttl=300)
+def load_history_5min():
+    p = f'{DATA_DIR}/history_5min.csv'
+    if not os.path.exists(p):
+        return pd.DataFrame()
+    return pd.read_csv(p, dtype={'代號': str})
+
 @st.cache_data(ttl=3600)
 def load_exit_timing():
     s = f'{DATA_DIR}/exit_timing_summary.csv'
@@ -106,7 +120,7 @@ def sharpe_pf(s):
     pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
     return sharpe, pf
 
-tab_lab, tab1, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
+tab_lab, tab1, tab_5m, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '⚡ 5分盤動能', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -299,6 +313,101 @@ with tab1:
 | **T+1 出關日 開盤賣出** | ✅ **最佳出場點**（85% 勝率 +15%） |
 | T+1 收盤才賣 | 較差：勝率降至 79%，均報 +13.5% |
 | T+2 開盤才賣 | 相近但多一天風險：86%、+15% |
+""")
+
+# ════════════════════════════════════════════════════════
+# TAB 5分盤動能（第一次處置）
+# ════════════════════════════════════════════════════════
+with tab_5m:
+    sig5 = load_signals_5min()
+    hist5 = load_history_5min()
+
+    st.subheader('⚡ 5分盤動能策略（第一次處置）')
+    st.markdown("""
+5分盤跟 20分盤是**完全不同的邏輯**：20分盤買「深跌反彈」，5分盤買「**動能延續**」。
+26% 的 5分盤事件會惡化成二次處置（續飆到被關 20分盤），這群平均 **+10.6%（勝率 70%）**；沒惡化的只有 +0.1%。
+
+**進場條件：處置起始前一日漲 3~9%（強但未漲停）**　｜　**D1（第一個處置日）收盤買 → 出關D1 收盤賣**（約 11 個交易日）
+
+⚠️ 前一日**漲停（>9%）反而不買**——漲停隔天易被出貨，統計上明顯較差。
+""")
+
+    if hist5.empty:
+        st.warning('尚無 5分盤資料，請先執行 update_signals.py')
+    else:
+        h = hist5.copy()
+        h['策略報酬(%)'] = pd.to_numeric(h['策略報酬(%)'], errors='coerce')
+        hit = h[h['符合因子'] == '✅']
+
+        # ── KPI ──
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric('歷史樣本（符合因子）', f"{len(hit)} 筆")
+        c2.metric('勝率', f"{(hit['策略報酬(%)'] > 0).mean()*100:.0f}%")
+        c3.metric('平均報酬', f"{hit['策略報酬(%)'].mean():+.2f}%")
+        c4.metric('中位數', f"{hit['策略報酬(%)'].median():+.2f}%")
+        yr_mean = hit.groupby('年份')['策略報酬(%)'].mean()
+        c5.metric('正報酬年數', f"{(yr_mean > 0).sum()}/{len(yr_mean)}")
+        st.caption('已扣成本 0.357%（手續費2折雙邊 + 證交稅0.3%）；處置股買進需預收全額款券')
+
+        # ── 今日訊號 ──
+        st.markdown('#### 🔔 目前處置中（5分盤）')
+        if sig5.empty:
+            st.info('目前沒有進行中的 5分盤處置')
+        else:
+            s5 = sig5.copy()
+            s5['符合因子'] = s5['符合因子'].fillna('')
+
+            def hl_hit(row):
+                if row['符合因子'] == '✅':
+                    return ['background-color: #14342b'] * len(row)
+                return [''] * len(row)
+
+            num_cols5 = [c for c in ['前日漲幅(%)', '進場價(D1收)', '目前損益(%)', '今日漲跌'] if c in s5.columns]
+            st.dataframe(
+                s5.style.apply(hl_hit, axis=1)
+                  .format({c: '{:+.2f}' for c in ['前日漲幅(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns}, na_rep='-')
+                  .format({'進場價(D1收)': '{:.2f}'}, na_rep='-'),
+                use_container_width=True, hide_index=True)
+            n_hit = (s5['符合因子'] == '✅').sum()
+            st.caption(f'綠底 = 符合進場因子（前日漲3~9%），共 {n_hit} 檔。未開始的股票：起始日前一天收盤若漲 3~9%，隔天（D1）收盤買進。')
+
+        # ── 逐年績效 ──
+        st.markdown('#### 📊 逐年績效（符合因子 vs 全部5分盤）')
+        ytbl = pd.DataFrame({
+            '符合因子 n': hit.groupby('年份')['策略報酬(%)'].size(),
+            '符合因子 平均%': hit.groupby('年份')['策略報酬(%)'].mean().round(2),
+            '符合因子 勝率%': hit.groupby('年份')['策略報酬(%)'].apply(lambda x: round((x > 0).mean()*100, 1)),
+            '全部 平均%': h.groupby('年份')['策略報酬(%)'].mean().round(2),
+        })
+        st.dataframe(ytbl, use_container_width=True)
+
+        # ── 前日漲幅分組對照 ──
+        st.markdown('#### 🧲 為什麼是 3~9%？前日漲幅分組對照')
+        h['g'] = pd.cut(h['前日漲幅(%)'], bins=[-100, 0, 3, 9, 100],
+                        labels=['前日下跌', '0~3%（溫和）', '3~9%（強但未漲停）', '>9%（漲停）'])
+        btbl = h.groupby('g', observed=True)['策略報酬(%)'].agg(
+            n='size',
+            勝率=lambda x: round((x > 0).mean()*100, 1),
+            平均=lambda x: round(x.mean(), 2),
+            中位=lambda x: round(x.median(), 2))
+        st.dataframe(btbl, use_container_width=True)
+        st.caption('獲利峰值在「強但未鎖死」：還有續航力、又沒吸引到漲停隔日的出貨賣壓。')
+
+        # ── 歷史明細 ──
+        with st.expander(f'📜 歷史明細（{len(h)} 筆，2022 至今）'):
+            only_hit = st.checkbox('只看符合因子', value=True, key='h5_hit')
+            show = hit if only_hit else h
+            show = show.sort_values('起始日', ascending=False)
+            st.dataframe(
+                show.drop(columns=['g'], errors='ignore').style
+                    .format({c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']}, na_rep='-'),
+                use_container_width=True, hide_index=True, height=420)
+
+        st.markdown("""
+##### ⚠️ 風險提醒
+- **尾部厚**：符合因子的歷史 p5 = -19.6%、最差單筆 -27.7%（金寶 2026-01）→ 單筆倉位要控
+- **必須抱滿**：獲利集中在處置後期（D3 出場 ≈ 0%、D5 +1.9%、D8 +3.9%、出關 +6.6%），中途下車等於白做
+- 頻率約每月 4~5 筆；年度平均有遞增趨勢（2022 較弱），regime 依賴需持續監控
 """)
 
 # ════════════════════════════════════════════════════════
