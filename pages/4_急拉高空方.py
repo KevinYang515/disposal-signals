@@ -205,14 +205,51 @@ zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="gray", strokeDash=[4
 st.altair_chart(line + zero, use_container_width=True)
 st.caption("此曲線為逐筆複利近似（非每日N檔投組加權），headline的Sharpe/累積報酬/MaxDD是用投組層級算法，數字以上方指標卡為準。")
 
+# ── 2026 逐月/逐日損益 ────────────────────────────────────
+st.subheader("2026 逐月／逐日損益")
+sub_2026 = sub[sub["year"] == 2026].copy()
+if sub_2026.empty:
+    st.info("2026年目前無交易紀錄")
+else:
+    sub_2026["month"] = sub_2026["date"].dt.strftime("%Y-%m")
+    monthly = (sub_2026.groupby("month")
+               .agg(次數=("ret", "count"), 勝率=("win", "mean"),
+                    月報酬合計=("ret", "sum"), 均報酬=("ret", "mean"))
+               .reset_index())
+
+    bar_month = alt.Chart(monthly).mark_bar().encode(
+        x=alt.X("month:O", title="月份"),
+        y=alt.Y("月報酬合計:Q", title="當月報酬合計(逐筆加總)", axis=alt.Axis(format=".0%")),
+        color=alt.condition(alt.datum.月報酬合計 > 0, alt.value("#27ae60"), alt.value("#e74c3c")),
+        tooltip=[alt.Tooltip("month:O", title="月份"), alt.Tooltip("次數:Q", title="交易次數"),
+                 alt.Tooltip("勝率:Q", format=".1%"), alt.Tooltip("月報酬合計:Q", format=".2%")]
+    ).properties(height=250, title="2026 逐月報酬合計（逐筆簡單加總，非投組加權）")
+    st.altair_chart(bar_month, use_container_width=True)
+
+    show_m = monthly.copy()
+    show_m["勝率"] = show_m["勝率"].map("{:.1%}".format)
+    show_m["月報酬合計"] = show_m["月報酬合計"].map("{:.2%}".format)
+    show_m["均報酬"] = show_m["均報酬"].map("{:.2%}".format)
+    show_m.columns = ["月份", "交易次數", "勝率", "月報酬合計", "均報酬/筆"]
+    st.dataframe(show_m, use_container_width=True, hide_index=True)
+
+    with st.expander("展開查看2026逐日損益"):
+        daily = (sub_2026.groupby(sub_2026["date"].dt.strftime("%Y-%m-%d"))
+                 .agg(次數=("ret", "count"), 當日報酬合計=("ret", "sum"))
+                 .reset_index().rename(columns={"date": "日期"}))
+        daily["當日報酬合計"] = daily["當日報酬合計"].map("{:.2%}".format)
+        st.dataframe(daily, use_container_width=True, hide_index=True, height=300)
+    st.caption("報酬合計為當日/當月所有交易筆數的單純加總（非資金加權），僅供觀察走勢用，非真實資金曲線。")
+
 # ── 近期交易明細 ─────────────────────────────────────────
 st.subheader("近期交易明細（回測）")
 recent = sub.sort_values("date", ascending=False).head(50).copy()
 recent["名稱"] = recent["ticker"].map(lambda t: names.get(str(t), ""))
 recent = recent[["date", "ticker", "名稱", "surge_pct", "entry", "ret", "win", "stopped", "locked", "cap_pct_rank_yearly"]]
-recent.columns = ["日期", "股票", "名稱", "急拉幅度", "進場價", "報酬", "勝", "停損", "鎖跌停", "市值百分位"]
+recent.columns = ["日期", "股票", "名稱", "急拉幅度", "進場價", "報酬", "勝", "停損", "鎖漲停", "市值百分位"]
 recent["日期"] = recent["日期"].dt.strftime("%Y-%m-%d")
 recent["急拉幅度"] = recent["急拉幅度"].map("{:.1%}".format)
+recent["進場價"] = recent["進場價"].map("{:.2f}".format)
 recent["報酬"] = recent["報酬"].map("{:.2%}".format)
 recent["市值百分位"] = recent["市值百分位"].map("{:.1%}".format)
 
@@ -242,7 +279,13 @@ with st.expander("策略說明 / 方法論"):
 
 **停損**：09:00-09:30累積最高點 + 1 tick（貼齊高點的緊停損）
 
-**出場**：13:25強制平倉（現股當沖回補期限），若鎖跌停無法回補則按-4.18%估算強迫成本
+**出場**：13:25強制平倉（現股當沖回補期限），若鎖漲停無法回補則按-4.18%估算強迫成本
+
+**⚠️ 為何有停損還是會被鎖漲停**：停損價=進場前累積高點+1 tick，是股價的名目價位。若進場前
+股價已經衝到很接近10%漲停（例如09:30前已來到9.8%），則「高點+1 tick」換算後可能**超過
+漲停價本身**——但股價依法規不可能交易超過漲停，這個停損就永遠碰不到，等於完全失去防護，
+股價一路鎖到漲停收盤。這類交易(`locked=True`且`stopped=False`)才會用-4.18%估算強迫成本，
+若已經正常觸發停損出場則不會套用此估算。
 
 **為何用OTC而非加權指數(TAIEX)判斷大盤regime**：候選股以中小型股為主，跟櫃買指數連動性
 明顯優於加權指數（同樣邏輯下相關係數強7倍），加權指數常被少數權值股(如台積電)牽動，
