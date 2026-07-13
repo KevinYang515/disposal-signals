@@ -292,6 +292,22 @@ def next_trading_day(idx, after):
         if cur.weekday() < 5:
             return cur
 
+def classify_clause(row):
+    """處置觸發條款分類：當沖比重條款統計上為負（全樣本 -1.43%），排除不買"""
+    txt = str(row.get('處置條件', '')) + ' ' + str(row.get('處置內容', ''))
+    daytrade = ('當沖' in txt) or ('當日沖銷' in txt)
+    if '督導會報' in txt:
+        base = '督導會報'
+    elif ('十個營業日' in txt and '六' in txt) or '10個營業日內有6' in txt or '六次' in txt:
+        base = '10日6次'
+    elif '連續三' in txt or '連續3' in txt:
+        base = '連續3日'
+    elif '連續5' in txt or '連續五' in txt:
+        base = '連續5日'
+    else:
+        base = '其他'
+    return base + ('+當沖' if daytrade else '')
+
 def build_5min(df, price, open_p):
     disp = load_disposal_raw()
     if disp is None:
@@ -299,6 +315,7 @@ def build_5min(df, price, open_p):
 
     d5 = disp[(disp['分時交易'] == 5.0) & (disp['start'] >= '2022-01-01')].copy()
     d5 = d5.drop_duplicates(subset=['stock_id', 'start'])
+    d5['條款'] = d5.apply(classify_clause, axis=1)
 
     cap_map = dict(zip(zip(df['股票代號'], df['處置起始日']), df['市值規模']))
     reason_map = dict(zip(zip(df['股票代號'], df['處置起始日']), df['處置原因']))
@@ -340,15 +357,20 @@ def build_5min(df, price, open_p):
         # D1 收盤近漲停（>= +9.5% vs 前日收盤）→ 收盤鎖死買不到，訊號作廢
         d1_ret = (entry/p0 - 1) * 100 if pd.notna(entry) and p0 > 0 else np.nan
         d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
+        # 當沖比重條款觸發的處置：統計為負（全樣本 -1.43%、⭐內 -1.15%）→ 不買
+        clause = r.get('條款', '')
+        is_daytrade_clause = '當沖' in clause
 
         base = {
             '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
             '處置原因': reason if reason else '漲多處置',
+            '條款': clause,
             '起始日': sd, '出關日': exit_d,
             '前日漲幅(%)': prev1,
             '符合因子': '✅' if hit else '',
             'D1跳空(%)': gap,
-            '加強訊號': ('🔒漲停買不到' if hit and pd.notna(gap) and gap <= 0 and d1_locked
+            '加強訊號': ('🚫當沖條款' if hit and pd.notna(gap) and gap <= 0 and is_daytrade_clause
+                         else '🔒漲停買不到' if hit and pd.notna(gap) and gap <= 0 and d1_locked
                          else '⭐' if hit and pd.notna(gap) and gap <= 0 and not d1_locked
                          else ''),
         }
@@ -386,6 +408,8 @@ def build_5min(df, price, open_p):
             # 白話訊號狀態
             if not hit:
                 status = '—'
+            elif is_daytrade_clause:
+                status = '🚫 當沖條款，不買'
             elif nd == 0 or pd.isna(gap):
                 status = '🟡 等D1開盤確認'
             elif gap > 0:
@@ -408,13 +432,13 @@ def build_5min(df, price, open_p):
     sig = pd.DataFrame(sig_rows)
     if len(sig):
         order = {'🟢 買進（D1收盤）': 0, '🟡 等D1開盤確認': 1, '🔒 D1漲停買不到': 2,
-                 '❌ D1開高，不買': 3, '—': 4}
+                 '🚫 當沖條款，不買': 3, '❌ D1開高，不買': 4, '—': 5}
         sig['_o'] = sig['訊號'].map(order)
         sig = sig.sort_values(['_o', '起始日'], ascending=[True, False]).drop(columns=['_o'])
-        sig = sig[['代號', '名稱', '規模', '訊號', '前日漲幅(%)', 'D1跳空(%)',
+        sig = sig[['代號', '名稱', '規模', '訊號', '條款', '前日漲幅(%)', 'D1跳空(%)',
                    '起始日', '今D幾', '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
     if len(hist):
-        hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '前日漲幅(%)',
+        hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '條款', '前日漲幅(%)',
                      'D1跳空(%)', '符合因子', '加強訊號', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
         hist = hist.sort_values('起始日', ascending=False)
     return sig, hist
