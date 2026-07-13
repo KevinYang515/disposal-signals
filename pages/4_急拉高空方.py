@@ -21,11 +21,11 @@ TODAY_JSON  = DATA_DIR / "急拉高_今日選股.json"
 NAMES_CSV   = DATA_DIR / "stock_names.csv"
 
 HEADLINE = {
-    "Q8": dict(n=1665, sharpe=3.58, cum=3640.9, mdd=-18.4, avg2026=0.348,
-               desc="流動性前30%(70分位) + 市值最小8%動態分位 + 前日OTC漲幅>=3%跳過 + 停損夾漲停下方(2026-07-13修正)",
+    "Q8": dict(n=1618, sharpe=3.70, cum=3620.3, mdd=-18.4, avg2026=0.422,
+               desc="流動性前30%(70分位) + 市值最小8%動態分位 + OTC濾網(前日單日>=3% OR 前10日累積>=8%跳過) + 停損夾漲停下方",
                note="3.5年全期表現最佳，2026單獨檢驗排除最強5天仍正、排除10天轉負，較Q10略脆弱"),
-    "Q10": dict(n=2084, sharpe=3.45, cum=3036.0, mdd=-18.4, avg2026=0.410,
-                desc="流動性前30%(70分位) + 市值最小10%動態分位 + 前日OTC漲幅>=3%跳過 + 停損夾漲停下方(2026-07-13修正)",
+    "Q10": dict(n=2021, sharpe=3.60, cum=3035.8, mdd=-16.1, avg2026=0.603,
+                desc="流動性前30%(70分位) + 市值最小10%動態分位 + OTC濾網(前日單日>=3% OR 前10日累積>=8%跳過) + 停損夾漲停下方",
                 note="2026單獨檢驗排除最強10天轉負(跟Q8接近)，長期Sharpe/累積報酬仍略低於Q8"),
 }
 
@@ -131,14 +131,18 @@ else:
     cap_max = 0.08 if variant == "Q8" else 0.10
     pool = {k: v for k, v in cand.items()
             if v.get("cap_pct_rank") is not None and v["cap_pct_rank"] < cap_max}
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("計算日期(資料截至)", today.get("計算日期", "—"))
     c2.metric(f"{variant}候選池大小", f"{len(pool)} 檔")
     otc_skip = today.get("otc_skip_today", False)
-    c3.metric("前日OTC濾網", "🔴 今日跳過" if otc_skip else "🟢 正常",
-              delta=f"前日OTC {today.get('prev_otc_ret', 0)*100:+.2f}%", delta_color="off")
+    prev_otc_ret = today.get("prev_otc_ret")
+    prev_otc_cum10 = today.get("prev_otc_cum10")
+    c3.metric("前日OTC單日", f"{prev_otc_ret*100:+.2f}%" if prev_otc_ret is not None else "—",
+              delta="門檻 3%", delta_color="off")
+    c4.metric("前10日OTC累積", f"{prev_otc_cum10*100:+.2f}%" if prev_otc_cum10 is not None else "—",
+              delta="門檻 8%", delta_color="off")
     if otc_skip:
-        st.warning("前一日OTC(櫃買指數)漲幅>=3%，今日Q8/Q10皆不進場（regime濾網觸發）")
+        st.warning("OTC(櫃買指數)前一日單日漲幅>=3%或前10日累積漲幅>=8%，今日Q8/Q10皆不進場（regime濾網觸發）")
     if pool:
         pool_df = pd.DataFrame(pool).T.reset_index().rename(columns={"index": "ticker"})
         pool_df["名稱"] = pool_df["ticker"].map(lambda t: names.get(str(t), ""))
@@ -307,7 +311,10 @@ with st.expander("策略說明 / 方法論"):
 - 流動性：個股20日均成交金額 / 全市場20日均成交金額，取前30%(70分位)，固定門檻(從3.5年歷史算出)
 - 市值：個股市值(收盤價x發行股數)在「當年度、已通過流動性篩選的候選股」中的百分位排名，
   取最小{'8%' if variant=='Q8' else '10%'}（**動態相對分位，非固定金額**，避免大盤/市值隨時間成長造成的漂移偏誤）
-- 大盤regime：前一日櫃買指數(OTC)漲幅 >= 3% 時，當天整天跳過不進場
+- 大盤regime：前一日櫃買指數(OTC)**單日**漲幅 >= 3% **或前10日累積**漲幅 >= 8% 時，
+  當天整天跳過不進場（2026-07-13新增10日累積規則：單日規則只抓突發暴衝，抓不到像
+  2026年4月那種單日都不極端、但連續數週緩漲19.7%的持續性regime；兩規則觸發的日子
+  幾乎不重疊，是互補關係，OR組合後2026均報酬明顯改善）
 
 **進場**：09:30後直接以市價附近成交（非等回落觸發）
 
