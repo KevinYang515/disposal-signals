@@ -232,11 +232,11 @@ with tab1:
                 if pd.isna(gap):
                     return '-'
                 elif gap >= -2:
-                    return f'🔥 再跌 {abs(gap):.1f}%'
+                    return f'🔥 再跌 {abs(gap):.2f}%'
                 elif gap >= -5:
-                    return f'🟡 再跌 {abs(gap):.1f}%'
+                    return f'🟡 再跌 {abs(gap):.2f}%'
                 else:
-                    return f'⬜ 再跌 {abs(gap):.1f}%'
+                    return f'⬜ 再跌 {abs(gap):.2f}%'
 
             prev_base['明日預覽'] = prev_base.apply(fmt_preview, axis=1)
 
@@ -252,7 +252,7 @@ with tab1:
                     prev_show[c] = prev_show[c].apply(fmt_pct)
             if '觸發價' in prev_show.columns:
                 prev_show['觸發價'] = prev_show['觸發價'].apply(
-                    lambda v: f'{v:.1f}' if pd.notna(v) else '-')
+                    lambda v: f'{v:.2f}' if pd.notna(v) else '-')
 
             # 排序：已觸發 > 距觸發接近的（用 sort_key 合成）
             sort_df = prev_base[['買進訊號', '距觸發(%)']].copy()
@@ -659,10 +659,10 @@ with tab2:
 
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric('總筆數', f'{len(view_h)} 筆', delta=f'{settled} 已出關', delta_color='off')
-            c2.metric('勝率', f'{wr:.1f}%')
+            c2.metric('勝率', f'{wr:.2f}%')
             c3.metric('期望報酬', f'{avg_r:+.2f}%' if pd.notna(avg_r) else '-')
-            c4.metric('夏普值', f'{sharpe:.3f}' if pd.notna(sharpe) else '-')
-            c5.metric('賺賠比', f'{pf:.3f}' if pd.notna(pf) else '-')
+            c4.metric('夏普值', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
+            c5.metric('賺賠比', f'{pf:.2f}' if pd.notna(pf) else '-')
             d1, d2, d3 = st.columns([1, 1, 3])
             d1.metric('獲利筆', len(wins))
             d2.metric('虧損筆', len(loss))
@@ -686,7 +686,7 @@ with tab2:
                 et_rows.append({
                     '出場時間點':  elabel,
                     '筆數':        len(es),
-                    '勝率(%)':     round(ew / (ew + el) * 100, 1) if (ew + el) > 0 else 0,
+                    '勝率(%)':     round(ew / (ew + el) * 100, 2) if (ew + el) > 0 else 0,
                     '期望報酬(%)':  round(es.mean(), 2),
                     '夏普值':      sp,
                     '賺賠比':      pf_et,
@@ -719,8 +719,8 @@ with tab2:
                         .map(_et_wr,  subset=['勝率(%)'])
                         .map(_et_ret, subset=['期望報酬(%)'])
                         .map(_et_sp,  subset=['夏普值'])
-                        .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
-                                 '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
+                        .format({'勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}',
+                                 '夏普值': '{:.2f}', '賺賠比': '{:.2f}',
                                  '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}',
                                  '最大獲利(%)': '{:+.2f}', '最大虧損(%)': '{:+.2f}'},
                                 na_rep='-'),
@@ -745,7 +745,7 @@ with tab2:
                     except: return ''
                 st.dataframe(
                     cmp_df.style.map(color_cmp_wr, subset=['勝率(%)']).format(
-                        {'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'}),
+                        {'勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}'}),
                     hide_index=True, use_container_width=True
                 )
 
@@ -910,10 +910,10 @@ with tab3:
 
                 kc1, kc2, kc3, kc4, kc5 = st.columns(5)
                 kc1.metric('符合條件', f'{len(eligible)} 筆', delta=f'{len(settled_c)} 已出關', delta_color='off')
-                kc2.metric('勝率', f'{wr_c:.1f}%')
+                kc2.metric('勝率', f'{wr_c:.2f}%')
                 kc3.metric('期望報酬', f'{avg_r_c:+.2f}%' if pd.notna(avg_r_c) else '-')
-                kc4.metric('夏普值', f'{sharpe_c:.3f}' if pd.notna(sharpe_c) else '-')
-                kc5.metric('賺賠比', f'{pf_c:.3f}' if pd.notna(pf_c) else '-')
+                kc4.metric('夏普值', f'{sharpe_c:.2f}' if pd.notna(sharpe_c) else '-')
+                kc5.metric('賺賠比', f'{pf_c:.2f}' if pd.notna(pf_c) else '-')
                 kd1, kd2, kd3 = st.columns([1, 1, 3])
                 kd1.metric('均獲利', f'{avg_w_c:+.2f}%' if pd.notna(avg_w_c) else '-')
                 kd2.metric('均虧損', f'{avg_l_c:+.2f}%' if pd.notna(avg_l_c) else '-')
@@ -950,7 +950,7 @@ with tab3:
                         continue
                     sp_n, pf_n = sharpe_pf(s)
                     cmp_rows_c.append({'進場日': f'D{n}', '樣本N': len(s),
-                                       '勝率(%)': round((s > 0).mean() * 100, 1),
+                                       '勝率(%)': round((s > 0).mean() * 100, 2),
                                        '期望報酬(%)': round(s.mean(), 2),
                                        '夏普值': sp_n,
                                        '賺賠比': pf_n,
@@ -983,8 +983,8 @@ with tab3:
                             .map(_wr_clr,  subset=['勝率(%)'])
                             .map(_ret_clr, subset=['期望報酬(%)'])
                             .map(_sp_clr,  subset=['夏普值'])
-                            .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
-                                     '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
+                            .format({'勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}',
+                                     '夏普值': '{:.2f}', '賺賠比': '{:.2f}',
                                      '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'},
                                     na_rep='-'),
                         use_container_width=True
@@ -1007,7 +1007,7 @@ with tab3:
                         exit_cmp_rows.append({
                             '出場時間點': 'T+1 開盤 ★',
                             '筆數': len(s_e),
-                            '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
+                            '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 2) if (ew_e + el_e) > 0 else 0,
                             '期望報酬(%)': round(s_e.mean(), 2),
                             '夏普值': sp_e, '賺賠比': pf_e,
                             '均獲利(%)': round(s_e[s_e > 0].mean(), 2) if ew_e > 0 else 0,
@@ -1032,7 +1032,7 @@ with tab3:
                     exit_cmp_rows.append({
                         '出場時間點': f'T+{k} 收盤',
                         '筆數': len(adj_k),
-                        '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 1) if (ew_e + el_e) > 0 else 0,
+                        '勝率(%)':   round(ew_e / (ew_e + el_e) * 100, 2) if (ew_e + el_e) > 0 else 0,
                         '期望報酬(%)': round(adj_k.mean(), 2),
                         '夏普值': sp_e, '賺賠比': pf_e,
                         '均獲利(%)': round(adj_k[adj_k > 0].mean(), 2) if ew_e > 0 else 0,
@@ -1046,8 +1046,8 @@ with tab3:
                             .map(_wr_clr,  subset=['勝率(%)'])
                             .map(_ret_clr, subset=['期望報酬(%)'])
                             .map(_sp_clr,  subset=['夏普值'])
-                            .format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
-                                     '夏普值': '{:.3f}', '賺賠比': '{:.3f}',
+                            .format({'勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}',
+                                     '夏普值': '{:.2f}', '賺賠比': '{:.2f}',
                                      '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'},
                                     na_rep='-'),
                         use_container_width=True
@@ -1117,7 +1117,7 @@ with tab3:
                                 '樣本N':    len(s),
                                 '均漲跌(%)': round(s.mean(), 2),
                                 '中位數(%)': round(s.median(), 2),
-                                '上漲率(%)': round((s > 0).mean() * 100, 1),
+                                '上漲率(%)': round((s > 0).mean() * 100, 2),
                                 '最大漲幅(%)': round(s.max(), 2),
                                 '最大跌幅(%)': round(s.min(), 2),
                             })
@@ -1132,7 +1132,7 @@ with tab3:
                                 prdf.style
                                     .map(_pr_ret, subset=['均漲跌(%)', '中位數(%)'])
                                     .format({'均漲跌(%)': '{:+.2f}', '中位數(%)': '{:+.2f}',
-                                             '上漲率(%)': '{:.1f}',
+                                             '上漲率(%)': '{:.2f}',
                                              '最大漲幅(%)': '{:+.2f}', '最大跌幅(%)': '{:+.2f}'}),
                                 use_container_width=True
                             )
@@ -1166,13 +1166,13 @@ with tab3:
                         sp_tp, pf_tp = sharpe_pf(all_tp)
 
                         tp1, tp2, tp3, tp4, tp5, tp6 = st.columns(6)
-                        tp1.metric('觸發停利', f'{hit_n} 筆 ({hit_n/total_n*100:.0f}%)')
+                        tp1.metric('觸發停利', f'{hit_n} 筆 ({hit_n/total_n*100:.2f}%)')
                         tp2.metric('觸發者期望報酬', f'{np.mean(hit_rets):+.2f}%' if hit_rets else '-')
                         tp3.metric('未觸發(持至D5)均', f'{np.nanmean(miss_rets):+.2f}%' if miss_rets else '-')
                         tp4.metric('整體期望報酬', f'{np.mean(all_tp):+.2f}%' if all_tp else '-',
                                    delta='vs T+1開盤直出 0%')
-                        tp5.metric('夏普值', f'{sp_tp:.3f}' if pd.notna(sp_tp) else '-')
-                        tp6.metric('賺賠比', f'{pf_tp:.3f}' if pd.notna(pf_tp) else '-')
+                        tp5.metric('夏普值', f'{sp_tp:.2f}' if pd.notna(sp_tp) else '-')
+                        tp6.metric('賺賠比', f'{pf_tp:.2f}' if pd.notna(pf_tp) else '-')
 
                         if hit_days:
                             from collections import Counter
@@ -1242,7 +1242,7 @@ with tab4:
         with st.expander('完整數字'):
             show = grid[['label', 'N', 'wr', 'ret', 'wl']].copy()
             show.columns = ['條件', 'N', '勝率(%)', '期望報酬(%)', '賺賠比']
-            st.dataframe(show.style.format({'勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}', '賺賠比': '{:.2f}'}, na_rep='-'), use_container_width=True)
+            st.dataframe(show.style.format({'勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}', '賺賠比': '{:.2f}'}, na_rep='-'), use_container_width=True)
 
 # ════════════════════════════════════════════════════════
 # TAB 5：策略說明
@@ -1360,7 +1360,7 @@ with tab_lab:
                     post_rows.append({
                         '持有期': c.replace('出關後', '').replace('(%)', ''),
                         '樣本N': len(s),
-                        '勝率(%)': round((s > 0).mean() * 100, 1),
+                        '勝率(%)': round((s > 0).mean() * 100, 2),
                         '期望報酬(%)': round(s.mean(), 2),
                         '均獲利(%)': round(s[s > 0].mean(), 2) if (s > 0).any() else 0,
                         '均虧損(%)': round(s[s < 0].mean(), 2) if (s < 0).any() else 0,
@@ -1368,7 +1368,7 @@ with tab_lab:
                 if post_rows:
                     pdf = pd.DataFrame(post_rows).set_index('持有期')
                     st.dataframe(pdf.style.format({
-                        '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}',
+                        '勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}',
                         '均獲利(%)': '{:+.2f}', '均虧損(%)': '{:+.2f}'
                     }, na_rep='-'), use_container_width=True)
 
@@ -1376,7 +1376,7 @@ with tab_lab:
                 st.markdown('**延長持有總報酬（原策略 + 繼續持有 N 天）**')
                 ext_rows = [{'出場時機': 'T+1 開盤（原策略）',
                               '樣本N': len(orig_s),
-                              '勝率(%)': round((orig_s > 0).mean() * 100, 1),
+                              '勝率(%)': round((orig_s > 0).mean() * 100, 2),
                               '期望報酬(%)': round(orig_s.mean(), 2)}]
                 for c in available_post:
                     merged = lab_base.copy()
@@ -1387,11 +1387,11 @@ with tab_lab:
                     label = '延長至 ' + c.replace('出關後', '').replace('(%)', '')
                     ext_rows.append({'出場時機': label,
                                      '樣本N': len(total),
-                                     '勝率(%)': round((total > 0).mean() * 100, 1),
+                                     '勝率(%)': round((total > 0).mean() * 100, 2),
                                      '期望報酬(%)': round(total.mean(), 2)})
                 edf = pd.DataFrame(ext_rows).set_index('出場時機')
                 st.dataframe(edf.style.format({
-                    '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+                    '勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}'
                 }, na_rep='-'), use_container_width=True)
 
             st.info('💡 結論：T+1 開盤出場勝率最高（80%+）。延長持有期望報酬略升但勝率明顯下降，建議維持原策略。')
@@ -1414,20 +1414,20 @@ with tab_lab:
         # ── 近20日漲幅篩選 ──
         with l1a:
             st.markdown('**近20日漲幅門檻篩選**')
-            st.caption(f'樣本中位數：{lab1_base["_rise"].median():.0f}%（多數股票處置前已大漲）')
+            st.caption(f'樣本中位數：{lab1_base["_rise"].median():.2f}%（多數股票處置前已大漲）')
             rise_rows = [{'漲幅門檻': '不篩選（全部）',
                           '樣本N': len(lab1_base['_ret'].dropna()),
-                          '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 1),
+                          '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 2),
                           '期望報酬(%)': round(lab1_base['_ret'].dropna().mean(), 2)}]
             for th in [20, 30, 40, 50, 70, 100]:
                 sub = lab1_base[lab1_base['_rise'] >= th]['_ret'].dropna()
                 if len(sub) < 5: continue
                 rise_rows.append({'漲幅門檻': f'>= {th}%', '樣本N': len(sub),
-                                  '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                  '勝率(%)': round((sub > 0).mean() * 100, 2),
                                   '期望報酬(%)': round(sub.mean(), 2)})
             rdf = pd.DataFrame(rise_rows).set_index('漲幅門檻')
             st.dataframe(rdf.style.format({
-                '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+                '勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}'
             }, na_rep='-'), use_container_width=True)
             st.caption('💡 近20日漲幅篩選對結果影響有限，不建議作為主要濾網。')
 
@@ -1437,25 +1437,25 @@ with tab_lab:
             st.caption('大戶(%)為進場時大戶持股變化；正值=大戶增持，負值=大戶減持')
             whale_rows = [{'大戶條件': '不篩選（全部）',
                            '樣本N': len(lab1_base['_ret'].dropna()),
-                           '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 1),
+                           '勝率(%)': round((lab1_base['_ret'].dropna() > 0).mean() * 100, 2),
                            '期望報酬(%)': round(lab1_base['_ret'].dropna().mean(), 2)}]
             # 大戶減持（負值，多數情況）
             for th in [-1, -2, -3, -5]:
                 sub = lab1_base[lab1_base['_whale'] <= th]['_ret'].dropna()
                 if len(sub) < 5: continue
                 whale_rows.append({'大戶條件': f'<= {th}%（減持）', '樣本N': len(sub),
-                                   '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                   '勝率(%)': round((sub > 0).mean() * 100, 2),
                                    '期望報酬(%)': round(sub.mean(), 2)})
             # 大戶增持（正值，較少）
             for th in [0, 1]:
                 sub = lab1_base[lab1_base['_whale'] >= th]['_ret'].dropna()
                 if len(sub) < 5: continue
                 whale_rows.append({'大戶條件': f'>= {th}%（增持/中性）', '樣本N': len(sub),
-                                   '勝率(%)': round((sub > 0).mean() * 100, 1),
+                                   '勝率(%)': round((sub > 0).mean() * 100, 2),
                                    '期望報酬(%)': round(sub.mean(), 2)})
             wdf = pd.DataFrame(whale_rows).set_index('大戶條件')
             st.dataframe(wdf.style.format({
-                '勝率(%)': '{:.1f}', '期望報酬(%)': '{:+.2f}'
+                '勝率(%)': '{:.2f}', '期望報酬(%)': '{:+.2f}'
             }, na_rep='-'), use_container_width=True)
             st.caption('💡 大戶增持（≥0%）時期望報酬明顯較高，但樣本僅 ~20 筆，需持續累積觀察。')
 
@@ -1494,7 +1494,7 @@ with tab_lab:
                     if c not in subset.columns: continue
                     s = pd.to_numeric(subset[c], errors='coerce').dropna()
                     day = c.replace('出關後', '').replace('(%)', '')
-                    row[f'{day} 勝率'] = round((s > 0).mean() * 100, 1) if len(s) >= 3 else np.nan
+                    row[f'{day} 勝率'] = round((s > 0).mean() * 100, 2) if len(s) >= 3 else np.nan
                     row[f'{day} 期望'] = round(s.mean(), 2) if len(s) >= 3 else np.nan
                 compare_rows.append(row)
 
@@ -1519,7 +1519,7 @@ with tab_lab:
                         return 'background-color:#c0392b;color:white'
                     except: return ''
 
-                fmt = {c: '{:.1f}' for c in wr_cols}
+                fmt = {c: '{:.2f}' for c in wr_cols}
                 fmt.update({c: '{:+.2f}' for c in ret_cols})
                 st.dataframe(
                     cdf2.style.map(_wr2, subset=wr_cols).map(_ret2, subset=ret_cols)

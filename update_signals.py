@@ -524,7 +524,7 @@ def build_signals(df, price, open_p, whale_dfs):
             ser_v = price[sid].dropna()
             cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
             if pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
-                d['觸發價']    = round(p0_v * 0.95, 1)
+                d['觸發價']    = round(p0_v * 0.95, 2)
                 d['距觸發(%)'] = round((d['觸發價'] / cur_p - 1) * 100, 2)
             else:
                 d['觸發價']    = np.nan
@@ -585,7 +585,7 @@ def build_backtest_grid(df, price, open_p):
                 'day': n, 'threshold': th,
                 'label': f'D{n}<{th:+d}%',
                 'N': len(sub),
-                'wr': round(len(wins) / len(sub) * 100, 1),
+                'wr': round(len(wins) / len(sub) * 100, 2),
                 'ret': round(sub.mean(), 2),
                 'wl': round(wl, 2) if not np.isnan(wl) else None,
             })
@@ -723,7 +723,7 @@ def build_history(df, price, open_p, whale_dfs):
         return {
             'label': label,
             'n': len(s),
-            'wr': round((s > 0).mean() * 100, 1),
+            'wr': round((s > 0).mean() * 100, 2),
             'ret': round(s.mean(), 2),
         }
 
