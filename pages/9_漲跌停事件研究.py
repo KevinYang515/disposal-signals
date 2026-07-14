@@ -57,10 +57,14 @@ with st.sidebar:
     yr_max = int(up_all["date"].dt.year.max())
     yr_range = st.slider("年份範圍", yr_min, yr_max, (yr_min, yr_max))
     only_locked = st.checkbox("只看鎖死事件（收盤=當日最高/最低價）", value=False)
+    exclude_disposal = st.checkbox("排除處置期間的漲跌停", value=False,
+                                    help="處置股改人工管制撮合(5分/20分)，成交機制跟一般盤中不同，"
+                                         "統計特性也不太一樣（漲停通常更強、跌停初期更弱但長線彈更兇）")
     st.divider()
     st.caption(
         "方法：市值＝事件當天收盤價×**目前**股本（無歷史股本序列，早期事件分類會略失真）。"
         "「鎖死」＝收盤價等於當日最高價(漲停)/最低價(跌停)，代表全日封住、盤中沒有對手單。"
+        "「處置期間」＝事件當天該股票正處於任一次處置(第一次/第二次)公告的起訖區間內。"
     )
 
 
@@ -68,6 +72,8 @@ def apply_filters(df):
     d = df[(df["date"].dt.year >= yr_range[0]) & (df["date"].dt.year <= yr_range[1])]
     if only_locked:
         d = d[d["locked"] == True]
+    if exclude_disposal:
+        d = d[d["in_disposal"] == False]
     return d
 
 
@@ -169,6 +175,11 @@ def render_direction(df, df_full, color, direction_label):
     st.caption("沒鎖死＝收盤未達當日最高/最低價，代表尾盤已有反向對手單進場")
     style_group_table(group_summary(df, "locked").assign(
         分組=lambda d: d["分組"].map({True: "鎖死", False: "未鎖死"})))
+
+    st.markdown("##### 處置期間 vs 非處置期間")
+    st.caption("處置期間改人工管制撮合(5分/20分一次)，成交機制跟一般盤中不同")
+    style_group_table(group_summary(df, "in_disposal").assign(
+        分組=lambda d: d["分組"].map({True: "處置期間", False: "非處置期間"})))
 
     st.markdown("##### 連續天數效應")
     st.caption("streak = 連續第幾天漲停/跌停（1=首日）")
