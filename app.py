@@ -79,6 +79,20 @@ def load_history_5min():
         return pd.DataFrame()
     return pd.read_csv(p, dtype={'代號': str})
 
+@st.cache_data(ttl=300)
+def load_signals_tail20():
+    p = f'{DATA_DIR}/signals_tail20.csv'
+    if not os.path.exists(p):
+        return pd.DataFrame()
+    return pd.read_csv(p, dtype={'代號': str})
+
+@st.cache_data(ttl=300)
+def load_history_tail20():
+    p = f'{DATA_DIR}/history_tail20.csv'
+    if not os.path.exists(p):
+        return pd.DataFrame()
+    return pd.read_csv(p, dtype={'代號': str})
+
 @st.cache_data(ttl=3600)
 def load_exit_timing():
     s = f'{DATA_DIR}/exit_timing_summary.csv'
@@ -120,7 +134,7 @@ def sharpe_pf(s):
     pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
     return sharpe, pf
 
-tab_lab, tab1, tab_5m, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '⚡ 5分盤動能', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
+tab_lab, tab1, tab_5m, tab_t20, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '⚡ 5分盤動能', '🚪 出關動能', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
 
 # ════════════════════════════════════════════════════════
 # TAB 1：今日訊號
@@ -580,6 +594,205 @@ with tab_5m:
 - **風控唯一手段 = 倉位**：單筆投入固定小額（例如總資金 5~10%），靠 152 筆的大數法則賺期望值
 - 歷史 p5 = -17.05%、最差單筆 -26.54%（金寶 2026-01）
 - 頻率約每月 2~3 筆；獲利集中在處置後期（D3 出場 ≈ 0%、出關 +6.6%），中途下車等於白做
+""")
+
+# ════════════════════════════════════════════════════════
+# TAB：出關動能（20分盤尾段）
+# ════════════════════════════════════════════════════════
+with tab_t20:
+    sig_t = load_signals_tail20()
+    hist_t = load_history_tail20()
+
+    st.subheader('🚪 出關動能策略（20分盤尾段）')
+    st.markdown("""
+只吃 20分盤處置的**最後一段**：出關日在處置公告時就寫死了（**事先可知，無未來函數**），
+統計上**出關當天本身就是大漲日**——解禁後流動性回來、被 20 分鐘撮合憋住的買盤一次進場。
+**只持有 3 個交易日**，資金效率約 1.31%/天（5分盤策略抱滿是 0.69%/天）。
+
+#### 📌 操作 SOP（白話版）
+
+| 步驟 | 動作 |
+|---|---|
+| **① 找標的** | 所有**漲多進 20分盤處置**的股票都適用，**不需要任何其他濾網**（市值/漲幅/條款都不用看） |
+| **② 買進日 = 出關日往前第 3 個交易日** | 該日**收盤買**（20分盤用市價掛進 13:30 尾撮，成交價=收盤價）。當天收盤**漲停鎖死 → 放棄** |
+| **③ 抱 2 天** | 不停損、不加碼 |
+| **④ 出關當天（恢復正常交易第一天）收盤賣** | 已恢復逐筆交易，流動性正常，尾盤市價賣出即可 |
+
+⚠️ 進場那 3 天還在處置期 = 買進需**全額預收款券**。
+""")
+
+    if hist_t.empty:
+        st.warning('尚無出關動能資料，請先執行 update_signals.py')
+    else:
+        ht = hist_t.copy()
+        ht['策略報酬(%)'] = pd.to_numeric(ht['策略報酬(%)'], errors='coerce')
+        ok_t = ht[ht['策略報酬(%)'].notna()]
+        r_t = ok_t['策略報酬(%)']
+        sp_t, pf_t = sharpe_pf(r_t)
+        yr_t = ok_t.groupby('年份')['策略報酬(%)'].mean()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric('歷史樣本（2022~）', f'{len(r_t)} 筆')
+        c2.metric('勝率', f'{(r_t > 0).mean()*100:.2f}%')
+        c3.metric('平均報酬', f'{r_t.mean():+.2f}%')
+        c4.metric('中位數', f'{r_t.median():+.2f}%')
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric('夏普值（每筆）', f'{sp_t:.2f}' if pd.notna(sp_t) else '-')
+        c6.metric('賺賠比', f'{pf_t:.2f}' if pd.notna(pf_t) else '-')
+        c7.metric('正報酬年數', f'{(yr_t > 0).sum()}/{len(yr_t)}')
+        c8.metric('最差單筆', f'{r_t.min():+.2f}%')
+        st.caption('已扣成本 0.357%（手續費2折雙邊 + 證交稅0.3%）。買進日收盤漲停買不到的已排除（表中標 🔒）。')
+        st.info('📐 **組合層級（日權益、每日等權在倉、單檔上限 20% 資金）**：2022+ 年化 Sharpe 2.58、'
+                'MaxDD -19.61%、年化報酬 +85.9%；上限 33% 版 Sharpe 2.60、MaxDD -30.71%、年化 +132.4%。')
+        st.success('🧪 **樣本外驗證通過**：同一規則套用 **2016~2021**（六年、未參與任何優化）：'
+                   'n=425、**+2.87%/筆、勝率 57.41%、t=4.88、6/6 年正**、最差年 +0.46%；'
+                   '組合層級（上限20%）年化 Sharpe 1.71、0 負年。11 年裡 10 年正，唯一弱年 2022 約打平。')
+
+        # ── 今日訊號 ──
+        st.markdown('#### 🔔 目前處置中（20分盤出關倒數）')
+        if sig_t.empty:
+            st.info('目前沒有進行中的 20分盤漲多處置')
+        else:
+            s_t = sig_t.copy()
+
+            def hl_t20(row):
+                v = str(row.get('訊號', ''))
+                if v.startswith('🟢'):
+                    return ['background-color: #1a4a35'] * len(row)
+                if v.startswith('🔴'):
+                    return ['background-color: #4a2a1a'] * len(row)
+                if v.startswith('🔵'):
+                    return ['background-color: #1a2a4a'] * len(row)
+                return [''] * len(row)
+
+            st.dataframe(
+                s_t.style.apply(hl_t20, axis=1)
+                   .format({c: '{:+.2f}' for c in ['目前損益(%)', '今日漲跌'] if c in s_t.columns}, na_rep='-')
+                   .format({'進場價': '{:.2f}'}, na_rep='-'),
+                use_container_width=True, hide_index=True)
+            st.markdown("""
+**訊號欄說明**：
+🟢 **今日收盤買進** = 今天就是出關前第 3 個交易日 → 收盤前用市價掛進尾撮
+🔵 **持有中** = 已過買進日，抱著等出關
+🔴 **今日收盤賣出** = 今天是出關日（恢復正常交易第一天）→ 尾盤賣出
+🔒 = 買進日收盤漲停鎖死買不到 → 放棄這筆
+🟡 = 還沒到買進日，顯示預估買進日（遇臨時休市會順延，以每日更新為準）
+**深跌單 ✅** = 這檔「歷史回測紀錄」分頁的深跌策略也有進場（兩策略同檔，合計倉位要控管，見下方重疊說明）
+""")
+
+        # ── 逐年績效 ──
+        st.markdown('#### 📊 逐年績效 — 證明不是只靠某一年')
+        ytbl_t = pd.DataFrame({
+            'n': ok_t.groupby('年份')['策略報酬(%)'].size(),
+            '平均%': ok_t.groupby('年份')['策略報酬(%)'].mean().round(2),
+            '勝率%': ok_t.groupby('年份')['策略報酬(%)'].apply(lambda x: round((x > 0).mean()*100, 2)),
+            '夏普(每筆)': ok_t.groupby('年份')['策略報酬(%)'].apply(lambda x: sharpe_pf(x)[0]),
+            '賺賠比': ok_t.groupby('年份')['策略報酬(%)'].apply(lambda x: sharpe_pf(x)[1]),
+        })
+        st.dataframe(ytbl_t.style.format({'平均%': '{:+.2f}', '勝率%': '{:.2f}',
+                                          '夏普(每筆)': '{:.2f}', '賺賠比': '{:.2f}'}, na_rep='-'),
+                     use_container_width=True)
+
+        # ── 與深跌策略的重疊 ──
+        with st.expander('🔀 跟「歷史回測紀錄」的深跌策略重疊嗎？（重要）'):
+            st.markdown("""
+會重疊：**53.8% 的出關動能交易，深跌策略也在同一檔股票上有部位**（它買深跌後會抱到出關 T+1）。
+
+| 子集 | n | 平均/筆 | 勝率 | 正年數 |
+|---|---|---|---|---|
+| 重疊（深跌單也進場） | 261 | **+5.24%** | 64.37% | 4/5 |
+| 不重疊（深跌單沒進場） | 224 | +2.44% | 58.48% | 4/5 |
+
+兩個子集都是正的，所以**這是獨立成立的策略**，不是深跌策略的影子。但注意：
+- 重疊組更強（深跌後反彈的動能會一路延續到出關）——如果你兩個策略都跑，重疊時**等於同一檔加倍押注最後 3 天**
+- **建議規則：同一檔股票兩策略合計不超過總資金 20%**。深跌單已滿倉位 → 出關動能這筆跳過或減半
+- 兩策略出場只差一天（出關收盤 vs 出關 T+1 開盤），重疊部位會同時解除，回撤會同步
+""")
+
+        # ── 歷史回測紀錄 ──
+        st.divider()
+        st.markdown('#### 📜 歷史回測紀錄')
+        hf_t = ht.copy()
+        hf_t['結果'] = hf_t.apply(
+            lambda r: '🔒 買不到' if str(r.get('訊號', '')).startswith('🔒')
+            else (f"✅ 獲利 {r['策略報酬(%)']:+.2f}%" if pd.notna(r['策略報酬(%)']) and r['策略報酬(%)'] > 0
+                  else (f"❌ 虧損 {r['策略報酬(%)']:+.2f}%" if pd.notna(r['策略報酬(%)']) else '—')), axis=1)
+
+        tf1, tf2, tf3 = st.columns([2, 3, 3])
+        with tf1:
+            yr_sel_t = st.selectbox('年份', ['全部'] + sorted(hf_t['年份'].astype(str).unique().tolist(), reverse=True), key='ht_yr')
+        with tf2:
+            ovl_sel = st.selectbox('深跌單重疊', ['全部', '只看重疊（深跌單✅）', '只看不重疊'], key='ht_ovl')
+        with tf3:
+            cap_sel_t = st.multiselect('規模', ['大', '中', '小'], default=['大', '中', '小'], key='ht_cap')
+
+        v_t = hf_t.copy()
+        if yr_sel_t != '全部':
+            v_t = v_t[v_t['年份'].astype(str) == yr_sel_t]
+        if ovl_sel == '只看重疊（深跌單✅）':
+            v_t = v_t[v_t['深跌單'] == '✅']
+        elif ovl_sel == '只看不重疊':
+            v_t = v_t[v_t['深跌單'] != '✅']
+        if cap_sel_t:
+            v_t = v_t[v_t['規模'].isin(cap_sel_t)]
+
+        if len(v_t) == 0:
+            st.warning('目前篩選條件無資料')
+        else:
+            rv_t = v_t['策略報酬(%)'].dropna()
+            sp_v, pf_v = sharpe_pf(rv_t)
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric('總筆數', f'{len(rv_t)} 筆')
+            m2.metric('勝率', f'{(rv_t > 0).mean()*100:.2f}%' if len(rv_t) else '-')
+            m3.metric('期望報酬', f'{rv_t.mean():+.2f}%' if len(rv_t) else '-')
+            m4.metric('夏普值', f'{sp_v:.2f}' if pd.notna(sp_v) else '-')
+            m5.metric('賺賠比', f'{pf_v:.2f}' if pd.notna(pf_v) else '-')
+            m6, m7, m8, m9, m10 = st.columns(5)
+            m6.metric('獲利筆', int((rv_t > 0).sum()))
+            m7.metric('虧損筆', int((rv_t <= 0).sum()))
+            m8.metric('均獲利', f'{rv_t[rv_t > 0].mean():+.2f}%' if (rv_t > 0).any() else '-')
+            m9.metric('均虧損', f'{rv_t[rv_t <= 0].mean():+.2f}%' if (rv_t <= 0).any() else '-')
+            m10.metric('最大虧損', f'{rv_t.min():+.2f}%' if len(rv_t) else '-')
+
+            def _c_res_t(val):
+                if str(val).startswith('✅'): return 'color: #26c281; font-weight: 700'
+                if str(val).startswith('❌'): return 'color: #e74c3c; font-weight: 700'
+                return ''
+
+            disp_t = v_t.sort_values('起始日', ascending=False).reset_index(drop=True)
+            disp_t['策略報酬(%)'] = disp_t['策略報酬(%)'].apply(fmt_pct)
+            st.dataframe(
+                disp_t.style.map(_c_res_t, subset=['結果']),
+                use_container_width=True, hide_index=True, height=520)
+            st.caption('策略報酬 = 出關前第3個交易日收盤買 → 出關當天收盤賣（持有3天），已扣成本 0.357%')
+            st.download_button('📥 下載此表 CSV', disp_t.to_csv(index=False, encoding='utf-8-sig'),
+                               'history_tail20.csv', 'text/csv', key='dl_ht')
+
+            st.markdown('**累積報酬走勢**（假設每筆等權重）')
+            cum_t = (v_t.sort_values('起始日')['策略報酬(%)'].dropna() / 100 + 1).cumprod() - 1
+            cum_t.index = range(len(cum_t))
+            st.line_chart(pd.DataFrame({'累積報酬(%)': (cum_t * 100).values}))
+
+        st.markdown("""
+##### 💰 倉位建議（依 2016~2026 日權益回測）
+
+歷史上平均**同時在倉 2.21 檔**（中位 1 檔、p90 4 檔、極端 16 檔），約 60% 的日子有部位。
+
+| 單檔上限（佔策略資金） | 年化 Sharpe (2022+) | MaxDD | 年化報酬 | 備註 |
+|---|---|---|---|---|
+| **20%（建議）** | 2.58 | **-19.61%** | +85.9% | 樣本外(2016-2021) Sharpe 1.71、0 負年 |
+| 33% | 2.60 | -30.71% | +132.4% | 回撤明顯放大，訊號擠的時候裝不下 |
+
+**執行規則：**
+1. 每筆固定投入策略資金的 20%，訊號多到裝不下時優先選**深跌單也有進場的**（重疊組 +5.24% > 不重疊 +2.44%）
+2. 同一檔股票若深跌策略已持有 → 兩策略**合計**不超過 20%（不要同檔加倍押）
+3. 買進日收盤漲停買不到就放棄，不追隔天
+4. 只持有 3 天、不停損不加碼；出關當天收盤一定賣，不留戀
+
+##### ⚠️ 風險提醒
+- **2022 年約打平**（+0.8%~+2.0%）：空頭年動能弱，這策略吃的是市場過熱的尾巴，熊市時期望值趨近零（但沒有大虧）
+- 進場那 3 天標的仍在處置中，**需全額預收款券**，資金排程要跟 5分盤策略一起算
+- 單筆虧損尾部存在（最差可 -15% 以上），單檔倉位上限是唯一風控
+- 本策略 2026-07 上線，上線後績效尚未累積，前 3 個月建議以最小單位驗證成交品質
 """)
 
 # ════════════════════════════════════════════════════════

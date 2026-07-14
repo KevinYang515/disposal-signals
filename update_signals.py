@@ -292,6 +292,37 @@ def next_trading_day(idx, after):
         if cur.weekday() < 5:
             return cur
 
+def td_count_between(idx, a, b):
+    """交易日數 in (a, b]；超出價格資料範圍的未來部分用平日估算"""
+    if pd.isna(b) or b <= a:
+        return 0
+    last = idx[-1]
+    n = int(((idx > a) & (idx <= min(b, last))).sum())
+    if b > last:
+        cur = max(a, last)
+        while cur < b:
+            cur += pd.Timedelta(days=1)
+            if cur.weekday() < 5 and cur <= b:
+                n += 1
+    return n
+
+def est_prev_td(idx, ref, k):
+    """ref 往回第 k 個交易日；ref 在未來時用平日估算銜接"""
+    if ref <= idx[-1]:
+        p = idx.searchsorted(ref)
+        return idx[p-k] if p - k >= 0 else None
+    fut, cur = [], idx[-1]
+    while cur < ref:
+        cur += pd.Timedelta(days=1)
+        if cur.weekday() < 5:
+            fut.append(cur)
+    chain = list(idx[-15:]) + fut
+    try:
+        i = chain.index(ref)
+    except ValueError:
+        return None
+    return chain[i-k] if i - k >= 0 else None
+
 def classify_clause(row):
     """處置觸發條款分類：當沖比重條款統計上為負（全樣本 -1.43%），排除不買"""
     txt = str(row.get('處置條件', '')) + ' ' + str(row.get('處置內容', ''))
@@ -440,6 +471,112 @@ def build_5min(df, price, open_p):
     if len(hist):
         hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '條款', '前日漲幅(%)',
                      'D1跳空(%)', '符合因子', '加強訊號', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
+        hist = hist.sort_values('起始日', ascending=False)
+    return sig, hist
+
+def build_tail20(df, price, hist20):
+    """20分盤出關動能：出關前第3個交易日收盤買 → 出關當天(恢復正常交易首日)收盤賣
+    回測 2022+ n=485 +3.94%/筆 t=7.81；OOS 2016-2021 +2.87% 6/6年正"""
+    disp = load_disposal_raw()
+    if disp is None:
+        return pd.DataFrame(), pd.DataFrame()
+    d20 = disp[(disp['分時交易'] >= 20.0) & (disp['start'] >= '2022-01-01')].copy()
+    d20 = d20.drop_duplicates(subset=['stock_id', 'start']).dropna(subset=['start', 'end'])
+
+    cap_map = dict(zip(zip(df['股票代號'], df['處置起始日']), df['市值規模']))
+    # 現行20分盤買深跌策略是否也進場（同事件重疊參考）
+    dip_keys = set()
+    if hist20 is not None and len(hist20) and '買進日' in hist20.columns:
+        hh = hist20[hist20['買進日'].astype(str) != '-']
+        dip_keys = set(zip(hh['代號'].astype(str).str.zfill(4),
+                           pd.to_datetime(hh['起始日']).dt.strftime('%Y-%m-%d')))
+
+    idx = price.index
+    today = tw_today()
+    hist_rows, sig_rows = [], []
+    for _, r in d20.iterrows():
+        sid, sd, ed = r['stock_id'], r['start'], r['end']
+        if sid not in price.columns:
+            continue
+        pos = idx.searchsorted(sd)
+        if pos < 22 or pos >= len(idx):
+            continue
+        ser = price[sid]
+        p0, p20_ = ser.iloc[pos-1], ser.iloc[pos-21]
+        if pd.isna(p0) or p0 <= 0 or pd.isna(p20_) or p20_ <= 0 or p0/p20_ < 1:
+            continue                                   # 只做漲多處置
+        cap = cap_map.get((sid, sd), '')
+        cap_s = '大' if '大型' in cap else ('中' if '中型' in cap else '小')
+        exit_d = next_trading_day(idx, ed)             # 出關日 = 賣出日
+        dip = '✅' if (sid, sd.strftime('%Y-%m-%d')) in dip_keys else ''
+
+        if exit_d <= idx[-1]:
+            # ── 已出關 → 歷史 ──
+            x_pos = idx.searchsorted(exit_d)
+            e_pos = x_pos - 3
+            if e_pos <= pos:
+                continue                               # 處置期太短
+            entry, prev_e, px = ser.iloc[e_pos], ser.iloc[e_pos-1], ser.iloc[x_pos]
+            if pd.isna(entry) or entry <= 0 or pd.isna(prev_e) or prev_e <= 0 or pd.isna(px):
+                continue
+            locked = (entry/prev_e - 1) * 100 >= 9.5
+            hist_rows.append({
+                '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
+                '年份': sd.year,
+                '起始日': sd.strftime('%Y-%m-%d'),
+                '買進日': idx[e_pos].strftime('%Y-%m-%d'),
+                '出關日': exit_d.strftime('%Y-%m-%d'),
+                '深跌單': dip,
+                '訊號': '🔒 買進日漲停買不到' if locked else '✅',
+                '進場價': round(float(entry), 2),
+                '出場價': round(float(px), 2),
+                '策略報酬(%)': np.nan if locked else round((px/entry - 1) * 100 - COST_5MIN, 2),
+            })
+        elif today <= exit_d:
+            # ── 進行中 → 今日訊號 ──
+            rem = td_count_between(idx, today, exit_d)   # 今天之後到出關日的交易日數
+            buy_d = est_prev_td(idx, exit_d, 3)          # 買進日 = 出關日往回3個交易日
+            entry, cur_pnl, locked = np.nan, np.nan, False
+            if rem <= 2 and buy_d is not None and buy_d <= idx[-1]:
+                e_pos = idx.searchsorted(buy_d)
+                if e_pos < len(idx):
+                    e_val, e_prev = ser.iloc[e_pos], ser.iloc[e_pos-1]
+                    if pd.notna(e_val) and e_val > 0:
+                        entry = round(float(e_val), 2)
+                        if pd.notna(e_prev) and e_prev > 0:
+                            locked = (e_val/e_prev - 1) * 100 >= 9.5
+                        last = ser.dropna().iloc[-1] if len(ser.dropna()) else np.nan
+                        if pd.notna(last):
+                            cur_pnl = round((last/entry - 1) * 100, 2)
+            if locked:
+                status = '🔒 買進日漲停買不到'
+            elif rem == 3:
+                status = '🟢 今日收盤買進'
+            elif rem == 0:
+                status = '🔴 今日收盤賣出'
+            elif rem in (1, 2):
+                status = '🔵 持有中'
+            else:
+                status = f'🟡 等待（剩 {rem - 3} 個交易日）'
+            sig_rows.append({
+                '代號': sid, '名稱': r.get('證券名稱', ''), '規模': cap_s,
+                '訊號': status,
+                '買進日': buy_d.strftime('%m/%d') if buy_d is not None else '?',
+                '賣出日(出關)': exit_d.strftime('%m/%d'),
+                '深跌單': dip,
+                '進場價': entry,
+                '目前損益(%)': cur_pnl,
+                '今日漲跌': today_change(price, sid),
+            })
+
+    hist = pd.DataFrame(hist_rows)
+    sig = pd.DataFrame(sig_rows)
+    if len(sig):
+        order = {'🟢 今日收盤買進': 0, '🔴 今日收盤賣出': 1, '🔵 持有中': 2,
+                 '🔒 買進日漲停買不到': 3}
+        sig['_o'] = sig['訊號'].map(lambda v: order.get(v, 4))
+        sig = sig.sort_values(['_o', '賣出日(出關)']).drop(columns=['_o'])
+    if len(hist):
         hist = hist.sort_values('起始日', ascending=False)
     return sig, hist
 
@@ -767,6 +904,12 @@ def main():
     sig5.to_csv(f'{OUT_DIR}/signals_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     hist5.to_csv(f'{OUT_DIR}/history_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals_5min.csv ({len(sig5)} 筆) / history_5min.csv ({len(hist5)} 筆)')
+
+    print('產生出關動能資料...')
+    sig_t, hist_t = build_tail20(df, price, hist)
+    sig_t.to_csv(f'{OUT_DIR}/signals_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    hist_t.to_csv(f'{OUT_DIR}/history_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    print(f'  → signals_tail20.csv ({len(sig_t)} 筆) / history_tail20.csv ({len(hist_t)} 筆)')
 
     # 更新時間
     meta = {
