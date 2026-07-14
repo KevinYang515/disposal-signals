@@ -24,15 +24,23 @@ CAP_ORDER = ["A_大型(>=500億)", "B_中型(100-500億)", "C_中小型(50-100�
 PRICE_ORDER = ["A_<20元", "B_20-50元", "C_50-100元", "D_100-200元", "E_200-500元", "F_>=500元"]
 
 
+DATA_VERSION = "v2-in_disposal"  # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效
+
+
 @st.cache_data(ttl=3600)
-def load_events():
+def load_events(_version):
     up = pd.read_csv(DATA_DIR / "events_up.csv", parse_dates=["date"], dtype={"code": str})
     down = pd.read_csv(DATA_DIR / "events_down.csv", parse_dates=["date"], dtype={"code": str})
+    for df in (up, down):
+        if "in_disposal" not in df.columns:
+            df["in_disposal"] = False
+        else:
+            df["in_disposal"] = df["in_disposal"].astype(bool)
     return up, down
 
 
 try:
-    up_all, down_all = load_events()
+    up_all, down_all = load_events(DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到事件資料，請確認 data/limitup_study/events_up.csv 與 events_down.csv 存在")
     st.stop()
@@ -92,6 +100,8 @@ def horizon_stats(df):
 
 
 def group_summary(df, group_col, order=None, min_n=5):
+    if group_col not in df.columns:
+        return pd.DataFrame()
     rows = []
     for gname, g in df.groupby(group_col):
         if len(g) < min_n:
