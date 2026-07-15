@@ -138,7 +138,7 @@ def style_group_table(df):
         return f"color: {UP_COLOR}" if v > 0 else (f"color: {DOWN_COLOR}" if v < 0 else "")
 
     fmt = {c: "{:+.2f}%" for c in mean_cols}
-    fmt.update({c: "{:.1f}%" for c in win_cols})
+    fmt.update({c: "{:.2f}%" for c in win_cols})
     fmt["n"] = "{:,}"
     styled = disp.style.map(color_ret, subset=mean_cols).format(fmt, na_rep="—")
     st.dataframe(styled, use_container_width=True, hide_index=True)
@@ -156,7 +156,7 @@ def render_direction(df, df_full, color, direction_label):
     c1.metric("事件數", f"{n:,}")
     c2.metric("隔日跳空平均", f"{gap.mean():+.2f}%")
     c3.metric("+20日平均報酬", f"{fwd20.mean():+.2f}%")
-    c4.metric("+20日勝率", f"{(fwd20 > 0).mean() * 100:.1f}%")
+    c4.metric("+20日勝率", f"{(fwd20 > 0).mean() * 100:.2f}%")
 
     stats = horizon_stats(df)
 
@@ -176,7 +176,7 @@ def render_direction(df, df_full, color, direction_label):
         base = alt.Chart(stats).mark_bar(color=color, size=26).encode(
             x=alt.X("期間:N", sort=HORIZON_LABELS, title=None),
             y=alt.Y("勝率%:Q", scale=alt.Scale(domain=[0, 100]), title="正報酬機率 (%)"),
-            tooltip=[alt.Tooltip("期間:N"), alt.Tooltip("勝率%:Q", format=".1f")],
+            tooltip=[alt.Tooltip("期間:N"), alt.Tooltip("勝率%:Q", format=".2f")],
         ).properties(height=260)
         rule = alt.Chart(pd.DataFrame({"y": [50]})).mark_rule(strokeDash=[4, 4], color="#94a3b8").encode(y="y:Q")
         st.altair_chart(base + rule, use_container_width=True)
@@ -219,7 +219,7 @@ def render_direction(df, df_full, color, direction_label):
             else:
                 show_cols = ["date", "event_ret_pct", "streak", "locked", "close_px", "cap_bucket", "industry",
                              "gap_next_pct", "fwd1_pct", "fwd5_pct", "fwd10_pct", "fwd20_pct"]
-                st.dataframe(sub[show_cols], use_container_width=True, hide_index=True)
+                st.dataframe(sub[show_cols].round(2), use_container_width=True, hide_index=True)
 
 
 tab_up, tab_down = st.tabs(["📈 漲停", "📉 跌停"])

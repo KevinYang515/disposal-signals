@@ -60,11 +60,11 @@ def load_crash_study(threshold: float):
                 "持有期間": f"+{h} 交易日",
                 "樣本數": int(len(vals)),
                 "上漲次數": int((vals > 0).sum()),
-                "上漲機率": f"{(vals > 0).mean()*100:.0f}%",
-                "平均報酬": f"{vals.mean():.1f}%",
-                "中位數": f"{vals.median():.1f}%",
-                "最差": f"{vals.min():.1f}%",
-                "最佳": f"{vals.max():.1f}%",
+                "上漲機率": f"{(vals > 0).mean()*100:.2f}%",
+                "平均報酬": f"{vals.mean():.2f}%",
+                "中位數": f"{vals.median():.2f}%",
+                "最差": f"{vals.min():.2f}%",
+                "最佳": f"{vals.max():.2f}%",
                 "_mean": vals.mean(),
                 "_winrate": (vals > 0).mean() * 100,
             })
@@ -100,7 +100,7 @@ last_drop = events_df["當日跌幅(%)"].iloc[0]
 with col_info:
     st.info(
         f"歷史上共 **{n_events}** 次單日跌幅 ≤ {threshold_pct}%　｜　"
-        f"最近一次：**{last_event_date}**（{last_drop:+.1f}%）"
+        f"最近一次：**{last_event_date}**（{last_drop:+.2f}%）"
     )
 
 # ── 統計摘要 ─────────────────────────────────────────────────────────────
@@ -158,14 +158,14 @@ for i, h in enumerate(HORIZONS):
         continue
     bins = pd.cut(vals, bins=12)
     hist = vals.groupby(bins, observed=True).count()
-    hist.index = [f"{b.left:.1f}~{b.right:.1f}" for b in hist.index]
+    hist.index = [f"{b.left:.2f}~{b.right:.2f}" for b in hist.index]
     win_rate = (vals > 0).mean() * 100
     mean_val = vals.mean()
     with dist_grid[i]:
         st.markdown(
             f"**+{h} 交易日**　"
             f"<span style='color:{'#26c281' if win_rate>=50 else '#e74c3c'}'>"
-            f"上漲 {win_rate:.0f}%</span>　均值 {mean_val:+.1f}%",
+            f"上漲 {win_rate:.2f}%</span>　均值 {mean_val:+.2f}%",
             unsafe_allow_html=True,
         )
         st.bar_chart(hist, height=200)

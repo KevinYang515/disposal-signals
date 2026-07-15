@@ -172,7 +172,7 @@ for col_ui, df_h, day, anchor in [
         s  = df_h[col_name].dropna()
         v  = s.mean()
         wr = (s > 0).mean()
-        col_ui.metric(anchor, f"{v*100:.1f}%", f"勝率 {wr*100:.0f}%",
+        col_ui.metric(anchor, f"{v*100:.2f}%", f"勝率 {wr*100:.2f}%",
                       delta_color="normal" if v >= 0 else "inverse")
 
 st.divider()
@@ -274,7 +274,7 @@ with tab1:
                     tooltip=[
                         alt.Tooltip("label:N"),
                         alt.Tooltip("mean_ret:Q", format=".2%", title="平均報酬"),
-                        alt.Tooltip("win_rate:Q", format=".0%", title="勝率"),
+                        alt.Tooltip("win_rate:Q", format=".2%", title="勝率"),
                         alt.Tooltip("n:Q", title="樣本數"),
                     ]
                 )
@@ -288,7 +288,7 @@ with tab1:
                     y=alt.Y("win_rate:Q", title="勝率",
                              axis=alt.Axis(format=".0%"),
                              scale=alt.Scale(domain=[0,1])),
-                    tooltip=[alt.Tooltip("win_rate:Q", format=".0%")]
+                    tooltip=[alt.Tooltip("win_rate:Q", format=".2%")]
                 )
                 .properties(height=145)
             )
@@ -308,7 +308,7 @@ with tab1:
     ].copy()
     yr_f["hlabel"] = yr_f["horizon"].apply(lambda x: f"+{x}d")
     yr_f["text"]   = yr_f["mean_ret"].apply(
-        lambda v: f"{v*100:.1f}%" if pd.notna(v) else "")
+        lambda v: f"{v*100:.2f}%" if pd.notna(v) else "")
 
     if not yr_f.empty:
         hmap = (
@@ -323,7 +323,7 @@ with tab1:
                     scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
                     title="平均報酬"),
                 tooltip=[alt.Tooltip("year:O"), alt.Tooltip("hlabel:N", title="期間"),
-                         alt.Tooltip("mean_ret:Q", format=".1%"), alt.Tooltip("n:Q")]
+                         alt.Tooltip("mean_ret:Q", format=".2%"), alt.Tooltip("n:Q")]
             )
         )
         txt = (
@@ -384,7 +384,7 @@ with tab2:
                 alt.Tooltip("day:Q", title="Day"),
                 alt.Tooltip("mean_ret:Q", format=".2%", title="平均報酬"),
                 alt.Tooltip("median_ret:Q", format=".2%", title="中位數"),
-                alt.Tooltip("win_rate:Q", format=".0%", title="勝率"),
+                alt.Tooltip("win_rate:Q", format=".2%", title="勝率"),
                 alt.Tooltip("n:Q", title="樣本"),
             ]
         )
@@ -398,7 +398,7 @@ with tab2:
             y=alt.Y("win_rate:Q", title="勝率",
                      axis=alt.Axis(format=".0%"),
                      scale=alt.Scale(domain=[0,1])),
-            tooltip=[alt.Tooltip("day:Q"), alt.Tooltip("win_rate:Q", format=".0%")]
+            tooltip=[alt.Tooltip("day:Q"), alt.Tooltip("win_rate:Q", format=".2%")]
         )
         .properties(height=200)
     )
@@ -413,7 +413,7 @@ with tab2:
     tbl = day_df.copy()
     for col in ["mean_ret","median_ret","mean_abn","std","p25","p75"]:
         tbl[col] = tbl[col].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "—")
-    tbl["win_rate"] = tbl["win_rate"].apply(lambda x: f"{x*100:.1f}%")
+    tbl["win_rate"] = tbl["win_rate"].apply(lambda x: f"{x*100:.2f}%")
     tbl.columns = ["Day","樣本","平均報酬","中位數","勝率","超額報酬","標準差","P25","P75"]
     st.dataframe(tbl, use_container_width=True, hide_index=True)
 
@@ -443,9 +443,9 @@ with tab3:
             color="#f6c90e",strokeDash=[5,3]).encode(x="x:Q")
         st.altair_chart(hist_d + mean_r, use_container_width=True)
         c1,c2,c3 = st.columns(3)
-        c1.metric("平均折扣",  f"{disc['discount_pct'].mean()*100:.1f}%")
-        c2.metric("中位數折扣", f"{disc['discount_pct'].median()*100:.1f}%")
-        c3.metric(">0（溢價）", f"{(disc['discount_pct']>0).mean()*100:.0f}%")
+        c1.metric("平均折扣",  f"{disc['discount_pct'].mean()*100:.2f}%")
+        c2.metric("中位數折扣", f"{disc['discount_pct'].median()*100:.2f}%")
+        c3.metric(">0（溢價）", f"{(disc['discount_pct']>0).mean()*100:.2f}%")
 
     with cb:
         st.markdown("**折扣深度 vs +20日報酬**")
@@ -463,9 +463,9 @@ with tab3:
                         scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
                         legend=None),
                     tooltip=[
-                        alt.Tooltip("discount_pct:Q", format=".1%", title="折扣"),
-                        alt.Tooltip("ret_+20d:Q", format=".1%", title="+20日"),
-                        alt.Tooltip("ret_+60d:Q", format=".1%", title="+60日"),
+                        alt.Tooltip("discount_pct:Q", format=".2%", title="折扣"),
+                        alt.Tooltip("ret_+20d:Q", format=".2%", title="+20日"),
+                        alt.Tooltip("ret_+60d:Q", format=".2%", title="+60日"),
                     ]
                 )
                 .properties(height=260)
@@ -487,8 +487,8 @@ with tab3:
             c = f"ret_{day:+d}d"
             if c in grp.columns:
                 s = grp[c].dropna()
-                row[f"+{day}d均報"] = f"{s.mean()*100:.1f}%" if len(s)>0 else "—"
-                row[f"+{day}d勝率"] = f"{(s>0).mean()*100:.0f}%" if len(s)>0 else "—"
+                row[f"+{day}d均報"] = f"{s.mean()*100:.2f}%" if len(s)>0 else "—"
+                row[f"+{day}d勝率"] = f"{(s>0).mean()*100:.2f}%" if len(s)>0 else "—"
         bkt_rows.append(row)
     st.dataframe(pd.DataFrame(bkt_rows), use_container_width=True, hide_index=True)
 
@@ -515,7 +515,7 @@ with tab4:
     raw["ann_date"] = raw["ann_date"].dt.strftime("%Y-%m-%d")
     raw["exr_date"] = raw["exr_date"].dt.strftime("%Y-%m-%d") if "exr_date" in raw else "—"
     for c in ret_cols + (["discount_pct"] if "discount_pct" in raw.columns else []):
-        raw[c] = raw[c].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—")
+        raw[c] = raw[c].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "—")
     for c in ["sub_price","ref_price"]:
         if c in raw.columns:
             raw[c] = raw[c].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")

@@ -97,14 +97,14 @@ def mbox(col, val, label, positive_good=True):
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 mbox(c1, stats['sharpe'],                       'Sharpe（扣費後）')
-mbox(c2, f"{stats['win_rate_pct']}%",           '勝率（扣費後）')
+mbox(c2, f"{float(stats['win_rate_pct']):.2f}%", '勝率（扣費後）')
 mbox(c3, f"{avg_gross_pct:.2f}%",               '日均毛報酬')
 mbox(c4, f"{net_yf_pct:.2f}%",                  '日均淨報酬（2折）')
-mbox(c5, f"{stats['max_dd_pct']}%",             '最大回撤（扣費後）', positive_good=False)
+mbox(c5, f"{float(stats['max_dd_pct']):.2f}%",  '最大回撤（扣費後）', positive_good=False)
 mbox(c6, f"{stats['n_trades']}",                f'總交易筆數 ({stats["n_days"]}天)')
 
 st.caption(
-    f"手續費：2折 {COST_DISC_PCT*100:.3f}% | 標準 {COST_STD_PCT*100:.3f}%（買+賣，含 0.3% 證交稅）"
+    f"手續費：2折 {COST_DISC_PCT*100:.2f}% | 標準 {COST_STD_PCT*100:.2f}%（買+賣，含 0.3% 證交稅）"
     f"　　Sharpe / 勝率 / DD 均已扣費計算"
 )
 
@@ -147,7 +147,7 @@ b2.markdown(
 )
 b3.markdown(
     f'<div class="pnl-box"><div class="pnl-title">年化報酬（複利）</div>'
-    f'<div class="pnl-val">+{annual_factor*100:.1f}%</div></div>',
+    f'<div class="pnl-val">+{annual_factor*100:.2f}%</div></div>',
     unsafe_allow_html=True
 )
 b4.markdown(
@@ -177,7 +177,7 @@ else:
             f'<div class="cand-meta">'
             f'建議進場 <b style="color:#f1f5f9">{row["entry_price"]:.2f}</b> 元<br>'
             f'今日 <span class="{ret_cls}">{ret_str}</span>　'
-            f'量比 <b>{row["signal_vol_ratio"]:.1f}x</b><br>'
+            f'量比 <b>{row["signal_vol_ratio"]:.2f}x</b><br>'
             f'部位大小 <b>{pos_nt:,.0f}</b> 元'
             f'</div>'
             f'</div>',
@@ -300,10 +300,10 @@ styled = (
         '出場開盤'     : '{:.2f}',
         '次日收盤'     : '{:.2f}',
         '訊號日漲跌'   : '{:+.2f}%',
-        '訊號日量比'   : '{:.1f}x',
+        '訊號日量比'   : '{:.2f}x',
         '開盤漲跌'     : '{:+.2f}%',
         '次日收盤漲跌' : '{:+.2f}%',
-        '次日量比'     : '{:.1f}x',
+        '次日量比'     : '{:.2f}x',
         '毛損益%'      : '{:+.2f}%',
         '淨損益%'      : '{:+.2f}%',
         '淨損益(元)'   : '{:+,.0f}',
@@ -322,5 +322,5 @@ if len(df_show) > 0:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric('期間平均毛損益', f'{gross_pct:+.2f}%')
     c2.metric('期間平均淨損益（2折）', f'{net_pct:+.2f}%')
-    c3.metric('勝率（扣費後）', f'{wr:.1f}%')
+    c3.metric('勝率（扣費後）', f'{wr:.2f}%')
     c4.metric('期間累計淨損益(元)', f'{total_nt:+,.0f}')

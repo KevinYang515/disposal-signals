@@ -77,11 +77,11 @@ def limit_badge(row):
     """
     if row["stop_vs_limit"] > 0:
         # V3b 後不會發生（保留邏輯防止資料異常）
-        return "badge-danger", f"⚠ 異常：停損({row['stop_price']:.2f}) 超出漲停({row['limit_price']:.1f})"
+        return "badge-danger", f"⚠ 異常：停損({row['stop_price']:.2f}) 超出漲停({row['limit_price']:.2f})"
     if row["gap_to_limit"] < 0.02:
         return "badge-orange", (
-            f"開盤距漲停僅 {row['gap_to_limit']*100:.1f}%。停損價({row['stop_price']:.2f}) "
-            f"低於漲停({row['limit_price']:.1f}) {abs(row['stop_vs_limit'])*100:.1f}%，**停損本身安全**；"
+            f"開盤距漲停僅 {row['gap_to_limit']*100:.2f}%。停損價({row['stop_price']:.2f}) "
+            f"低於漲停({row['limit_price']:.2f}) {abs(row['stop_vs_limit'])*100:.2f}%，**停損本身安全**；"
             f"但若進場後被鎖漲停，部位卡到收盤前無法出場（強制承受最大損失）"
         )
     return None, None
@@ -105,7 +105,7 @@ with st.sidebar:
                            index=2, format_func=lambda x: f"{x/1e4:.0f} 萬")
     n_max   = st.selectbox("N_MAX", [3, 4, 5, 6, 7], index=2)
     aor_thr = st.selectbox("漲不動 filter", [0.005, 0.01, 0.02, 1.0], index=1,
-                           format_func=lambda x: f"< {x*100:.1f}%" if x < 1 else "無")
+                           format_func=lambda x: f"< {x*100:.2f}%" if x < 1 else "無")
     st.divider()
     st.caption(
         "**E4 配置（2026-07-01 最終版）**: 758 支中型股 universe\n\n"
@@ -164,7 +164,7 @@ c1,c2,c3,c4,c5,c6 = st.columns(6)
 c1.metric("候選數", f"{len(day_sig)}")
 c2.metric("實際成交", f"{n_fills} 檔")
 c3.metric("日淨 PnL", f"{total_net:+,.0f}", delta=f"{total_net/budget*100:+.2f}%")
-c4.metric("勝率", f"{wr*100:.0f}%" if not np.isnan(wr) else "—")
+c4.metric("勝率", f"{wr*100:.2f}%" if not np.isnan(wr) else "—")
 c5.metric("停損觸發", f"{stopped} 次")
 c6.metric("停損超漲停", f"{n_limit_risk} 檔",
           delta="V3b 已自動 clip" if n_limit_risk == 0 else "需注意",
@@ -229,7 +229,7 @@ else:
                 st.markdown(f"開盤價：`{r['day_open']:.2f}`")
                 st.markdown(f"早盤最高：`{r['morning_high']:.2f}`")
                 st.markdown(f"漲不動幅：`{r['stock_aor']*100:+.2f}%`")
-                st.markdown(f"漲停價：`{r['limit_price']:.2f}` (距開盤 `{r['gap_to_limit']*100:.1f}%`)")
+                st.markdown(f"漲停價：`{r['limit_price']:.2f}` (距開盤 `{r['gap_to_limit']*100:.2f}%`)")
 
             with c2:
                 st.markdown("**進場**")
@@ -242,11 +242,11 @@ else:
                 st.markdown(f"停損價：`{r['stop_price']:.2f}`")
                 st.markdown(f"停損距離（多方）：`+{stop_dist:.2f}%`")
                 if r["stop_vs_limit"] > 0:
-                    st.markdown(f":red[🔴 停損超出漲停 {r['stop_vs_limit']*100:+.1f}%（V3b 後不應發生）]")
+                    st.markdown(f":red[🔴 停損超出漲停 {r['stop_vs_limit']*100:+.2f}%（V3b 後不應發生）]")
                 elif r["gap_to_limit"] < 0.02:
                     st.markdown(
-                        f":orange[🟡 開盤距漲停僅 {r['gap_to_limit']*100:.1f}%]  "
-                        f"（停損價低於漲停 {abs(r['stop_vs_limit'])*100:.1f}% 仍安全，"
+                        f":orange[🟡 開盤距漲停僅 {r['gap_to_limit']*100:.2f}%]  "
+                        f"（停損價低於漲停 {abs(r['stop_vs_limit'])*100:.2f}% 仍安全，"
                         f"但進場後若鎖漲停，部位卡到收盤承擔最大損失）"
                     )
                 if stopped_out:
@@ -316,7 +316,7 @@ if not selected.empty:
     show["stock_aor"]    = show["stock_aor"].map(lambda x: f"{x*100:+.2f}%")
     show["rank_score"]   = show["rank_score"].map(lambda x: f"{x:.2f}")
     show["entry_min"]    = show["entry_min"].map(lambda x: fmt_min(int(x)))
-    show["gap_to_limit"] = show["gap_to_limit"].map(lambda x: f"{x*100:.1f}%")
+    show["gap_to_limit"] = show["gap_to_limit"].map(lambda x: f"{x*100:.2f}%")
     show["return"]       = show["return"].map(lambda x: f"{x*100:+.2f}%")
     # V4+ Trail Stop: stopped_out 大多是 trail 鎖獲利（exit < entry, net > 0）
     def _status(row):
@@ -352,7 +352,7 @@ if not excluded.empty:
         ex["stock_aor"]    = ex["stock_aor"].map(lambda x: f"{x*100:+.2f}%")
         ex["rank_score"]   = ex["rank_score"].map(lambda x: f"{x:.2f}")
         ex["entry_min"]    = ex["entry_min"].map(lambda x: fmt_min(int(x)))
-        ex["gap_to_limit"] = ex["gap_to_limit"].map(lambda x: f"{x*100:.1f}%")
+        ex["gap_to_limit"] = ex["gap_to_limit"].map(lambda x: f"{x*100:.2f}%")
         ex["漲停風險"] = excluded["stop_vs_limit"].map(
             lambda x: "🔴 停損超漲停" if x > 0 else ("🟡 接近漲停" if x > -0.02 else "✓")
         )
@@ -379,6 +379,6 @@ if not selected.empty and n_fills > 0:
 st.divider()
 st.caption(
     f"🩸 守不住開盤 日誌 v8.0 (V8 aor 3.0%) · "
-    f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.1f}%），選入 top-{n_max}  |  "
+    f"今日候選 {len(day_sig)} 檔（漲不動 < {aor_thr*100:.2f}%），選入 top-{n_max}  |  "
     "Trail stop + 11:30 強制平倉 + 漲停安全 + Sharpe 29.28"
 )

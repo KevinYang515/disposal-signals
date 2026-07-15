@@ -81,8 +81,8 @@ st.caption("爆量急拉後推不動 → 流動性/市值/大盤regime三層濾�
 
 st.success(
     f"✅ **{variant}版**：{h['desc']}\n\n"
-    f"3.5年(2023-01~2026-07) 全期 Sharpe **{h['sharpe']}**、累積報酬 **+{h['cum']:.1f}%**、"
-    f"MaxDD **{h['mdd']:.1f}%**、2026單獨均報酬 **+{h['avg2026']:.3f}%/筆**\n\n"
+    f"3.5年(2023-01~2026-07) 全期 Sharpe **{h['sharpe']}**、累積報酬 **+{h['cum']:.2f}%**、"
+    f"MaxDD **{h['mdd']:.2f}%**、2026單獨均報酬 **+{h['avg2026']:.2f}%/筆**\n\n"
     f"ℹ️ {h['note']}"
 )
 
@@ -107,7 +107,7 @@ col2.metric("投組層級 Sharpe", f"{h['sharpe']}",
             help="每日取當日所有候選、平均分配部位計算的投組層級年化Sharpe，3.5年(2023-01~2026-07)全期")
 col3.metric("期望報酬(均報酬/筆)", f"{avg_r:.2%}",
             help="所有交易的報酬平均值 = 每筆交易的期望值。這跟Profit Factor是不同的指標，見右方說明")
-col4.metric("勝率", f"{wr:.1%}")
+col4.metric("勝率", f"{wr:.2%}")
 
 col5, col6, col7, col8 = st.columns(4)
 col5.metric("Profit Factor", f"{pf:.2f}",
@@ -117,7 +117,7 @@ col5.metric("Profit Factor", f"{pf:.2f}",
                  "兩者要一起看：高PF+低勝率可能代表靠少數大賺撐住，低PF+高勝率可能代表小賺多次。")
 col6.metric("訊號天數", f"{n_days:,}")
 col7.metric("每日候選(約)", f"{n/n_days:.2f}" if n_days else "—")
-col8.metric("累積報酬(投組層級)", f"+{h['cum']:.1f}%", help="3.5年全期，非本頁逐筆複利近似")
+col8.metric("累積報酬(投組層級)", f"+{h['cum']:.2f}%", help="3.5年全期，非本頁逐筆複利近似")
 
 st.divider()
 
@@ -148,7 +148,7 @@ else:
         pool_df["名稱"] = pool_df["ticker"].map(lambda t: names.get(str(t), ""))
         pool_df = pool_df.sort_values("cap_pct_rank")[["ticker", "名稱", "cap_yi", "cap_pct_rank"]]
         pool_df.columns = ["代號", "名稱", "市值(億)", "市值百分位"]
-        pool_df["市值百分位"] = pool_df["市值百分位"].map("{:.1%}".format)
+        pool_df["市值百分位"] = pool_df["市值百分位"].map("{:.2%}".format)
         st.caption(f"符合流動性+市值資格的觀察名單（實際是否進場，仍要看今日09:00-09:15是否急拉0~7%+爆量）")
         st.dataframe(pool_df, use_container_width=True, hide_index=True)
     else:
@@ -171,7 +171,7 @@ else:
     lc1, lc2, lc3 = st.columns(3)
     lc1.metric("累計模擬交易", f"{len(live)} 筆")
     lc2.metric("累計報酬率(單純加總)", f"{total_live_pnl:.2%}" if pd.notna(total_live_pnl) else "—")
-    lc3.metric("模擬勝率", f"{live_wr:.1%}" if pd.notna(live_wr) else "—")
+    lc3.metric("模擬勝率", f"{live_wr:.2%}" if pd.notna(live_wr) else "—")
     show_live = live.sort_values("date", ascending=False).copy()
     show_live["名稱"] = show_live["ticker"].map(lambda t: names.get(str(t), ""))
     st.dataframe(show_live, use_container_width=True, hide_index=True)
@@ -187,7 +187,7 @@ yr = (sub.groupby("year")
 bar_wr = alt.Chart(yr).mark_bar(color="#4a90d9").encode(
     x=alt.X("year:O", title="年度"),
     y=alt.Y("勝率:Q", title="勝率", scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format=".0%")),
-    tooltip=[alt.Tooltip("year:O", title="年"), alt.Tooltip("勝率:Q", format=".1%"),
+    tooltip=[alt.Tooltip("year:O", title="年"), alt.Tooltip("勝率:Q", format=".2%"),
              alt.Tooltip("次數:Q"), alt.Tooltip("均報酬:Q", format=".2%")]
 ).properties(height=200, title="年度勝率")
 
@@ -212,7 +212,7 @@ line = alt.Chart(sub_sorted).mark_line(color="#e74c3c").encode(
     x=alt.X("trade_no:Q", title="累計交易筆數"),
     y=alt.Y("cum_ret:Q", title="累計報酬", axis=alt.Axis(format=".0%")),
     tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ticker:N", title="股票"),
-             alt.Tooltip("cum_ret:Q", format=".1%", title="累計報酬")]
+             alt.Tooltip("cum_ret:Q", format=".2%", title="累計報酬")]
 ).properties(height=300)
 zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="gray", strokeDash=[4, 4]).encode(y="y:Q")
 st.altair_chart(line + zero, use_container_width=True)
@@ -235,12 +235,12 @@ else:
         y=alt.Y("月報酬合計:Q", title="當月報酬合計(逐筆加總)", axis=alt.Axis(format=".0%")),
         color=alt.condition(alt.datum.月報酬合計 > 0, alt.value("#27ae60"), alt.value("#e74c3c")),
         tooltip=[alt.Tooltip("month:O", title="月份"), alt.Tooltip("次數:Q", title="交易次數"),
-                 alt.Tooltip("勝率:Q", format=".1%"), alt.Tooltip("月報酬合計:Q", format=".2%")]
+                 alt.Tooltip("勝率:Q", format=".2%"), alt.Tooltip("月報酬合計:Q", format=".2%")]
     ).properties(height=250, title="2026 逐月報酬合計（逐筆簡單加總，非投組加權）")
     st.altair_chart(bar_month, use_container_width=True)
 
     show_m = monthly.copy()
-    show_m["勝率"] = show_m["勝率"].map("{:.1%}".format)
+    show_m["勝率"] = show_m["勝率"].map("{:.2%}".format)
     show_m["月報酬合計"] = show_m["月報酬合計"].map("{:.2%}".format)
     show_m["均報酬"] = show_m["均報酬"].map("{:.2%}".format)
     show_m.columns = ["月份", "交易次數", "勝率", "月報酬合計", "均報酬/筆"]
@@ -262,7 +262,7 @@ if "stop_above_limit" in sub.columns:
     st.success(
         f"**原問題**：停損價=進場前累積高點+1 tick。若進場前股價已經很接近10%漲停，這個停損價"
         f"換算後可能超過漲停價本身——股價依法規不可能交易超過漲停，停損永遠碰不到，完全失去防護。\n\n"
-        f"**{variant}版全部{n:,}筆交易中有{n_unreachable}筆({pct_unreachable:.1f}%)受影響。**\n\n"
+        f"**{variant}版全部{n:,}筆交易中有{n_unreachable}筆({pct_unreachable:.2f}%)受影響。**\n\n"
         f"**修正方式**：停損價夾在「漲停價-1 tick」以下，確保停損永遠碰得到（不減少交易筆數，"
         f"只是讓這{n_unreachable}筆原本沒有防護的交易改用可執行的停損價）。\n\n"
         f"**修正效果**（受影響交易本身）：均報酬從約-2.7%~-2.8%改善到接近打平；"
@@ -284,12 +284,12 @@ recent = recent[cols]
 recent.columns = ["日期", "股票", "名稱", "急拉幅度", "進場價", "停損價", "漲停價",
                    "報酬", "勝", "停損", "鎖漲停", "停損失效", "市值百分位"]
 recent["日期"] = recent["日期"].dt.strftime("%Y-%m-%d")
-recent["急拉幅度"] = recent["急拉幅度"].map("{:.1%}".format)
+recent["急拉幅度"] = recent["急拉幅度"].map("{:.2%}".format)
 recent["進場價"] = recent["進場價"].map("{:.2f}".format)
 recent["停損價"] = recent["停損價"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
 recent["漲停價"] = recent["漲停價"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
 recent["報酬"] = recent["報酬"].map("{:.2%}".format)
-recent["市值百分位"] = recent["市值百分位"].map("{:.1%}".format)
+recent["市值百分位"] = recent["市值百分位"].map("{:.2%}".format)
 
 def color_ret(val):
     try:

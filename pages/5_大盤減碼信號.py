@@ -396,7 +396,7 @@ with col_factors:
     rise_val  = "—"
     if high_open is not None:
         f_rise   = high_open < 0.003
-        rise_val = f"(High-Open)/Open = {high_open:.3%}"
+        rise_val = f"(High-Open)/Open = {high_open:.2%}"
         if not taiex.get("has_today"):
             f_rise  = None
             rise_val = "今日尚未開盤"
@@ -447,7 +447,7 @@ with col_score:
         )
 
     st.write("")
-    rate_str = f"{wdata['rate']:.0%}"
+    rate_str = f"{wdata['rate']:.2%}"
     ret_str  = f"{wdata['ret']:+.2%}"
     n_str    = f"n = {wdata['n']}"
     color    = wdata["color"]
@@ -482,7 +482,7 @@ with col_t3:
         rows3.append({
             "得分": f"{s}/3",
             "樣本數": w["n"],
-            "走低率": f"{w['rate']:.0%}",
+            "走低率": f"{w['rate']:.2%}",
             "平均報酬": f"{w['ret']:+.2%}",
             "建議": w["label"],
         })
@@ -497,7 +497,7 @@ with col_t4:
         rows4.append({
             "得分": f"{s}/4",
             "樣本數": w["n"],
-            "走低率": f"{w['rate']:.0%}",
+            "走低率": f"{w['rate']:.2%}",
             "平均報酬": f"{w['ret']:+.2%}",
             "建議": w["label"],
         })

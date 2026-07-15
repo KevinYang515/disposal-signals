@@ -102,7 +102,7 @@ with st.sidebar:
             "個股漲不動 filter",
             [0.005, 0.01, 0.02, 1.0],
             index=1,
-            format_func=lambda x: f"stock_aor < {x*100:.1f}%" if x < 1 else "無 filter"
+            format_func=lambda x: f"stock_aor < {x*100:.2f}%" if x < 1 else "無 filter"
         )
         entry_cut = st.selectbox(
             "進場截止時間",
@@ -177,10 +177,10 @@ wr  = (ret > 0).mean()
 
 st.subheader("績效摘要")
 c1,c2,c3,c4,c5,c6 = st.columns(6)
-mbox(c1, f"{cagr*100:+.1f}%", "CAGR")
+mbox(c1, f"{cagr*100:+.2f}%", "CAGR")
 mbox(c2, f"{sharpe:.2f}", "Sharpe (年化)")
-mbox(c3, f"{dd.min()*100:+.1f}%", "MaxDD", positive_good=False)
-mbox(c4, f"{wr*100:.1f}%", "日勝率")
+mbox(c3, f"{dd.min()*100:+.2f}%", "MaxDD", positive_good=False)
+mbox(c4, f"{wr*100:.2f}%", "日勝率")
 mbox(c5, f"{total_net/1e6:+.2f}M", f"總淨 PnL ({n_yr:.1f}y)")
 mbox(c6, f"{daily['n'].mean():.2f}", "平均 fills/日")
 
@@ -231,7 +231,7 @@ with col1:
     st.metric("虧損月數", f"{(monthly['net']<0).sum()} / {len(monthly)}")
 with col2:
     st.metric("月報酬範圍",
-              f"{monthly['ret_pct'].min():+.1f}% ~ {monthly['ret_pct'].max():+.1f}%")
+              f"{monthly['ret_pct'].min():+.2f}% ~ {monthly['ret_pct'].max():+.2f}%")
 
 # ── 年度績效 ────────────────────────────────────────────────
 st.subheader("年度績效")
@@ -243,7 +243,7 @@ yearly = yr.groupby("year").agg(
     net=("net","sum"),
 ).reset_index()
 yearly["ret_pct"] = yearly["net"]/budget*100
-yearly["ret_str"] = yearly["ret_pct"].map(lambda x: f"{x:+.1f}%")
+yearly["ret_str"] = yearly["ret_pct"].map(lambda x: f"{x:+.2f}%")
 st.dataframe(yearly[["year","days","fills","net","ret_str"]].rename(
     columns={"days":"交易日","fills":"總 fills","net":"淨 PnL (NTD)","ret_str":"年內報酬"}
 ), use_container_width=True, hide_index=True)
@@ -262,7 +262,7 @@ if signals is not None:
         df_show["stock_aor"]  = df_show["stock_aor"].map(lambda x: f"{x*100:+.2f}%")
         df_show["entry_min"]  = df_show["entry_min"].map(lambda x: f"09:{x-540:02d}")
         df_show["return"]     = df_show["return"].map(lambda x: f"{x*100:+.2f}%")
-        df_show["rank_score"] = df_show["rank_score"].map(lambda x: f"{x:.3f}")
+        df_show["rank_score"] = df_show["rank_score"].map(lambda x: f"{x:.2f}")
         st.dataframe(df_show, use_container_width=True, hide_index=True)
     else:
         st.info("最新交易日無觸發訊號")
