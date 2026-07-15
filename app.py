@@ -901,8 +901,8 @@ with tab2:
                     '筆數':        len(es),
                     '勝率(%)':     round(ew / (ew + el) * 100, 2) if (ew + el) > 0 else 0,
                     '期望報酬(%)':  round(es.mean(), 2),
-                    '夏普值':      sp,
-                    '賺賠比':      pf_et,
+                    '夏普值':      round(sp, 2) if pd.notna(sp) else sp,
+                    '賺賠比':      round(pf_et, 2) if pd.notna(pf_et) else pf_et,
                     '均獲利(%)':   round(es[es > 0].mean(), 2) if ew > 0 else 0,
                     '均虧損(%)':   round(es[es <= 0].mean(), 2) if el > 0 else 0,
                     '最大獲利(%)': round(es.max(), 2),
@@ -980,8 +980,8 @@ with tab2:
 
         if len(view_h) > 0:
             disp = view_h.drop(columns=['年份', 'Dn組別', 'D3累積(%)'], errors='ignore').reset_index(drop=True)
-            ret_cols = (['近20日漲幅', '買進時累積(%)', '期間最深(%)', '大戶(%)', '出關報酬(%)'] +
-                        [f'T+{k}收盤(%)' for k in range(1, 11)])
+            # 所有百分比欄位都轉成 2 位小數字串（含 D1~D10 累積/報酬、出關後D1~D5，避免顯示原始浮點數過長）
+            ret_cols = ['近20日漲幅'] + [c for c in disp.columns if c.endswith('(%)')]
             for c in ret_cols:
                 if c in disp.columns:
                     disp[c] = disp[c].apply(fmt_pct)
