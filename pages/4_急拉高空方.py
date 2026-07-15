@@ -15,8 +15,9 @@ st.set_page_config(page_title="急拉高空方 Q8/Q10", page_icon="📉", layout
                    initial_sidebar_state="expanded")
 
 DATA_DIR   = Path(__file__).parent.parent / "data"
-Q8_PARQUET  = DATA_DIR / "急拉高_Q8版.parquet"
-Q10_PARQUET = DATA_DIR / "急拉高_Q10版.parquet"
+Q8_PARQUET   = DATA_DIR / "急拉高_Q8版.parquet"
+Q10_PARQUET  = DATA_DIR / "急拉高_Q10版.parquet"
+Q10PB_PARQUET = DATA_DIR / "急拉高_Q10PB版.parquet"
 TODAY_JSON  = DATA_DIR / "急拉高_今日選股.json"
 NAMES_CSV   = DATA_DIR / "stock_names.csv"
 
@@ -27,12 +28,16 @@ HEADLINE = {
     "Q10": dict(n=2021, sharpe=3.60, cum=3035.8, mdd=-16.1, avg2026=0.603,
                 desc="流動性前30%(70分位) + 市值最小10%動態分位 + OTC濾網(前日單日>=3% OR 前10日累積>=8%跳過) + 停損夾漲停下方",
                 note="2026單獨檢驗排除最強10天轉負(跟Q8接近)，長期Sharpe/累積報酬仍略低於Q8"),
+    "Q10PB": dict(n=1617, sharpe=3.67, cum=3425.7, mdd=-24.7, avg2026=0.529,
+                  desc="Q10 + 回落濾網(進場前相對09:00-09:30高點回落幅度最低20%排除)",
+                  note="2026-07-15新增第三支模擬單。犧牲頻率(2.86→2.44檔/天)換Sharpe，但MaxDD明顯惡化(-16.1%→-24.7%)；"
+                       "LLM Council建議用實盤驗證narrowing方向是否優於Q8/Q10，尚未決定是否取代"),
 }
 
 with st.sidebar:
     st.title("版本切換")
-    variant = st.radio("策略版本", ["Q8", "Q10"], index=0,
-                        help="Q8=長期最優，Q10=近期較穩健。目前兩版同時在模擬帳戶跑，尚未二選一。")
+    variant = st.radio("策略版本", ["Q8", "Q10", "Q10PB"], index=0,
+                        help="Q8=長期最優，Q10=近期較穩健，Q10PB=Q10+回落濾網(犧牲頻率換品質，實驗中)。三版同時在模擬帳戶跑，尚未二選一。")
     st.divider()
     st.caption(
         "**2026-07-12 定案**：從758檔(選股偏誤)擴大到995檔universe，"
@@ -74,9 +79,9 @@ def load_live_trades(variant):
 
 names = load_names()
 h = HEADLINE[variant]
-parquet_path = Q8_PARQUET if variant == "Q8" else Q10_PARQUET
+parquet_path = {"Q8": Q8_PARQUET, "Q10": Q10_PARQUET, "Q10PB": Q10PB_PARQUET}[variant]
 
-st.title(f"急拉高空方 — {variant}版（2026-07-12定案）")
+st.title(f"急拉高空方 — {variant}版")
 st.caption("爆量急拉後推不動 → 流動性/市值/大盤regime三層濾網 → 09:30進場做空 → 13:25強制平倉")
 
 st.success(
