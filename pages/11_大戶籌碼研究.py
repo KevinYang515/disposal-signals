@@ -97,7 +97,8 @@ with tab_signal:
             "signal_date", "entry_date", "stock_id", "company_name", "strategy_name", "strategy_description", "signal_close", "entry_close", "whale_base_4w_pct", "whale_current_pct",
             "whale_change_4w_pp", "whale_relative_change_pct", "whale_up_weeks_4",
             "whale_pullback_from_peak_pp", "selected_lot_bucket", "prior_20d_return_pct",
-            "distance_ma20_pct", "daily_value_20d_m",
+            "distance_ma20_pct", "daily_value_20d_m", "prev_day_limit_down",
+            "prev_day_single_limit_down",
         ]
         cols = [c for c in cols if c in df.columns]
         out = df[cols].copy()
@@ -112,6 +113,13 @@ with tab_signal:
             "selected_lot_bucket": "動態級距(張)", "prior_20d_return_pct": "近20日漲跌(%)",
             "distance_ma20_pct": "距月線(%)", "daily_value_20d": "20日均成交額",
             "daily_value_20d_m": "20日均成交額(百萬元)",
+        })
+        for col in ["prev_day_limit_down", "prev_day_single_limit_down"]:
+            if col in out.columns:
+                out[col] = out[col].map({True: "是", False: "否"}).fillna("否")
+        out = out.rename(columns={
+            "prev_day_limit_down": "訊號日前一交易日是否跌停",
+            "prev_day_single_limit_down": "訊號日前一交易日是否為單獨跌停",
         })
         return out
 
@@ -129,9 +137,15 @@ with tab_signal:
     base_max = b.slider("4週前大戶比例上限", 0, 100, 100)
     abs_min = c.slider("4週絕對增加至少(pp)", -5.0, 10.0, 0.5, 0.5)
     rel_min = d.slider("相對增加至少(%)", -20.0, 50.0, 0.0, 1.0)
+    exclude_prev_limit = st.checkbox("排除訊號日前一交易日跌停", value=False)
+    exclude_single_limit = st.checkbox("排除訊號日前一交易日單獨跌停", value=False)
     view = latest.copy()
     if strategy != "全部":
         view = view[view["strategy"] == strategy]
+    if exclude_prev_limit and "prev_day_limit_down" in view.columns:
+        view = view[~view["prev_day_limit_down"].fillna(False)]
+    if exclude_single_limit and "prev_day_single_limit_down" in view.columns:
+        view = view[~view["prev_day_single_limit_down"].fillna(False)]
     view = view[
         (view["whale_base_4w_pct"] <= base_max)
         & (view["whale_change_4w_pp"] >= abs_min)
@@ -178,12 +192,18 @@ with tab_history:
     max_base = h4.slider("4週前大戶比例上限（%）", 0.0, 100.0, 100.0, 1.0, key="history_base")
     min_date, max_date = history["signal_date"].min().date(), history["signal_date"].max().date()
     date_range = st.date_input("訊號資料日範圍", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="history_dates")
+    exclude_hist_limit = st.checkbox("回測排除訊號日前一交易日跌停", value=False, key="history_limit")
+    exclude_hist_single = st.checkbox("回測排除訊號日前一交易日單獨跌停", value=False, key="history_single_limit")
     hist_view = history[
         (history["strategy"] == h_strategy)
         & (history["whale_change_4w_pp"] >= min_abs)
         & (history["whale_relative_change_pct"] >= min_rel)
         & (history["whale_base_4w_pct"] <= max_base)
     ].copy()
+    if exclude_hist_limit and "prev_day_limit_down" in hist_view.columns:
+        hist_view = hist_view[~hist_view["prev_day_limit_down"].fillna(False)]
+    if exclude_hist_single and "prev_day_single_limit_down" in hist_view.columns:
+        hist_view = hist_view[~hist_view["prev_day_single_limit_down"].fillna(False)]
     if isinstance(date_range, tuple) and len(date_range) == 2:
         hist_view = hist_view[hist_view["signal_date"].dt.date.between(date_range[0], date_range[1])]
     returns = hist_view[["return_20d", "return_60d", "return_120d"]] * 100
