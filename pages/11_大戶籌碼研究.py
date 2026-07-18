@@ -9,10 +9,19 @@ import streamlit as st
 st.set_page_config(page_title="大戶籌碼研究", page_icon="🐋", layout="wide")
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "whale_research"
+DATA_VERSION = "2026-07-19-v2"
+STRATEGY_LABELS = {
+    "dip_10_20d_above_ma240": "多頭回檔承接", "dip_5_10d_above_ma240": "淺幅回檔承接",
+    "ma20_reclaim_uptrend": "月線重新站回", "ma20_support_uptrend": "月線支撐",
+    "ma60_reclaim_uptrend": "季線重新站回", "ma60_support_uptrend": "季線支撐",
+    "near_ma20_pm5": "月線附近", "near_ma60_pm5": "季線附近",
+    "low_1m": "1個月相對低位", "low_3m": "3個月相對低位", "low_6m": "6個月相對低位",
+    "pullback_20_30": "中期回檔", "breakout_20d": "20日突破", "breakout_60d": "60日突破",
+}
 
 
 @st.cache_data(ttl=3600)
-def load_csv(name):
+def load_csv(name, version):
     return pd.read_csv(DATA / name)
 
 
@@ -24,16 +33,23 @@ def load_meta():
 
 try:
     meta = load_meta()
-    latest = load_csv("latest_signals.csv")
-    recommended = load_csv("recommended_candidates.csv")
-    composite = load_csv("composite_candidate_validation.csv")
-    path_quality = load_csv("path_quality_validation.csv")
-    exits = load_csv("exit_rule_summary.csv")
-    whale_bands = load_csv("attribution_whale_bands.csv")
-    concentration = load_csv("attribution_concentration_relative_change.csv")
+    latest = load_csv("latest_signals.csv", DATA_VERSION)
+    recommended = load_csv("recommended_candidates.csv", DATA_VERSION)
+    composite = load_csv("composite_candidate_validation.csv", DATA_VERSION)
+    path_quality = load_csv("path_quality_validation.csv", DATA_VERSION)
+    exits = load_csv("exit_rule_summary.csv", DATA_VERSION)
+    whale_bands = load_csv("attribution_whale_bands.csv", DATA_VERSION)
+    concentration = load_csv("attribution_concentration_relative_change.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
+
+if "strategy_name" not in latest.columns:
+    latest["strategy_name"] = latest["strategy"].map(STRATEGY_LABELS).fillna(latest["strategy"])
+if "strategy_description" not in latest.columns:
+    latest["strategy_description"] = "-"
+if "company_name" not in latest.columns:
+    latest["company_name"] = "名稱待補"
 
 st.title("🐋 大戶籌碼研究")
 st.caption(
