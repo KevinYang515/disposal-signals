@@ -28,6 +28,7 @@ try:
     recommended = load_csv("recommended_candidates.csv")
     composite = load_csv("composite_candidate_validation.csv")
     path_quality = load_csv("path_quality_validation.csv")
+    exits = load_csv("exit_rule_summary.csv")
     whale_bands = load_csv("attribution_whale_bands.csv")
     concentration = load_csv("attribution_concentration_relative_change.csv")
 except FileNotFoundError:
@@ -40,6 +41,7 @@ st.caption(
     "週籌碼資料採下一交易日收盤進場的保守假設。"
 )
 st.warning("此頁是研究與觀察工具，不是買賣建議；最新籌碼資料可能落後當日行情，請先確認資料日期。")
+strategy_labels = latest.drop_duplicates("strategy").set_index("strategy")["strategy_name"].to_dict()
 
 tab_signal, tab_validation, tab_factor, tab_method = st.tabs([
     "最新候選", "跨期驗證", "因子歸因", "策略定義",
@@ -48,6 +50,7 @@ tab_signal, tab_validation, tab_factor, tab_method = st.tabs([
 with tab_signal:
     st.subheader("目前符合主要候選模型")
     st.caption("條件：20 日回檔 10–20%、仍在 240 日線上、起始大戶比例 <40%、4 週絕對增加 ≥1pp 且相對增加 ≥5%。")
+    st.info("進場不是四週前：『4週前大戶(%)』只用來計算目前已確認的籌碼變化。回測的進場基準是資料日後的下一個交易日收盤。")
     c1, c2, c3 = st.columns(3)
     c1.metric("最新資料日", meta["signal_date"])
     c2.metric("全部型態訊號", f"{meta['latest_rows']:,}")
@@ -55,20 +58,24 @@ with tab_signal:
 
     def display_frame(df):
         cols = [
-            "stock_id", "strategy", "signal_close", "whale_base_4w_pct", "whale_current_pct",
+            "stock_id", "company_name", "strategy_name", "strategy_description", "signal_close", "entry_close", "whale_base_4w_pct", "whale_current_pct",
             "whale_change_4w_pp", "whale_relative_change_pct", "whale_up_weeks_4",
             "whale_pullback_from_peak_pp", "selected_lot_bucket", "prior_20d_return_pct",
-            "distance_ma20_pct", "daily_value_20d",
+            "distance_ma20_pct", "daily_value_20d_m",
         ]
         cols = [c for c in cols if c in df.columns]
         out = df[cols].copy()
+        for col in out.select_dtypes(include="number").columns:
+            out[col] = out[col].round(2)
         out = out.rename(columns={
-            "stock_id": "代號", "strategy": "型態", "signal_close": "訊號收盤價",
+            "stock_id": "代號", "company_name": "股票名稱", "strategy_name": "價格型態", "strategy_description": "型態說明",
+            "signal_close": "資料日收盤價", "entry_close": "回測進場價",
             "whale_base_4w_pct": "4週前大戶(%)", "whale_current_pct": "目前大戶(%)",
             "whale_change_4w_pp": "4週變化(pp)", "whale_relative_change_pct": "相對變化(%)",
             "whale_up_weeks_4": "上升週數", "whale_pullback_from_peak_pp": "距峰值回落(pp)",
             "selected_lot_bucket": "動態級距(張)", "prior_20d_return_pct": "近20日漲跌(%)",
             "distance_ma20_pct": "距月線(%)", "daily_value_20d": "20日均成交額",
+            "daily_value_20d_m": "20日均成交額(百萬元)",
         })
         return out
 
@@ -81,7 +88,8 @@ with tab_signal:
     st.subheader("探索最新籌碼訊號")
     a, b, c, d = st.columns(4)
     strategy_options = ["全部"] + sorted(latest["strategy"].dropna().unique().tolist())
-    strategy = a.selectbox("價格型態", strategy_options)
+    strategy = a.selectbox("價格型態", strategy_options,
+                           format_func=lambda x: "全部" if x == "全部" else strategy_labels.get(x, x))
     base_max = b.slider("4週前大戶比例上限", 0, 100, 100)
     abs_min = c.slider("4週絕對增加至少(pp)", -5.0, 10.0, 0.5, 0.5)
     rel_min = d.slider("相對增加至少(%)", -20.0, 50.0, 0.0, 1.0)
@@ -116,9 +124,25 @@ with tab_validation:
     })
     st.dataframe(path, use_container_width=True, hide_index=True)
 
+    st.subheader("進出場規則比較：主要候選模型")
+    st.caption("進場：籌碼資料確認後的下一交易日收盤。以下為扣除 0.60% 往返成本的收盤價模擬；不是四週前進場。")
+    exit_view = exits.rename(columns={
+        "rule": "出場規則", "period": "期間", "trades": "交易數", "signal_dates": "訊號日數",
+        "net_mean_pct": "平均淨報酬(%)", "net_median_pct": "中位數淨報酬(%)",
+        "win_rate_pct": "勝率(%)", "weekly_equal_net_mean_pct": "每訊號日等權淨報酬(%)",
+        "mean_holding_days": "平均持有日數", "stop_rate_pct": "停損比例(%)",
+        "take_profit_rate_pct": "停利比例(%)",
+    })
+    exit_view = exit_view[exit_view["期間"] == "all"].copy()
+    for col in exit_view.select_dtypes(include="number").columns:
+        exit_view[col] = exit_view[col].round(2)
+    st.dataframe(exit_view, use_container_width=True, hide_index=True)
+    st.info("目前資料較支持固定持有 60–120 個交易日；固定 10% 停損會過早切掉後續大波段。這是初步結果，後續仍需加入部位重複與實際滑價測試。")
+
 with tab_factor:
     st.subheader("不同大戶變化幅度的後續報酬")
-    selected_strategy = st.selectbox("選擇型態", sorted(whale_bands["strategy"].unique().tolist()), key="factor_strategy")
+    selected_strategy = st.selectbox("選擇型態", sorted(whale_bands["strategy"].unique().tolist()),
+                                     format_func=lambda x: strategy_labels.get(x, x), key="factor_strategy")
     wb = whale_bands[whale_bands["strategy"] == selected_strategy].copy()
     chart_cols = [c for c in ["mean_20d_pct", "mean_60d_pct", "mean_120d_pct"] if c in wb]
     chart = wb.set_index("whale_band")[chart_cols].rename(columns={
