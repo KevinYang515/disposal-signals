@@ -26,13 +26,13 @@ def load_csv(name, version):
 
 
 @st.cache_data(ttl=3600)
-def load_meta():
+def load_meta(version):
     with open(DATA / "meta.json", encoding="utf-8") as f:
         return json.load(f)
 
 
 try:
-    meta = load_meta()
+    meta = load_meta(DATA_VERSION)
     latest = load_csv("latest_signals.csv", DATA_VERSION)
     recommended = load_csv("recommended_candidates.csv", DATA_VERSION)
     composite = load_csv("composite_candidate_validation.csv", DATA_VERSION)
@@ -53,11 +53,29 @@ if "company_name" not in latest.columns:
 
 st.title("🐋 大戶籌碼研究")
 st.caption(
-    f"研究資料日期：{meta['signal_date']}｜匯出時間：{meta['generated_at']}｜"
+    f"最新訊號資料日：{meta['signal_date']}｜可回測資料範圍：{meta['research_signal_start']} 至 {meta['research_complete_backtest_end']}｜匯出時間：{meta['generated_at']}｜"
     "週籌碼資料採下一交易日收盤進場的保守假設。"
 )
-st.warning("此頁是研究與觀察工具，不是買賣建議；最新籌碼資料可能落後當日行情，請先確認資料日期。")
+st.warning("此頁已排除 ETF／ETN（00xx 代號）。此頁是研究與觀察工具，不是買賣建議；最新籌碼資料可能落後當日行情，請先確認資料日期。")
 strategy_labels = latest.drop_duplicates("strategy").set_index("strategy")["strategy_name"].to_dict()
+
+
+def round_numbers(df):
+    out = df.copy()
+    for col in out.select_dtypes(include="number").columns:
+        out[col] = out[col].round(2)
+    return out
+
+
+RETURN_COLUMNS = {
+    "events": "樣本數", "signal_dates": "訊號日數",
+    "mean_20d_pct": "20日平均報酬(%)", "mean_net_20d_pct": "20日平均淨報酬(%)",
+    "median_20d_pct": "20日中位數報酬(%)", "win_rate_20d_pct": "20日勝率(%)",
+    "mean_60d_pct": "60日平均報酬(%)", "mean_net_60d_pct": "60日平均淨報酬(%)",
+    "median_60d_pct": "60日中位數報酬(%)", "win_rate_60d_pct": "60日勝率(%)",
+    "mean_120d_pct": "120日平均報酬(%)", "mean_net_120d_pct": "120日平均淨報酬(%)",
+    "median_120d_pct": "120日中位數報酬(%)", "win_rate_120d_pct": "120日勝率(%)",
+}
 
 tab_signal, tab_validation, tab_factor, tab_method = st.tabs([
     "最新候選", "跨期驗證", "因子歸因", "策略定義",
@@ -74,7 +92,7 @@ with tab_signal:
 
     def display_frame(df):
         cols = [
-            "stock_id", "company_name", "strategy_name", "strategy_description", "signal_close", "entry_close", "whale_base_4w_pct", "whale_current_pct",
+            "signal_date", "entry_date", "stock_id", "company_name", "strategy_name", "strategy_description", "signal_close", "entry_close", "whale_base_4w_pct", "whale_current_pct",
             "whale_change_4w_pp", "whale_relative_change_pct", "whale_up_weeks_4",
             "whale_pullback_from_peak_pp", "selected_lot_bucket", "prior_20d_return_pct",
             "distance_ma20_pct", "daily_value_20d_m",
@@ -84,7 +102,7 @@ with tab_signal:
         for col in out.select_dtypes(include="number").columns:
             out[col] = out[col].round(2)
         out = out.rename(columns={
-            "stock_id": "代號", "company_name": "股票名稱", "strategy_name": "價格型態", "strategy_description": "型態說明",
+            "signal_date": "訊號資料日", "entry_date": "回測進場日", "stock_id": "代號", "company_name": "股票名稱", "strategy_name": "價格型態", "strategy_description": "型態說明",
             "signal_close": "資料日收盤價", "entry_close": "回測進場價",
             "whale_base_4w_pct": "4週前大戶(%)", "whale_current_pct": "目前大戶(%)",
             "whale_change_4w_pp": "4週變化(pp)", "whale_relative_change_pct": "相對變化(%)",
@@ -125,20 +143,34 @@ with tab_signal:
 with tab_validation:
     st.subheader("候選策略跨期驗證")
     st.caption("報酬為未扣成本平均報酬；同時列出每個訊號日等權平均，以降低訊號群聚的影響。")
-    comp = composite.rename(columns={
+    condition_names = {
+        "dip10_20_uptrend_low_base_relative_accumulation": "多頭回檔承接＋低起始集中度＋相對籌碼累積",
+        "ma20_reclaim_uptrend_low_base_relative_accumulation": "月線重新站回＋低起始集中度＋相對籌碼累積",
+        "dip10_20_uptrend: strict net>=1pp": "多頭回檔承接：4週淨增加至少1個百分點",
+        "dip10_20_uptrend: flexible net>=0.5pp, 2+ up weeks, peak pullback<=1pp": "多頭回檔承接：4週淨增加至少0.5pp、至少2週增加、距峰值回落不超過1pp",
+        "ma20_reclaim_uptrend: strict net>=1pp": "月線重新站回：4週淨增加至少1個百分點",
+        "ma20_reclaim_uptrend: flexible net>=0.5pp, 2+ up weeks, peak pullback<=1pp": "月線重新站回：4週淨增加至少0.5pp、至少2週增加、距峰值回落不超過1pp",
+    }
+    comp = composite.copy()
+    comp["candidate"] = comp["candidate"].map(condition_names).fillna(comp["candidate"])
+    comp = comp.rename(columns={
         "candidate": "候選策略", "period": "期間", "events": "樣本數", "signal_dates": "訊號日數",
         "raw_mean_20d_pct": "20日平均(%)", "raw_mean_60d_pct": "60日平均(%)",
-        "raw_mean_120d_pct": "120日平均(%)", "weekly_equal_mean_60d_pct": "60日等權平均(%)",
+        "raw_mean_120d_pct": "120日平均(%)", "weekly_equal_mean_20d_pct": "每訊號日等權20日(%)",
+        "weekly_equal_mean_60d_pct": "每訊號日等權60日(%)", "weekly_equal_mean_120d_pct": "每訊號日等權120日(%)",
     })
-    st.dataframe(comp, use_container_width=True, hide_index=True)
+    st.dataframe(round_numbers(comp), use_container_width=True, hide_index=True)
 
     st.subheader("容許籌碼途中小幅回落的驗證")
-    path = path_quality.rename(columns={
+    path = path_quality.copy()
+    path["definition"] = path["definition"].map(condition_names).fillna(path["definition"])
+    path = path.rename(columns={
         "definition": "條件", "period": "期間", "events": "樣本數", "signal_dates": "訊號日數",
         "raw_mean_20d_pct": "20日平均(%)", "raw_mean_60d_pct": "60日平均(%)",
-        "raw_mean_120d_pct": "120日平均(%)", "weekly_equal_mean_60d_pct": "60日等權平均(%)",
+        "raw_mean_120d_pct": "120日平均(%)", "weekly_equal_mean_20d_pct": "每訊號日等權20日(%)",
+        "weekly_equal_mean_60d_pct": "每訊號日等權60日(%)", "weekly_equal_mean_120d_pct": "每訊號日等權120日(%)",
     })
-    st.dataframe(path, use_container_width=True, hide_index=True)
+    st.dataframe(round_numbers(path), use_container_width=True, hide_index=True)
 
     st.subheader("進出場規則比較：主要候選模型")
     st.caption("進場：籌碼資料確認後的下一交易日收盤。以下為扣除 0.60% 往返成本的收盤價模擬；不是四週前進場。")
@@ -152,7 +184,8 @@ with tab_validation:
     exit_view = exit_view[exit_view["期間"] == "all"].copy()
     for col in exit_view.select_dtypes(include="number").columns:
         exit_view[col] = exit_view[col].round(2)
-    st.dataframe(exit_view, use_container_width=True, hide_index=True)
+    exit_view["期間"] = exit_view["期間"].replace({"all": "全期間"})
+    st.dataframe(round_numbers(exit_view), use_container_width=True, hide_index=True)
     st.info("目前資料較支持固定持有 60–120 個交易日；固定 10% 停損會過早切掉後續大波段。這是初步結果，後續仍需加入部位重複與實際滑價測試。")
 
 with tab_factor:
@@ -161,17 +194,35 @@ with tab_factor:
                                      format_func=lambda x: strategy_labels.get(x, x), key="factor_strategy")
     wb = whale_bands[whale_bands["strategy"] == selected_strategy].copy()
     chart_cols = [c for c in ["mean_20d_pct", "mean_60d_pct", "mean_120d_pct"] if c in wb]
-    chart = wb.set_index("whale_band")[chart_cols].rename(columns={
+    whale_band_labels = {
+        "<-3": "4週減少超過3個百分點", "-3~-1": "4週減少1–3個百分點",
+        "-1~-0.5": "4週減少0.5–1個百分點", "-0.5~0": "4週小幅減少0–0.5個百分點",
+        "0~0.5": "4週小幅增加0–0.5個百分點", "0.5~1": "4週增加0.5–1個百分點",
+        "1~2": "4週增加1–2個百分點", "2~3": "4週增加2–3個百分點",
+        "3~5": "4週增加3–5個百分點", ">=5": "4週增加至少5個百分點",
+    }
+    chart = wb.assign(大戶變化=wb["whale_band"].map(whale_band_labels)).set_index("大戶變化")[chart_cols].rename(columns={
         "mean_20d_pct": "20日", "mean_60d_pct": "60日", "mean_120d_pct": "120日",
     })
     st.bar_chart(chart)
-    st.dataframe(wb, use_container_width=True, hide_index=True)
+    wb_view = wb.assign(大戶變化=wb["whale_band"].map(whale_band_labels)).drop(columns=["strategy", "whale_band"])
+    wb_view = wb_view.rename(columns={"大戶變化": "大戶4週變化區間", **RETURN_COLUMNS})
+    st.dataframe(round_numbers(wb_view), use_container_width=True, hide_index=True)
 
     st.subheader("初始集中度 × 相對大戶變化")
     con = concentration[concentration["strategy"] == selected_strategy]
+    base_labels = {"<40%": "起始大戶比例低於40%", "40~60%": "起始大戶比例40–60%",
+                   "60~80%": "起始大戶比例60–80%", ">=80%": "起始大戶比例至少80%"}
+    relative_labels = {"<-5%": "相對減少超過5%", "-5~-1%": "相對減少1–5%",
+                       "-1~0%": "相對小幅減少0–1%", "0~1%": "相對小幅增加0–1%",
+                       "1~5%": "相對增加1–5%", "5~10%": "相對增加5–10%", ">=10%": "相對增加至少10%"}
     base_options = sorted(con["base_concentration_band"].dropna().unique().tolist())
-    base_band = st.selectbox("初始集中度", base_options, key="base_band")
-    st.dataframe(con[con["base_concentration_band"] == base_band], use_container_width=True, hide_index=True)
+    base_band = st.selectbox("初始大戶集中度", base_options, format_func=lambda x: base_labels.get(x, x), key="base_band")
+    con_view = con[con["base_concentration_band"] == base_band].copy()
+    con_view["相對大戶變化"] = con_view["relative_change_band"].map(relative_labels)
+    con_view = con_view.drop(columns=["strategy", "base_concentration_band", "relative_change_band"])
+    con_view = con_view.rename(columns={"相對大戶變化": "相對大戶變化區間", **RETURN_COLUMNS})
+    st.dataframe(round_numbers(con_view), use_container_width=True, hide_index=True)
 
 with tab_method:
     st.markdown("""
