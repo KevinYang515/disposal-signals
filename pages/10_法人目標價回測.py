@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v3-d0_d8_market_board"
+DATA_VERSION = "v4-ticker_collision_fix_0718"
 
 
 @st.cache_data(ttl=3600)
