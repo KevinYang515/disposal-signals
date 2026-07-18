@@ -97,18 +97,33 @@ def _apply_preset(preset: dict):
 
 
 def _reset_all():
+    # 用跟 slider min_value/max_value 完全相同的四捨五入方式算邊界值，
+    # 避免重設成一個因四捨五入方向而剛好超出 slider 合法範圍的極端值。
     _apply_preset(
         dict(
-            potential_min=float(events["median_potential_pct"].min()),
-            target_change_min=float(events["median_target_change_pct"].min()),
+            potential_min=min(float(events["median_potential_pct"].min()), 0.0),
+            target_change_min=round(float(events["median_target_change_pct"].min()), 0),
             prior20_max=int(events["prior_report_broker_events_20td"].max()),
-            pre5_max=float(events["pre_return_5d_pct"].max()),
+            pre5_max=round(float(events["pre_return_5d_pct"].max()), 0),
             positive_only=False,
             upgrade_only=False,
             tradable_only=False,
             exclude_pending=True,
         )
     )
+
+
+def _clamp_state(key, default, lo, hi):
+    """setdefault 只補「不存在」的情況；資料範圍改變(如新增2025年資料)後，
+    瀏覽器裡殘留的舊 session_state 可能落在新的 min/max 之外，
+    Streamlit 的 date_input/slider 遇到超出邊界的值會直接丟例外。
+    這裡無論如何都把值夾回目前合法範圍內。"""
+    v = st.session_state.get(key, default)
+    if v is None or v < lo:
+        v = lo
+    elif v > hi:
+        v = hi
+    st.session_state[key] = v
 
 
 with st.sidebar:
@@ -120,8 +135,8 @@ with st.sidebar:
         _reset_all()
 
     dt_min, dt_max = events["event_date"].min().date(), events["event_date"].max().date()
-    st.session_state.setdefault("f_date_start", dt_min)
-    st.session_state.setdefault("f_date_end", dt_max)
+    _clamp_state("f_date_start", dt_min, dt_min, dt_max)
+    _clamp_state("f_date_end", dt_max, dt_min, dt_max)
 
     # 按鈕必須在 date_input 元件「之前」設定 session_state，Streamlit 不允許
     # 同一次 run 裡先建立 widget 再改它的 session_state（跟 v1 預設值按鈕同款陷阱）。
@@ -153,32 +168,32 @@ with st.sidebar:
 
     # 注意：widget 一旦有 key，就不能再同時傳 value=，否則 Streamlit 會噴例外。
     # 改用 setdefault 先確保 session_state 有初始值，widget 只靠 key 讀寫。
-    pot_lo, pot_hi = float(events["median_potential_pct"].min()), float(events["median_potential_pct"].max())
-    st.session_state.setdefault("f_potential_min", 0.0)
+    pot_lo, pot_hi = float(min(float(events["median_potential_pct"].min()), 0)), round(float(events["median_potential_pct"].max()), 0)
+    _clamp_state("f_potential_min", 0.0, pot_lo, pot_hi)
     potential_min = st.slider(
-        "Potential 中位數 ≥ (%)", min_value=float(min(pot_lo, 0)), max_value=round(pot_hi, 0),
+        "Potential 中位數 ≥ (%)", min_value=pot_lo, max_value=pot_hi,
         step=1.0, key="f_potential_min",
     )
 
-    tc_lo, tc_hi = float(events["median_target_change_pct"].min()), float(events["median_target_change_pct"].max())
-    st.session_state.setdefault("f_target_change_min", tc_lo)
+    tc_lo, tc_hi = round(float(events["median_target_change_pct"].min()), 0), round(float(events["median_target_change_pct"].max()), 0)
+    _clamp_state("f_target_change_min", tc_lo, tc_lo, tc_hi)
     target_change_min = st.slider(
-        "目標價調整中位數 ≥ (%)", min_value=round(tc_lo, 0), max_value=round(tc_hi, 0),
+        "目標價調整中位數 ≥ (%)", min_value=tc_lo, max_value=tc_hi,
         step=1.0, key="f_target_change_min",
     )
 
     p20_max_data = int(events["prior_report_broker_events_20td"].max())
-    st.session_state.setdefault("f_prior20_max", p20_max_data)
+    _clamp_state("f_prior20_max", p20_max_data, 0, p20_max_data)
     prior20_max = st.slider(
         "前20交易日內報告數 ≤", min_value=0, max_value=p20_max_data,
         step=1, key="f_prior20_max",
         help="0＝該事件是近期第一份法人報告（新資訊）",
     )
 
-    pre5_lo, pre5_hi = float(events["pre_return_5d_pct"].min()), float(events["pre_return_5d_pct"].max())
-    st.session_state.setdefault("f_pre5_max", pre5_hi)
+    pre5_lo, pre5_hi = round(float(events["pre_return_5d_pct"].min()), 0), round(float(events["pre_return_5d_pct"].max()), 0)
+    _clamp_state("f_pre5_max", pre5_hi, pre5_lo, pre5_hi)
     pre5_max = st.slider(
-        "前5日累積報酬 < (%)", min_value=round(pre5_lo, 0), max_value=round(pre5_hi, 0),
+        "前5日累積報酬 < (%)", min_value=pre5_lo, max_value=pre5_hi,
         step=1.0, key="f_pre5_max",
         help="已大漲的股票排除，屬「減碼/避開」條件，不是放空訊號",
     )
