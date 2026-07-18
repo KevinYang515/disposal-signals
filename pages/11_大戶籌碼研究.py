@@ -9,7 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="大戶籌碼研究", page_icon="🐋", layout="wide")
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "whale_research"
-DATA_VERSION = "2026-07-19-v2"
+DATA_VERSION = "2026-07-19-v4"
 STRATEGY_LABELS = {
     "dip_10_20d_above_ma240": "多頭回檔承接", "dip_5_10d_above_ma240": "淺幅回檔承接",
     "ma20_reclaim_uptrend": "月線重新站回", "ma20_support_uptrend": "月線支撐",
@@ -40,6 +40,8 @@ try:
     exits = load_csv("exit_rule_summary.csv", DATA_VERSION)
     whale_bands = load_csv("attribution_whale_bands.csv", DATA_VERSION)
     concentration = load_csv("attribution_concentration_relative_change.csv", DATA_VERSION)
+    weekly = load_csv("weekly_whale_movements.csv", DATA_VERSION)
+    history = load_csv("strategy_backtest_history.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -77,8 +79,8 @@ RETURN_COLUMNS = {
     "median_120d_pct": "120日中位數報酬(%)", "win_rate_120d_pct": "120日勝率(%)",
 }
 
-tab_signal, tab_validation, tab_factor, tab_method = st.tabs([
-    "最新候選", "跨期驗證", "因子歸因", "策略定義",
+tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_method = st.tabs([
+    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "策略定義",
 ])
 
 with tab_signal:
@@ -139,6 +141,71 @@ with tab_signal:
     st.dataframe(display_frame(view), use_container_width=True, hide_index=True, height=500)
     st.download_button("下載目前篩選結果 CSV", display_frame(view).to_csv(index=False).encode("utf-8-sig"),
                        "whale_research_candidates.csv", "text/csv")
+
+with tab_weekly:
+    st.subheader("每週大戶持股變動排行")
+    st.caption("依當週股價動態選擇對應大戶級距；已排除 ETF／ETN。每週保留上升與下降各前 200 名，方便找出明顯籌碼變化。")
+    weekly["資料日期"] = pd.to_datetime(weekly["資料日期"])
+    w1, w2, w3, w4 = st.columns(4)
+    week_dates = sorted(weekly["資料日期"].dt.date.unique(), reverse=True)
+    selected_week = w1.selectbox("選擇資料日期", week_dates, format_func=lambda x: x.strftime("%Y-%m-%d"))
+    direction = w2.radio("持股變動方向", ["上升", "下降"], horizontal=True)
+    threshold = w3.slider("變動門檻（百分點）", 0.0, 10.0, 0.5, 0.1)
+    top_n = w4.slider("顯示前幾名", 20, 200, 100, 10)
+    week_view = weekly[weekly["資料日期"].dt.date == selected_week].copy()
+    change_col = "本週變化(百分點)"
+    if direction == "上升":
+        week_view = week_view[week_view[change_col] >= threshold].sort_values(change_col, ascending=False)
+    else:
+        week_view = week_view[week_view[change_col] <= -threshold].sort_values(change_col)
+    week_view = week_view.head(top_n)
+    week_view["資料日期"] = week_view["資料日期"].dt.strftime("%Y-%m-%d")
+    st.caption(f"符合條件：{len(week_view):,} 筆")
+    st.dataframe(round_numbers(week_view), use_container_width=True, hide_index=True, height=520)
+    st.download_button("下載本週清單 CSV", week_view.to_csv(index=False).encode("utf-8-sig"),
+                       f"weekly_whale_{selected_week}.csv", "text/csv")
+
+with tab_history:
+    st.subheader("策略歷史回測紀錄")
+    st.caption("可調整策略與籌碼條件，查看每筆歷史訊號的資料日、下一交易日收盤進場價及後續報酬。僅包含已走完 120 個交易日的完整樣本。")
+    history["signal_date"] = pd.to_datetime(history["signal_date"])
+    history["entry_date"] = pd.to_datetime(history["entry_date"])
+    h1, h2, h3, h4 = st.columns(4)
+    h_strategy_options = sorted(history["strategy"].unique().tolist())
+    h_strategy = h1.selectbox("回測策略", h_strategy_options, format_func=lambda x: strategy_labels.get(x, x), key="history_strategy")
+    min_abs = h2.slider("大戶4週絕對增加至少（pp）", -5.0, 10.0, 0.0, 0.5, key="history_abs")
+    min_rel = h3.slider("大戶4週相對增加至少（%）", -20.0, 50.0, -20.0, 1.0, key="history_rel")
+    max_base = h4.slider("4週前大戶比例上限（%）", 0.0, 100.0, 100.0, 1.0, key="history_base")
+    min_date, max_date = history["signal_date"].min().date(), history["signal_date"].max().date()
+    date_range = st.date_input("訊號資料日範圍", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="history_dates")
+    hist_view = history[
+        (history["strategy"] == h_strategy)
+        & (history["whale_change_4w_pp"] >= min_abs)
+        & (history["whale_relative_change_pct"] >= min_rel)
+        & (history["whale_base_4w_pct"] <= max_base)
+    ].copy()
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        hist_view = hist_view[hist_view["signal_date"].dt.date.between(date_range[0], date_range[1])]
+    returns = hist_view[["return_20d", "return_60d", "return_120d"]] * 100
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("歷史訊號數", f"{len(hist_view):,}")
+    k2.metric("20日平均報酬", f"{returns['return_20d'].mean():.2f}%" if len(hist_view) else "-")
+    k3.metric("60日平均報酬", f"{returns['return_60d'].mean():.2f}%" if len(hist_view) else "-")
+    k4.metric("120日平均報酬", f"{returns['return_120d'].mean():.2f}%" if len(hist_view) else "-")
+    hist_show = hist_view.rename(columns={
+        "signal_date": "訊號資料日", "entry_date": "回測進場日", "stock_id": "代號", "策略名稱": "策略",
+        "signal_close": "資料日收盤價", "entry_close": "回測進場價", "whale_base_4w_pct": "4週前大戶(%)",
+        "whale_current_pct": "目前大戶(%)", "whale_change_4w_pp": "4週變化(pp)",
+        "whale_relative_change_pct": "相對變化(%)", "whale_up_weeks_4": "上升週數",
+        "whale_pullback_from_peak_pp": "距峰值回落(pp)", "prior_20d_return_pct": "近20日漲跌(%)",
+        "return_20d": "20日報酬(%)", "return_60d": "60日報酬(%)", "return_120d": "120日報酬(%)",
+    })
+    for col in ["20日報酬(%)", "60日報酬(%)", "120日報酬(%)"]:
+        hist_show[col] = hist_show[col] * 100
+    history_cols = ["訊號資料日", "回測進場日", "代號", "股票名稱", "策略", "資料日收盤價", "回測進場價",
+                    "4週前大戶(%)", "目前大戶(%)", "4週變化(pp)", "相對變化(%)", "近20日漲跌(%)",
+                    "20日報酬(%)", "60日報酬(%)", "120日報酬(%)"]
+    st.dataframe(round_numbers(hist_show[[c for c in history_cols if c in hist_show]]), use_container_width=True, hide_index=True, height=520)
 
 with tab_validation:
     st.subheader("候選策略跨期驗證")
