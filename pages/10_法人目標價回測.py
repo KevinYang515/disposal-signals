@@ -138,19 +138,36 @@ with st.sidebar:
     _clamp_state("f_date_start", dt_min, dt_min, dt_max)
     _clamp_state("f_date_end", dt_max, dt_min, dt_max)
 
+    def _window(wanted_start, wanted_end):
+        """把想要的日期窗口跟目前資料實際涵蓋的[dt_min,dt_max]相交；
+        如果完全交不到(例如資料根本沒有涵蓋那一年)，退回全範圍，
+        絕不回傳 start>end 的組合。"""
+        s = max(dt_min, wanted_start)
+        e = min(dt_max, wanted_end)
+        if s > e:
+            return dt_min, dt_max
+        return s, e
+
     # 按鈕必須在 date_input 元件「之前」設定 session_state，Streamlit 不允許
     # 同一次 run 裡先建立 widget 再改它的 session_state（跟 v1 預設值按鈕同款陷阱）。
     presets = {
         "全部": (dt_min, dt_max),
-        "2025年": (max(dt_min, pd.Timestamp("2025-01-01").date()), min(dt_max, pd.Timestamp("2025-12-31").date())),
-        "2026年": (max(dt_min, pd.Timestamp("2026-01-01").date()), dt_max),
-        "近3個月": (max(dt_min, dt_max - pd.Timedelta(days=90)), dt_max),
+        "2025年": _window(pd.Timestamp("2025-01-01").date(), pd.Timestamp("2025-12-31").date()),
+        "2026年": _window(pd.Timestamp("2026-01-01").date(), dt_max),
+        "近3個月": _window(dt_max - pd.Timedelta(days=90), dt_max),
     }
     preset_cols = st.columns(4)
     for col, (label, (s, e)) in zip(preset_cols, presets.items()):
         if col.button(label, width="stretch", key=f"preset_{label}"):
             st.session_state["f_date_start"] = s
             st.session_state["f_date_end"] = e
+
+    # 按鈕可能剛剛塞了新值，widget渲染前一定要再夾一次範圍，才能保證
+    # 不管值是從舊session_state殘留、還是按鈕剛設的，都不會超出目前的[dt_min,dt_max]。
+    _clamp_state("f_date_start", dt_min, dt_min, dt_max)
+    _clamp_state("f_date_end", dt_max, dt_min, dt_max)
+    if st.session_state["f_date_start"] > st.session_state["f_date_end"]:
+        st.session_state["f_date_start"], st.session_state["f_date_end"] = dt_min, dt_max
 
     dcol1, dcol2 = st.columns(2)
     date_start = dcol1.date_input(
