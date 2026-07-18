@@ -120,7 +120,34 @@ with st.sidebar:
         _reset_all()
 
     dt_min, dt_max = events["event_date"].min().date(), events["event_date"].max().date()
-    dt_range = st.slider("日期範圍", dt_min, dt_max, (dt_min, dt_max))
+    st.session_state.setdefault("f_date_start", dt_min)
+    st.session_state.setdefault("f_date_end", dt_max)
+
+    # 按鈕必須在 date_input 元件「之前」設定 session_state，Streamlit 不允許
+    # 同一次 run 裡先建立 widget 再改它的 session_state（跟 v1 預設值按鈕同款陷阱）。
+    presets = {
+        "全部": (dt_min, dt_max),
+        "2025年": (max(dt_min, pd.Timestamp("2025-01-01").date()), min(dt_max, pd.Timestamp("2025-12-31").date())),
+        "2026年": (max(dt_min, pd.Timestamp("2026-01-01").date()), dt_max),
+        "近3個月": (max(dt_min, dt_max - pd.Timedelta(days=90)), dt_max),
+    }
+    preset_cols = st.columns(4)
+    for col, (label, (s, e)) in zip(preset_cols, presets.items()):
+        if col.button(label, width="stretch", key=f"preset_{label}"):
+            st.session_state["f_date_start"] = s
+            st.session_state["f_date_end"] = e
+
+    dcol1, dcol2 = st.columns(2)
+    date_start = dcol1.date_input(
+        "開始日期", min_value=dt_min, max_value=dt_max, key="f_date_start",
+    )
+    date_end = dcol2.date_input(
+        "結束日期", min_value=dt_min, max_value=dt_max, key="f_date_end",
+    )
+    if date_start > date_end:
+        st.warning("開始日期晚於結束日期，已自動互換。")
+        date_start, date_end = date_end, date_start
+    dt_range = (date_start, date_end)
 
     st.caption("以下每個因子門檻都可獨立調整，右側表格/圖表即時反映組合結果")
 
