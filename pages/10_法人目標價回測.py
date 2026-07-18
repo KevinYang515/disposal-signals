@@ -452,13 +452,29 @@ display_cols = {
     MKT_ADJ_COL: f"D{horizon}超額報酬%",
     "v1_candidate": "v1候選",
 }
+# 螢幕窄的時候欄位太多要左右滑很難滑，預設只顯示核心欄位，其他用下面的
+# 多選框自己加回來——欄位變少，表格自然變窄，不用一直滑。
+CORE_COLS = ["事件日", "代號", "公司", f"D{horizon}淨報酬%", "v1候選"]
+optional_cols = [c for c in display_cols.values() if c not in CORE_COLS]
+# 換了持有天數後，欄位名稱(如 D3淨報酬%)會變成 D5淨報酬% 之類，
+# 舊的已選欄位可能已經不在目前選項裡——multiselect 遇到這種殘留值會
+# 直接丟例外(跟 date_input/slider 同款陷阱)，選取前先濾掉。
+st.session_state.setdefault("f_visible_cols", [])
+st.session_state["f_visible_cols"] = [c for c in st.session_state["f_visible_cols"] if c in optional_cols]
+extra_cols = st.multiselect(
+    "還要顯示哪些欄位？（預設只顯示核心欄位，螢幕窄時欄位越少越好滑）",
+    optional_cols, key="f_visible_cols",
+)
+
+show_cols = CORE_COLS + [c for c in extra_cols if c not in CORE_COLS]
 show = filtered[list(display_cols.keys())].rename(columns=display_cols).copy()
 show["事件日"] = show["事件日"].dt.date
 numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤",
                 f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", f"D{horizon}超額報酬%"]
 for c in numeric_cols:
-    show[c] = show[c].round(2)
-show = show.sort_values("事件日", ascending=False)
+    if c in show.columns:
+        show[c] = show[c].round(2)
+show = show[show_cols].sort_values("事件日", ascending=False)
 
 st.dataframe(
     show,
