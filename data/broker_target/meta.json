@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-07-18T13:01:12",
+  "source": "D:\\stock\\tw-quant-research\\outputs\\data\\enriched_ticker_day.csv",
+  "n_rows": 1681,
+  "date_min": "2026-01-02",
+  "date_max": "2026-07-17",
+  "n_v1_candidates": 50,
+  "n_pending": 22,
+  "status": "testing",
+  "notes": "研究/紙上模擬資料，非即時交易訊號。OCR raw whole-row QA 293/301=97.34%，低於專案自訂99%品質門檻；ticker/company撞號bug已修復並經使用者逐筆確認。v1候選條件與回測結果詳見 D:\\stock\\tw-quant-research\\HANDOFF_2026-07-18_CODEX_UPDATE.md"
+}
