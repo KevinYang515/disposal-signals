@@ -452,21 +452,6 @@ display_cols = {
     MKT_ADJ_COL: f"D{horizon}超額報酬%",
     "v1_candidate": "v1候選",
 }
-# 螢幕窄的時候欄位太多要左右滑很難滑，預設只顯示核心欄位，其他用下面的
-# 多選框自己加回來——欄位變少，表格自然變窄，不用一直滑。
-CORE_COLS = ["事件日", "代號", "公司", f"D{horizon}淨報酬%", "v1候選"]
-optional_cols = [c for c in display_cols.values() if c not in CORE_COLS]
-# 換了持有天數後，欄位名稱(如 D3淨報酬%)會變成 D5淨報酬% 之類，
-# 舊的已選欄位可能已經不在目前選項裡——multiselect 遇到這種殘留值會
-# 直接丟例外(跟 date_input/slider 同款陷阱)，選取前先濾掉。
-st.session_state.setdefault("f_visible_cols", [])
-st.session_state["f_visible_cols"] = [c for c in st.session_state["f_visible_cols"] if c in optional_cols]
-extra_cols = st.multiselect(
-    "還要顯示哪些欄位？（預設只顯示核心欄位，螢幕窄時欄位越少越好滑）",
-    optional_cols, key="f_visible_cols",
-)
-
-show_cols = CORE_COLS + [c for c in extra_cols if c not in CORE_COLS]
 show = filtered[list(display_cols.keys())].rename(columns=display_cols).copy()
 show["事件日"] = show["事件日"].dt.date
 numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤",
@@ -474,14 +459,43 @@ numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報�
 for c in numeric_cols:
     if c in show.columns:
         show[c] = show[c].round(2)
-show = show[show_cols].sort_values("事件日", ascending=False)
+show = show.sort_values("事件日", ascending=False)
 
-st.dataframe(
-    show,
-    width="stretch",
-    hide_index=True,
-    height=520,
+# 用原生 HTML 表格 + overflow-x:auto 取代 Streamlit 內建的 dataframe 元件：
+# st.dataframe 是 canvas 畫的自訂格線元件，觸控板兩指左右滑常常滑不動；
+# 原生表格用瀏覽器內建的橫向捲動，觸控板/觸控螢幕都支援得比較好，
+# 前兩欄(事件日/代號)加 sticky 固定，橫向捲動時還能對照是哪一筆。
+html_table = show.fillna("—").to_html(index=False, escape=True, border=0, classes="event-table")
+st.markdown(
+    """
+    <style>
+    .event-table-wrap {
+        overflow-x: auto; overflow-y: auto; max-height: 560px;
+        border: 1px solid rgba(128,128,128,0.35); border-radius: 8px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .event-table { border-collapse: separate; border-spacing: 0; width: max-content;
+        min-width: 100%; font-size: 13px; }
+    .event-table th, .event-table td { padding: 6px 12px; white-space: nowrap;
+        text-align: right; border-bottom: 1px solid rgba(128,128,128,0.2); }
+    .event-table thead th { position: sticky; top: 0; background: var(--background-color);
+        font-weight: 600; z-index: 3; box-shadow: 0 1px 0 rgba(128,128,128,0.35); }
+    .event-table th:nth-child(1), .event-table td:nth-child(1) { text-align: left;
+        position: sticky; left: 0; min-width: 100px; background: var(--background-color); z-index: 2; }
+    .event-table th:nth-child(2), .event-table td:nth-child(2) { text-align: left;
+        position: sticky; left: 100px; min-width: 66px; background: var(--background-color); z-index: 2; }
+    .event-table thead th:nth-child(1), .event-table thead th:nth-child(2) { z-index: 4; }
+    .event-table td:nth-child(1), .event-table td:nth-child(2) { box-shadow: 1px 0 0 rgba(128,128,128,0.2); }
+    .event-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }
+    .event-table-wrap::-webkit-scrollbar-track { background: rgba(128,128,128,0.1); border-radius: 7px; }
+    .event-table-wrap::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.55); border-radius: 7px; }
+    .event-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.8); }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
+st.markdown(f'<div class="event-table-wrap">{html_table}</div>', unsafe_allow_html=True)
+st.caption(f"共 {len(show):,} 筆・事件日／代號兩欄橫向捲動時會固定在左邊方便對照。")
 
 csv_bytes = show.to_csv(index=False).encode("utf-8-sig")
 st.download_button("下載目前篩選結果 (CSV)", csv_bytes, file_name="broker_target_filtered.csv", mime="text/csv")
