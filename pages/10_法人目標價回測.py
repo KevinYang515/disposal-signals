@@ -83,6 +83,9 @@ if "filters_reset_token" not in st.session_state:
     st.session_state["filters_reset_token"] = 0
 
 
+NUMERIC_FILTER_KEYS = ("f_potential_min", "f_target_change_min", "f_prior20_max", "f_pre5_max")
+
+
 def _apply_preset(preset: dict):
     st.session_state["f_potential_min"] = preset["potential_min"]
     st.session_state["f_target_change_min"] = preset["target_change_min"]
@@ -94,6 +97,10 @@ def _apply_preset(preset: dict):
     st.session_state["f_exclude_pending"] = preset["exclude_pending"]
     st.session_state["f_brokers"] = []
     st.session_state["f_industries"] = []
+    # 滑桿旁邊的「直接輸入」數字欄位是獨立的 widget key，套用預設值時要一起同步，
+    # 不然按鈕改了滑桿，旁邊的輸入框卻還停在舊數字。
+    for k in NUMERIC_FILTER_KEYS:
+        st.session_state[f"{k}__input"] = st.session_state[k]
 
 
 def _reset_all():
@@ -126,6 +133,31 @@ def _clamp_state(key, default, lo, hi):
     st.session_state[key] = v
 
 
+def _synced_slider(label, key, lo, hi, step, help_text=None):
+    """滑桿 + 旁邊一個可以直接打字輸入的數字框，兩個互相同步（拉不準時可以直接輸入數字）。"""
+    input_key = f"{key}__input"
+    st.session_state.setdefault(input_key, st.session_state[key])
+    _clamp_state(input_key, st.session_state[key], lo, hi)
+
+    def _from_slider():
+        st.session_state[input_key] = st.session_state[key]
+
+    def _from_input():
+        v = st.session_state[input_key]
+        if v < lo:
+            v = lo
+        elif v > hi:
+            v = hi
+        st.session_state[input_key] = v
+        st.session_state[key] = v
+
+    scol, icol = st.columns([3, 2])
+    scol.slider(label, min_value=lo, max_value=hi, step=step, key=key,
+                on_change=_from_slider, help=help_text)
+    icol.number_input("直接輸入", min_value=lo, max_value=hi, step=step, key=input_key,
+                       on_change=_from_input, label_visibility="collapsed")
+
+
 with st.sidebar:
     st.subheader("自訂篩選")
     b1, b2 = st.columns(2)
@@ -148,19 +180,30 @@ with st.sidebar:
             return dt_min, dt_max
         return s, e
 
-    # 按鈕必須在 date_input 元件「之前」設定 session_state，Streamlit 不允許
-    # 同一次 run 裡先建立 widget 再改它的 session_state（跟 v1 預設值按鈕同款陷阱）。
-    presets = {
-        "全部": (dt_min, dt_max),
-        "2025年": _window(pd.Timestamp("2025-01-01").date(), pd.Timestamp("2025-12-31").date()),
-        "2026年": _window(pd.Timestamp("2026-01-01").date(), dt_max),
-        "近3個月": _window(dt_max - pd.Timedelta(days=90), dt_max),
-    }
-    preset_cols = st.columns(4)
-    for col, (label, (s, e)) in zip(preset_cols, presets.items()):
-        if col.button(label, width="stretch", key=f"preset_{label}"):
-            st.session_state["f_date_start"] = s
-            st.session_state["f_date_end"] = e
+    # 年份下拉選單：選項直接從資料實際涵蓋的年份算出來，不寫死。
+    # selectbox 的 on_change callback 會在整頁重跑「之前」先執行完，
+    # 所以可以放心在裡面改 f_date_start/f_date_end，widget渲染順序不是問題
+    # （跟按鈕那種要放在前面的限制不同）。
+    years_available = sorted(pd.to_datetime(events["event_date"]).dt.year.unique().tolist())
+    year_options = ["全部"] + [str(y) for y in years_available]
+
+    def _on_year_change():
+        choice = st.session_state["f_year_select"]
+        if choice == "全部":
+            s, e = dt_min, dt_max
+        else:
+            y = int(choice)
+            s, e = _window(pd.Timestamp(f"{y}-01-01").date(), pd.Timestamp(f"{y}-12-31").date())
+        st.session_state["f_date_start"] = s
+        st.session_state["f_date_end"] = e
+
+    st.session_state.setdefault("f_year_select", "全部")
+    st.selectbox("年份快速選擇", year_options, key="f_year_select", on_change=_on_year_change)
+
+    if st.button("近3個月", width="stretch"):
+        s, e = _window(dt_max - pd.Timedelta(days=90), dt_max)
+        st.session_state["f_date_start"] = s
+        st.session_state["f_date_end"] = e
 
     # 按鈕可能剛剛塞了新值，widget渲染前一定要再夾一次範圍，才能保證
     # 不管值是從舊session_state殘留、還是按鈕剛設的，都不會超出目前的[dt_min,dt_max]。
@@ -185,35 +228,33 @@ with st.sidebar:
 
     # 注意：widget 一旦有 key，就不能再同時傳 value=，否則 Streamlit 會噴例外。
     # 改用 setdefault 先確保 session_state 有初始值，widget 只靠 key 讀寫。
+    st.caption("拉不準可以直接在右邊的框輸入數字")
+
     pot_lo, pot_hi = float(min(float(events["median_potential_pct"].min()), 0)), round(float(events["median_potential_pct"].max()), 0)
     _clamp_state("f_potential_min", 0.0, pot_lo, pot_hi)
-    potential_min = st.slider(
-        "Potential 中位數 ≥ (%)", min_value=pot_lo, max_value=pot_hi,
-        step=1.0, key="f_potential_min",
-    )
+    _synced_slider("Potential 中位數 ≥ (%)", "f_potential_min", pot_lo, pot_hi, 1.0)
+    potential_min = st.session_state["f_potential_min"]
 
     tc_lo, tc_hi = round(float(events["median_target_change_pct"].min()), 0), round(float(events["median_target_change_pct"].max()), 0)
     _clamp_state("f_target_change_min", tc_lo, tc_lo, tc_hi)
-    target_change_min = st.slider(
-        "目標價調整中位數 ≥ (%)", min_value=tc_lo, max_value=tc_hi,
-        step=1.0, key="f_target_change_min",
-    )
+    _synced_slider("目標價調整中位數 ≥ (%)", "f_target_change_min", tc_lo, tc_hi, 1.0)
+    target_change_min = st.session_state["f_target_change_min"]
 
     p20_max_data = int(events["prior_report_broker_events_20td"].max())
     _clamp_state("f_prior20_max", p20_max_data, 0, p20_max_data)
-    prior20_max = st.slider(
-        "前20交易日內報告數 ≤", min_value=0, max_value=p20_max_data,
-        step=1, key="f_prior20_max",
-        help="0＝該事件是近期第一份法人報告（新資訊）",
+    _synced_slider(
+        "前20交易日內報告數 ≤", "f_prior20_max", 0, p20_max_data, 1,
+        help_text="0＝該事件是近期第一份法人報告（新資訊）",
     )
+    prior20_max = st.session_state["f_prior20_max"]
 
     pre5_lo, pre5_hi = round(float(events["pre_return_5d_pct"].min()), 0), round(float(events["pre_return_5d_pct"].max()), 0)
     _clamp_state("f_pre5_max", pre5_hi, pre5_lo, pre5_hi)
-    pre5_max = st.slider(
-        "前5日累積報酬 < (%)", min_value=pre5_lo, max_value=pre5_hi,
-        step=1.0, key="f_pre5_max",
-        help="已大漲的股票排除，屬「減碼/避開」條件，不是放空訊號",
+    _synced_slider(
+        "前5日累積報酬 < (%)", "f_pre5_max", pre5_lo, pre5_hi, 1.0,
+        help_text="已大漲的股票排除，屬「減碼/避開」條件，不是放空訊號",
     )
+    pre5_max = st.session_state["f_pre5_max"]
 
     st.session_state.setdefault("f_positive_only", True)
     st.session_state.setdefault("f_upgrade_only", False)
