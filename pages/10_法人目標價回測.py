@@ -60,7 +60,7 @@ except FileNotFoundError:
     )
     st.stop()
 
-st.title("🎯 法人目標價事件研究（D0）")
+st.title("🎯 法人目標價事件研究（D0-D8）")
 st.caption(
     f"上市＋上櫃個股・券商評等／目標價調整事件・"
     f"樣本 {events['event_date'].min().date()} ~ {events['event_date'].max().date()}・"
@@ -166,9 +166,23 @@ with st.sidebar:
     broker_sel = st.multiselect("券商（符合任一即可）", brokers_all, key="f_brokers")
     industry_sel = st.multiselect("產業（符合任一即可）", industries_all, key="f_industries")
 
+    market_boards = sorted(events["market_board"].dropna().unique().tolist())
+    st.session_state.setdefault("f_market", [])
+    market_sel = st.multiselect("市場別（上市sii／上櫃otc）", market_boards, key="f_market")
+
     st.divider()
     cost_pct = st.number_input("假設來回成本 (%)", min_value=0.0, max_value=3.0, value=0.60, step=0.05,
-                                help="D0淨報酬＝D0毛報酬－此成本；未計滑價")
+                                help="淨報酬＝毛報酬－此成本（單次買賣，不隨持有天數累加）；未計滑價")
+    st.divider()
+    max_h = max(int(c.replace("open_to_d", "").replace("_close_pct", ""))
+                 for c in events.columns if c.startswith("open_to_d") and c.endswith("_close_pct"))
+    st.session_state.setdefault("f_horizon", 0)
+    horizon = st.select_slider(
+        "持有天數（事件日開盤進場，第N日收盤出場）", options=list(range(0, max_h + 1)),
+        key="f_horizon", format_func=lambda n: f"D{n}",
+    )
+    st.caption("D1-D8 為獨立計算的延伸（見 `_compute_multi_horizon_returns.py`），"
+               "方法已與 pipeline 原生 D0/D1/D3/D5 對照驗證誤差為 0，但未經 OCR 複核以外的額外人工複核。")
 
 
 def apply_filters(df):
@@ -190,11 +204,17 @@ def apply_filters(df):
         d = d[d["brokers"].fillna("").str.contains(pattern, regex=True)]
     if industry_sel:
         d = d[d["industry"].isin(industry_sel)]
+    if market_sel:
+        d = d[d["market_board"].isin(market_sel)]
     return d
 
 
 filtered = apply_filters(events).copy()
-filtered["net_d0_return_pct"] = filtered["open_to_d0_close_pct"] - cost_pct
+
+GROSS_COL = f"open_to_d{horizon}_close_pct"
+NET_COL = f"net_d{horizon}_return_pct"
+MKT_ADJ_COL = f"market_adjusted_open_to_d{horizon}_close_pct"
+filtered[NET_COL] = filtered[GROSS_COL] - cost_pct
 
 is_v1_default = all(
     st.session_state.get(k) == v
@@ -207,47 +227,89 @@ is_v1_default = all(
 )
 
 # ── 摘要指標 ─────────────────────────────────────────────
-st.subheader("摘要（依左側篩選條件即時計算）")
+st.subheader(f"摘要：D{horizon}（依左側篩選條件即時計算）")
 if is_v1_default:
     st.caption("目前套用的是 v1 研究預設值 ⭐")
 
-scored = filtered[filtered["open_to_d0_close_pct"].notna()]
+scored = filtered[filtered[GROSS_COL].notna()]
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("符合篩選筆數", f"{len(filtered):,}")
 if len(scored):
-    c2.metric("D0 毛報酬均值", f"{scored['open_to_d0_close_pct'].mean():.2f}%")
-    c3.metric("D0 淨報酬均值", f"{scored['net_d0_return_pct'].mean():.2f}%")
-    win = (scored["net_d0_return_pct"] > 0).mean() * 100
+    c2.metric(f"D{horizon} 毛報酬均值", f"{scored[GROSS_COL].mean():.2f}%")
+    c3.metric(f"D{horizon} 淨報酬均值", f"{scored[NET_COL].mean():.2f}%")
+    win = (scored[NET_COL] > 0).mean() * 100
     c4.metric("淨報酬勝率", f"{win:.1f}%")
+    mkt_scored = filtered[filtered[MKT_ADJ_COL].notna()]
+    c5.metric(
+        "超額報酬均值（扣加權指數）",
+        f"{mkt_scored[MKT_ADJ_COL].mean():.2f}%" if len(mkt_scored) else "—",
+        help="個股毛報酬 － 同期加權指數(TAIEX)開盤到收盤報酬。上櫃股嚴格說該扣櫃買指數，"
+             "但finlab目前查無櫃買開盤指數資料集，暫時統一用加權指數計算，上櫃股的超額報酬解讀請保守。",
+    )
 else:
-    c2.metric("D0 毛報酬均值", "—")
-    c3.metric("D0 淨報酬均值", "—")
+    c2.metric(f"D{horizon} 毛報酬均值", "—")
+    c3.metric(f"D{horizon} 淨報酬均值", "—")
     c4.metric("淨報酬勝率", "—")
+    c5.metric("超額報酬均值（扣加權指數）", "—")
 
 if 0 < len(scored) < 30:
     st.info(f"⚠️ 目前有結算報酬的樣本只有 {len(scored)} 筆，統計量不穩定，僅供參考。")
 
 st.divider()
 
-# ── 每日等權籃子淨報酬（目前篩選條件） ────────────────────
-st.subheader("每日等權籃子淨報酬（依目前篩選條件）")
-basket_src = filtered[filtered["net_d0_return_pct"].notna()]
+# ── 持有天數輪廓（D0-D8，不受右側單一持有天數選擇影響） ──
+st.subheader("持有天數輪廓：報酬如何隨持有天數變化（依目前篩選條件）")
+profile_rows = []
+for n in range(0, max_h + 1):
+    g, m = f"open_to_d{n}_close_pct", f"market_adjusted_open_to_d{n}_close_pct"
+    gs = filtered[filtered[g].notna()][g]
+    ms = filtered[filtered[m].notna()][m] if m in filtered.columns else pd.Series(dtype=float)
+    profile_rows.append({
+        "持有天數": n,
+        "毛報酬均值%": gs.mean() if len(gs) else None,
+        "淨報酬均值%": (gs.mean() - cost_pct) if len(gs) else None,
+        "超額報酬均值%": ms.mean() if len(ms) else None,
+        "樣本數": len(gs),
+    })
+profile = pd.DataFrame(profile_rows)
+if profile["樣本數"].max() > 0:
+    prof_long = profile.melt(
+        id_vars=["持有天數", "樣本數"], value_vars=["毛報酬均值%", "淨報酬均值%", "超額報酬均值%"],
+        var_name="指標", value_name="報酬%",
+    )
+    chart = alt.Chart(prof_long).mark_line(point=True).encode(
+        x=alt.X("持有天數:O", title="持有天數 (D0-D8)"),
+        y=alt.Y("報酬%:Q", title="平均報酬 (%)"),
+        color=alt.Color("指標:N", title=None),
+        tooltip=["持有天數:O", "指標:N", alt.Tooltip("報酬%:Q", format=".2f"), "樣本數:Q"],
+    ).properties(height=320)
+    st.altair_chart(chart, width="stretch")
+    st.dataframe(profile.round(2), width="stretch", hide_index=True)
+    st.caption("各持有天數樣本數可能不同（越晚結算的天數，近期事件還沒到那天，會被排除為pending），比較長天期時留意樣本是否偏向較舊事件。")
+else:
+    st.info("目前篩選條件下沒有已結算的事件可畫輪廓圖。")
+
+st.divider()
+
+# ── 每日等權籃子淨報酬（目前篩選條件與所選持有天數） ──────
+st.subheader(f"每日等權籃子淨報酬：D{horizon}（依目前篩選條件）")
+basket_src = filtered[filtered[NET_COL].notna()]
 if len(basket_src):
     daily = (
-        basket_src.groupby("event_date")["net_d0_return_pct"]
+        basket_src.groupby("event_date")[NET_COL]
         .mean()
         .reset_index()
         .sort_values("event_date")
     )
-    daily["cum_pct"] = daily["net_d0_return_pct"].cumsum()
+    daily["cum_pct"] = daily[NET_COL].cumsum()
     base = alt.Chart(daily).encode(x=alt.X("event_date:T", title="事件日"))
     bar = base.mark_bar().encode(
-        y=alt.Y("net_d0_return_pct:Q", title="當日籃子淨報酬 (%)"),
+        y=alt.Y(f"{NET_COL}:Q", title="當日籃子淨報酬 (%)"),
         color=alt.condition(
-            "datum.net_d0_return_pct >= 0", alt.value(UP_COLOR), alt.value(DOWN_COLOR)
+            f"datum.{NET_COL} >= 0", alt.value(UP_COLOR), alt.value(DOWN_COLOR)
         ),
-        tooltip=["event_date:T", alt.Tooltip("net_d0_return_pct:Q", format=".2f")],
+        tooltip=["event_date:T", alt.Tooltip(f"{NET_COL}:Q", format=".2f")],
     )
     line = base.mark_line(color="#60a5fa").encode(
         y=alt.Y("cum_pct:Q", title="累積淨報酬 (%)"),
@@ -264,13 +326,14 @@ else:
 st.divider()
 
 # ── 事件明細表 ───────────────────────────────────────────
-st.subheader("事件明細")
+st.subheader(f"事件明細：D{horizon}")
 
 display_cols = {
     "event_date": "事件日",
     "ticker": "代號",
     "company": "公司",
     "industry": "產業",
+    "market_board": "市場別",
     "brokers": "券商",
     "positive_event_flag": "偏多",
     "upgrade_event_flag": "評等上調",
@@ -280,13 +343,16 @@ display_cols = {
     "pre_return_5d_pct": "前5日報酬%",
     "event_open": "開盤",
     "event_close": "收盤",
-    "open_to_d0_close_pct": "D0毛報酬%",
-    "net_d0_return_pct": "D0淨報酬%",
+    GROSS_COL: f"D{horizon}毛報酬%",
+    NET_COL: f"D{horizon}淨報酬%",
+    MKT_ADJ_COL: f"D{horizon}超額報酬%",
     "v1_candidate": "v1候選",
 }
 show = filtered[list(display_cols.keys())].rename(columns=display_cols).copy()
 show["事件日"] = show["事件日"].dt.date
-for c in ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤", "D0毛報酬%", "D0淨報酬%"]:
+numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤",
+                f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", f"D{horizon}超額報酬%"]
+for c in numeric_cols:
     show[c] = show[c].round(2)
 show = show.sort_values("事件日", ascending=False)
 
