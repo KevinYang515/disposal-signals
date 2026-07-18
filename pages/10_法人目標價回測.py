@@ -36,8 +36,12 @@ V1_PRESET = dict(
 )
 
 
+# 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
+DATA_VERSION = "v3-d0_d8_market_board"
+
+
 @st.cache_data(ttl=3600)
-def load_data():
+def load_data(_version):
     ev = pd.read_csv(
         os.path.join(DATA_DIR, "events.csv"),
         parse_dates=["event_date"],
@@ -52,7 +56,7 @@ def load_data():
 
 
 try:
-    events, meta, brokers_all, industries_all = load_data()
+    events, meta, brokers_all, industries_all = load_data(DATA_VERSION)
 except FileNotFoundError:
     st.error(
         "找不到資料檔，請先在 tw-quant-research 執行 "
