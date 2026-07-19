@@ -42,6 +42,7 @@ try:
     concentration = load_csv("attribution_concentration_relative_change.csv", DATA_VERSION)
     weekly = load_csv("weekly_whale_movements.csv", DATA_VERSION)
     history = load_csv("strategy_backtest_history.csv", DATA_VERSION)
+    jump_history = load_csv("jump_path_history.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -79,8 +80,8 @@ RETURN_COLUMNS = {
     "median_120d_pct": "120日中位數報酬(%)", "win_rate_120d_pct": "120日勝率(%)",
 }
 
-tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_method = st.tabs([
-    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "策略定義",
+tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_jump, tab_method = st.tabs([
+    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "單雙週跳升研究", "策略定義",
 ])
 
 with tab_signal:
@@ -310,6 +311,62 @@ with tab_factor:
     con_view = con_view.drop(columns=["strategy", "base_concentration_band", "relative_change_band"])
     con_view = con_view.rename(columns={"相對大戶變化": "相對大戶變化區間", **RETURN_COLUMNS})
     st.dataframe(round_numbers(con_view), use_container_width=True, hide_index=True)
+
+with tab_jump:
+    st.subheader("單週／兩週／四週大戶跳升：歷史互動研究")
+    st.caption("可自行調整大戶跳升與『跳升前未流失』條件。這是歷史研究，不代表保證的交易建議；訊號日後以次一交易日進場計算。")
+    jump_history["signal_date"] = pd.to_datetime(jump_history["signal_date"])
+    j1, j2, j3, j4 = st.columns(4)
+    jump_type = j1.selectbox("大戶路徑", ["單週大幅跳升", "兩週累積跳升", "四週淨累積"], key="jump_type")
+    jump_strategy = j2.selectbox("價格結構", ["全部"] + sorted(jump_history["strategy"].unique().tolist()),
+                                 format_func=lambda x: "全部" if x == "全部" else strategy_labels.get(x, x), key="jump_strategy")
+    jump_min = j3.slider("大戶增加至少（百分點）", 0.0, 8.0, 1.0, 0.25, key="jump_min")
+    base_cap = j4.slider("跳升前大戶比例上限（%）", 0.0, 100.0, 40.0, 1.0, key="jump_base")
+    allowed_loss = st.slider("跳升前3週相對4週前最多允許流失（百分點）", 0.0, 5.0, 0.0, 0.25, key="jump_loss")
+    jump_view = jump_history.copy()
+    if jump_strategy != "全部":
+        jump_view = jump_view[jump_view["strategy"] == jump_strategy]
+    if jump_type == "單週大幅跳升":
+        jump_view = jump_view[(jump_view["whale_lag1_pct"] <= base_cap)
+                              & (jump_view["單週大戶變化(百分點)"] >= jump_min)
+                              & (jump_view["跳升前3週最低大戶比例(%)"] >= jump_view["whale_lag4_pct"] - allowed_loss)]
+    elif jump_type == "兩週累積跳升":
+        jump_view = jump_view[(jump_view["whale_lag2_pct"] <= base_cap)
+                              & (jump_view["兩週大戶變化(百分點)"] >= jump_min)
+                              & (jump_view["單週大戶變化(百分點)"] >= -allowed_loss)]
+    else:
+        jump_view = jump_view[(jump_view["whale_lag4_pct"] <= base_cap)
+                              & (jump_view["四週大戶變化(百分點)"] >= jump_min)]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("歷史訊號數", f"{len(jump_view):,}")
+    for metric, col, label in [(k2, "excess_0050_5d", "5日平均超額"),
+                               (k3, "excess_0050_10d", "10日平均超額"),
+                               (k4, "return_20d", "20日平均報酬")]:
+        value = jump_view[col].mean() * 100 if len(jump_view) and col in jump_view else None
+        metric.metric(label, f"{value:.2f}%" if value is not None and pd.notna(value) else "-")
+    jump_show = jump_view.rename(columns={
+        "signal_date": "訊號資料日", "entry_date": "回測進場日", "stock_id": "代號", "strategy": "價格結構代碼",
+        "價格型態": "價格結構", "signal_close": "訊號收盤價", "entry_close": "回測進場價",
+        "whale_lag4_pct": "4週前大戶比例(%)", "whale_lag3_pct": "3週前大戶比例(%)",
+        "whale_lag2_pct": "2週前大戶比例(%)", "whale_lag1_pct": "1週前大戶比例(%)",
+        "whale_current_pct": "本週大戶比例(%)", "selected_lot_bucket": "固定大戶級距(張)",
+        "prior_20d_return_pct": "訊號前20日股價報酬(%)", "return_5d": "進場後5日報酬(%)",
+        "return_10d": "進場後10日報酬(%)", "return_20d": "進場後20日報酬(%)",
+        "excess_0050_5d": "5日相對0050超額(%)", "excess_0050_10d": "10日相對0050超額(%)",
+    }).copy()
+    pct_cols = [c for c in ["進場後5日報酬(%)", "進場後10日報酬(%)", "進場後20日報酬(%)",
+                              "5日相對0050超額(%)", "10日相對0050超額(%)"] if c in jump_show]
+    for col in pct_cols:
+        jump_show[col] = jump_show[col] * 100
+    jump_cols = ["訊號資料日", "回測進場日", "代號", "股票名稱", "價格結構", "訊號收盤價", "回測進場價",
+                 "4週前大戶比例(%)", "跳升前3週最低大戶比例(%)", "單週大戶變化(百分點)",
+                 "兩週大戶變化(百分點)", "四週大戶變化(百分點)", "單週相對變化(%)", "兩週相對變化(%)",
+                 "進場後5日報酬(%)", "5日相對0050超額(%)", "進場後10日報酬(%)",
+                 "10日相對0050超額(%)", "進場後20日報酬(%)"]
+    st.dataframe(round_numbers(jump_show[[c for c in jump_cols if c in jump_show]]), use_container_width=True,
+                 hide_index=True, height=520)
+    st.download_button("下載目前篩選的歷史資料 CSV", round_numbers(jump_show).to_csv(index=False).encode("utf-8-sig"),
+                       "whale_jump_path_history.csv", "text/csv")
 
 with tab_method:
     st.markdown("""
