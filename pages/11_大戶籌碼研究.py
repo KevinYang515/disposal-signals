@@ -371,7 +371,7 @@ with tab_jump:
 
 with tab_auto:
     st.subheader("自動策略搜尋：跨期驗證後的候選")
-    st.caption("先用 2017–2021 選條件，再以 2022–2023 與 2024–2025 驗證。僅保留兩段樣本外皆為正超額、且最終驗證勝率至少 45% 的組合。這可降低過度擬合，但不代表未來保證有效。")
+    st.caption("先只用 2017–2021 排名；再以 2022–2023 篩選。2024–2025 僅作未參與選模的最終檢驗，即使結果不佳也保留顯示。這可降低過度擬合，但不代表未來保證有效。")
     auto_view = auto_strategies.copy()
     auto_view["價格結構"] = auto_view["價格結構"].map(STRATEGY_LABELS).fillna(auto_view["價格結構"])
     auto_view = auto_view.rename(columns={
