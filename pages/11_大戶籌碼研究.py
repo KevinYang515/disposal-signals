@@ -46,6 +46,8 @@ try:
     auto_strategies = load_csv("whale_walkforward_robust_candidates.csv", DATA_VERSION)
     recommended_history = load_csv("recommended_strategy_history.csv", DATA_VERSION)
     recommended_current = load_csv("recommended_strategy_current.csv", DATA_VERSION)
+    relaxation = load_csv("recommended_strategy_relaxation_validation.csv", DATA_VERSION)
+    winner_loser = load_csv("recommended_strategy_winner_loser_attribution.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -140,6 +142,12 @@ with tab_recommended:
                  hide_index=True, height=520)
     st.download_button("下載推薦策略歷史資料 CSV", round_numbers(hist_show).to_csv(index=False).encode("utf-8-sig"),
                        "recommended_strategy_history.csv", "text/csv")
+    st.subheader("放寬條件的跨期驗證")
+    st.caption("僅『單週跳升門檻』可以考慮由 1.50pp 放寬至 1.00pp；允許跳升前流失或將原始大戶比例上限放寬到 60%，在近期表現明顯變差。")
+    st.dataframe(round_numbers(relaxation), use_container_width=True, hide_index=True)
+    st.subheader("贏過／落後0050案例歸因")
+    st.caption("比較嚴格基準下的贏家與輸家。流動性、訊號前價格強度與相對月線位置目前比四週大戶增幅更有區別性。")
+    st.dataframe(round_numbers(winner_loser), use_container_width=True, hide_index=True)
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
