@@ -49,6 +49,8 @@ try:
     relaxation = load_csv("recommended_strategy_relaxation_validation.csv", DATA_VERSION)
     winner_loser = load_csv("recommended_strategy_winner_loser_attribution.csv", DATA_VERSION)
     continuity = load_csv("four_week_continuity_validation.csv", DATA_VERSION)
+    broader_attribution = load_csv("broader_whale_factor_attribution.csv", DATA_VERSION)
+    broader_candidates = load_csv("broader_whale_multifactor_stage2.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -459,6 +461,23 @@ with tab_auto:
     st.dataframe(round_numbers(auto_view[[c for c in auto_cols if c in auto_view]]), use_container_width=True, hide_index=True)
     st.download_button("下載自動搜尋候選 CSV", round_numbers(auto_view).to_csv(index=False).encode("utf-8-sig"),
                        "whale_walkforward_robust_candidates.csv", "text/csv")
+    st.subheader("放大母體後的多因子候選")
+    st.caption("母體為60日突破＋單週大戶跳升至少0.75pp；再以流動性、突破前20日動能與月線位置做增量篩選。先用2017–2021排名、2022–2023篩選，最終期與2026僅供檢驗。")
+    broader_view = broader_candidates.rename(columns={
+        "單週跳升至少(pp)": "單週大戶增加至少(pp)", "跳升前允許流失(pp)": "跳升前允許流失(pp)",
+        "20日平均成交額至少": "20日平均成交額至少", "訊號前20日報酬至少(%)": "訊號前20日報酬至少(%)",
+        "相對月線至少(%)": "相對月線至少(%)", "訓練2017–2021_weekly": "訓練期每週等權超額(%)",
+        "驗證2022–2023_weekly": "第一驗證每週等權超額(%)", "最終2024–2025_weekly": "最終驗證每週等權超額(%)",
+        "監測2026_weekly": "2026每週等權超額(%)", "最終2024–2025_n": "最終驗證樣本數",
+        "最終2024–2025_win": "最終驗證勝過0050比例(%)", "監測2026_n": "2026已完成樣本數",
+    })
+    broader_cols = ["單週大戶增加至少(pp)", "原始大戶比例上限(%)", "跳升前允許流失(pp)", "20日平均成交額至少",
+                    "訊號前20日報酬至少(%)", "相對月線至少(%)", "訓練分數", "訓練期每週等權超額(%)",
+                    "第一驗證每週等權超額(%)", "最終驗證樣本數", "最終驗證每週等權超額(%)",
+                    "最終驗證勝過0050比例(%)", "2026已完成樣本數", "2026每週等權超額(%)"]
+    st.dataframe(round_numbers(broader_view[[c for c in broader_cols if c in broader_view]]), use_container_width=True, hide_index=True)
+    st.subheader("放大母體的因子歸因")
+    st.dataframe(round_numbers(broader_attribution), use_container_width=True, hide_index=True)
 
 with tab_method:
     st.markdown("""
