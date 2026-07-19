@@ -48,6 +48,7 @@ try:
     recommended_current = load_csv("recommended_strategy_current.csv", DATA_VERSION)
     relaxation = load_csv("recommended_strategy_relaxation_validation.csv", DATA_VERSION)
     winner_loser = load_csv("recommended_strategy_winner_loser_attribution.csv", DATA_VERSION)
+    continuity = load_csv("four_week_continuity_validation.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -148,6 +149,9 @@ with tab_recommended:
     st.subheader("贏過／落後0050案例歸因")
     st.caption("比較嚴格基準下的贏家與輸家。流動性、訊號前價格強度與相對月線位置目前比四週大戶增幅更有區別性。")
     st.dataframe(round_numbers(winner_loser), use_container_width=True, hide_index=True)
+    st.subheader("四週連續上升是否必要？")
+    st.caption("在相同的60日突破與10日相對0050超額框架下比較。結果顯示四週連續上升可作輔助確認，但不應是必要進場條件。")
+    st.dataframe(round_numbers(continuity), use_container_width=True, hide_index=True)
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
