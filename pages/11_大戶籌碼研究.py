@@ -44,6 +44,8 @@ try:
     history = load_csv("strategy_backtest_history.csv", DATA_VERSION)
     jump_history = load_csv("jump_path_history.csv", DATA_VERSION)
     auto_strategies = load_csv("whale_walkforward_robust_candidates.csv", DATA_VERSION)
+    recommended_history = load_csv("recommended_strategy_history.csv", DATA_VERSION)
+    recommended_current = load_csv("recommended_strategy_current.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -68,6 +70,8 @@ def round_numbers(df):
     out = df.copy()
     for col in out.select_dtypes(include="number").columns:
         out[col] = out[col].round(2)
+    for col in out.select_dtypes(include=["datetime", "datetimetz"]).columns:
+        out[col] = out[col].dt.strftime("%Y-%m-%d")
     return out
 
 
@@ -81,9 +85,61 @@ RETURN_COLUMNS = {
     "median_120d_pct": "120日中位數報酬(%)", "win_rate_120d_pct": "120日勝率(%)",
 }
 
-tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_jump, tab_auto, tab_method = st.tabs([
-    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "單雙週跳升研究", "自動策略搜尋", "策略定義",
+tab_recommended, tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_jump, tab_auto, tab_method = st.tabs([
+    "推薦策略", "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "單雙週跳升研究", "自動策略搜尋", "策略定義",
 ])
+
+with tab_recommended:
+    st.subheader("目前推薦的短期發動策略")
+    st.markdown("""
+**60日突破＋單週大戶跳升＋前期未流失**
+
+條件：股價突破 60 日高點；單週大戶持股增加至少 1.50 個百分點；跳升前大戶比例低於 40%；
+跳升前 3 週的大戶比例未低於 4 週前。研究持有期為 10 個交易日。
+""")
+    st.caption("條件由 2017–2021 選出、2022–2023 篩選，2024–2025 與 2026 只作後續監測。10日相對0050超額尚未扣交易成本。")
+    recommended_history["signal_date"] = pd.to_datetime(recommended_history["signal_date"])
+    recommended_history["entry_date"] = pd.to_datetime(recommended_history["entry_date"])
+    metrics = []
+    for label, start, end in [("2017–2021", "2017-01-01", "2021-12-31"), ("2022–2023", "2022-01-01", "2023-12-31"),
+                              ("2024–2025", "2024-01-01", "2025-12-31"), ("2026年至今", "2026-01-01", "2026-12-31")]:
+        x = recommended_history[recommended_history["signal_date"].between(start, end)].dropna(subset=["excess_0050_10d"])
+        weekly = x.groupby("signal_date")["excess_0050_10d"].mean() if len(x) else pd.Series(dtype=float)
+        metrics.append((label, len(x), weekly.mean() * 100 if len(weekly) else None))
+    metric_cols = st.columns(4)
+    for col, (label, count, excess) in zip(metric_cols, metrics):
+        col.metric(label, f"{excess:.2f}%" if excess is not None and pd.notna(excess) else "資料不足", f"{count} 筆完整10日樣本")
+    st.subheader("本期符合策略的標的")
+    current_show = recommended_current.rename(columns={
+        "signal_date": "訊號資料日", "entry_date": "預計進場日", "stock_id": "代號", "signal_close": "訊號收盤價",
+        "entry_close": "預計進場價", "whale_lag4_pct": "4週前大戶比例(%)", "whale_lag3_pct": "3週前大戶比例(%)",
+        "whale_lag2_pct": "2週前大戶比例(%)", "whale_lag1_pct": "1週前大戶比例(%)",
+        "whale_current_pct": "本週大戶比例(%)", "selected_lot_bucket": "固定大戶級距(張)",
+    })
+    if current_show.empty:
+        st.info("最新一期沒有符合此嚴格策略的標的。")
+    else:
+        st.dataframe(round_numbers(current_show), use_container_width=True, hide_index=True)
+    st.subheader("完整歷史訊號與後續結果")
+    hist_show = recommended_history.rename(columns={
+        "signal_date": "訊號資料日", "entry_date": "回測進場日", "stock_id": "代號", "signal_close": "訊號收盤價",
+        "entry_close": "回測進場價", "whale_lag4_pct": "4週前大戶比例(%)", "whale_lag3_pct": "3週前大戶比例(%)",
+        "whale_lag2_pct": "2週前大戶比例(%)", "whale_lag1_pct": "1週前大戶比例(%)",
+        "whale_current_pct": "本週大戶比例(%)", "selected_lot_bucket": "固定大戶級距(張)",
+        "return_5d": "進場後5日報酬(%)", "return_10d": "進場後10日報酬(%)", "return_20d": "進場後20日報酬(%)",
+        "excess_0050_5d": "5日相對0050超額(%)", "excess_0050_10d": "10日相對0050超額(%)",
+    }).copy()
+    for name in ["進場後5日報酬(%)", "進場後10日報酬(%)", "進場後20日報酬(%)", "5日相對0050超額(%)", "10日相對0050超額(%)"]:
+        if name in hist_show:
+            hist_show[name] = hist_show[name] * 100
+    recommended_cols = ["訊號資料日", "回測進場日", "代號", "股票名稱", "訊號收盤價", "回測進場價",
+                        "4週前大戶比例(%)", "單週大戶變化(百分點)", "跳升前3週最低大戶比例(%)",
+                        "進場後5日報酬(%)", "5日相對0050超額(%)", "進場後10日報酬(%)", "10日相對0050超額(%)",
+                        "進場後20日報酬(%)"]
+    st.dataframe(round_numbers(hist_show[[c for c in recommended_cols if c in hist_show]]), use_container_width=True,
+                 hide_index=True, height=520)
+    st.download_button("下載推薦策略歷史資料 CSV", round_numbers(hist_show).to_csv(index=False).encode("utf-8-sig"),
+                       "recommended_strategy_history.csv", "text/csv")
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
