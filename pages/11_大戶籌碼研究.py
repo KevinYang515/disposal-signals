@@ -43,6 +43,7 @@ try:
     weekly = load_csv("weekly_whale_movements.csv", DATA_VERSION)
     history = load_csv("strategy_backtest_history.csv", DATA_VERSION)
     jump_history = load_csv("jump_path_history.csv", DATA_VERSION)
+    auto_strategies = load_csv("whale_walkforward_robust_candidates.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -80,8 +81,8 @@ RETURN_COLUMNS = {
     "median_120d_pct": "120日中位數報酬(%)", "win_rate_120d_pct": "120日勝率(%)",
 }
 
-tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_jump, tab_method = st.tabs([
-    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "單雙週跳升研究", "策略定義",
+tab_signal, tab_weekly, tab_history, tab_validation, tab_factor, tab_jump, tab_auto, tab_method = st.tabs([
+    "最新候選", "每週大戶變動", "策略歷史回測", "跨期驗證", "因子歸因", "單雙週跳升研究", "自動策略搜尋", "策略定義",
 ])
 
 with tab_signal:
@@ -367,6 +368,26 @@ with tab_jump:
                  hide_index=True, height=520)
     st.download_button("下載目前篩選的歷史資料 CSV", round_numbers(jump_show).to_csv(index=False).encode("utf-8-sig"),
                        "whale_jump_path_history.csv", "text/csv")
+
+with tab_auto:
+    st.subheader("自動策略搜尋：跨期驗證後的候選")
+    st.caption("先用 2017–2021 選條件，再以 2022–2023 與 2024–2025 驗證。僅保留兩段樣本外皆為正超額、且最終驗證勝率至少 45% 的組合。這可降低過度擬合，但不代表未來保證有效。")
+    auto_view = auto_strategies.copy()
+    auto_view["價格結構"] = auto_view["價格結構"].map(STRATEGY_LABELS).fillna(auto_view["價格結構"])
+    auto_view = auto_view.rename(columns={
+        "增加門檻(百分點)": "大戶增加門檻(pp)", "原始比例上限(%)": "原始大戶比例上限(%)",
+        "跳升前允許流失(百分點)": "跳升前允許流失(pp)",
+        "訓練期2017–2021_n": "訓練樣本數", "訓練期2017–2021_weekly": "訓練期每週等權超額(%)",
+        "驗證期2022–2023_n": "第一驗證樣本數", "驗證期2022–2023_weekly": "第一驗證每週等權超額(%)",
+        "最終驗證2024–2025_n": "最終驗證樣本數", "最終驗證2024–2025_weekly": "最終驗證每週等權超額(%)",
+        "最終驗證2024–2025_median": "最終驗證中位超額(%)", "最終驗證2024–2025_win": "最終驗證勝過0050比例(%)",
+    })
+    auto_cols = ["價格結構", "大戶路徑", "大戶增加門檻(pp)", "原始大戶比例上限(%)", "跳升前允許流失(pp)", "穩健分數",
+                 "訓練樣本數", "訓練期每週等權超額(%)", "第一驗證樣本數", "第一驗證每週等權超額(%)",
+                 "最終驗證樣本數", "最終驗證每週等權超額(%)", "最終驗證中位超額(%)", "最終驗證勝過0050比例(%)"]
+    st.dataframe(round_numbers(auto_view[[c for c in auto_cols if c in auto_view]]), use_container_width=True, hide_index=True)
+    st.download_button("下載自動搜尋候選 CSV", round_numbers(auto_view).to_csv(index=False).encode("utf-8-sig"),
+                       "whale_walkforward_robust_candidates.csv", "text/csv")
 
 with tab_method:
     st.markdown("""
