@@ -9,7 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="大戶籌碼研究", page_icon="🐋", layout="wide")
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "whale_research"
-DATA_VERSION = "2026-07-19-v4"
+DATA_VERSION = "2026-07-20-v5"
 STRATEGY_LABELS = {
     "dip_10_20d_above_ma240": "多頭回檔承接", "dip_5_10d_above_ma240": "淺幅回檔承接",
     "ma20_reclaim_uptrend": "月線重新站回", "ma20_support_uptrend": "月線支撐",
@@ -111,8 +111,8 @@ with tab_recommended:
     for label, start, end in [("2017–2021", "2017-01-01", "2021-12-31"), ("2022–2023", "2022-01-01", "2023-12-31"),
                               ("2024–2025", "2024-01-01", "2025-12-31"), ("2026年至今", "2026-01-01", "2026-12-31")]:
         x = recommended_history[recommended_history["signal_date"].between(start, end)].dropna(subset=["excess_0050_10d"])
-        weekly = x.groupby("signal_date")["excess_0050_10d"].mean() if len(x) else pd.Series(dtype=float)
-        metrics.append((label, len(x), weekly.mean() * 100 if len(weekly) else None))
+        weekly_excess = x.groupby("signal_date")["excess_0050_10d"].mean() if len(x) else pd.Series(dtype=float)
+        metrics.append((label, len(x), weekly_excess.mean() * 100 if len(weekly_excess) else None))
     metric_cols = st.columns(4)
     for col, (label, count, excess) in zip(metric_cols, metrics):
         col.metric(label, f"{excess:.2f}%" if excess is not None and pd.notna(excess) else "資料不足", f"{count} 筆完整10日樣本")
@@ -156,6 +156,12 @@ with tab_recommended:
     st.subheader("四週連續上升是否必要？")
     st.caption("在相同的60日突破與10日相對0050超額框架下比較。結果顯示四週連續上升可作輔助確認，但不應是必要進場條件。")
     st.dataframe(round_numbers(continuity), use_container_width=True, hide_index=True)
+    st.subheader("推薦多因子候選的最佳持有期")
+    st.caption("目前只有固定持有10個交易日在四段期間皆維持正的每週等權超額；5日過短，15日以上跨期不穩。報酬尚未扣交易成本。")
+    st.dataframe(round_numbers(multifactor_horizon), use_container_width=True, hide_index=True)
+    st.subheader("推薦多因子候選的產業同步性驗證")
+    st.caption("產業同步在2017–2023有加分，但2024與2026可用樣本不足；目前只列為觀察因子，不列入硬性進場條件。")
+    st.dataframe(round_numbers(industry_sync), use_container_width=True, hide_index=True)
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
@@ -480,12 +486,6 @@ with tab_auto:
     st.dataframe(round_numbers(broader_view[[c for c in broader_cols if c in broader_view]]), use_container_width=True, hide_index=True)
     st.subheader("放大母體的因子歸因")
     st.dataframe(round_numbers(broader_attribution), use_container_width=True, hide_index=True)
-    st.subheader("多因子候選的最佳持有期")
-    st.caption("目前只有固定持有10個交易日在四段期間皆維持正的每週等權超額；5日過短，15日以上跨期不穩。報酬尚未扣交易成本。")
-    st.dataframe(round_numbers(multifactor_horizon), use_container_width=True, hide_index=True)
-    st.subheader("產業同步性驗證")
-    st.caption("產業同步在2017–2023有加分，但2024與2026可用樣本不足；目前只列為觀察因子，不列入硬性進場條件。")
-    st.dataframe(round_numbers(industry_sync), use_container_width=True, hide_index=True)
 
 with tab_method:
     st.markdown("""
