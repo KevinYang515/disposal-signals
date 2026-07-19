@@ -51,6 +51,8 @@ try:
     continuity = load_csv("four_week_continuity_validation.csv", DATA_VERSION)
     broader_attribution = load_csv("broader_whale_factor_attribution.csv", DATA_VERSION)
     broader_candidates = load_csv("broader_whale_multifactor_stage2.csv", DATA_VERSION)
+    multifactor_horizon = load_csv("multifactor_holding_horizon_validation.csv", DATA_VERSION)
+    industry_sync = load_csv("whale_industry_sync_validation.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -478,6 +480,12 @@ with tab_auto:
     st.dataframe(round_numbers(broader_view[[c for c in broader_cols if c in broader_view]]), use_container_width=True, hide_index=True)
     st.subheader("放大母體的因子歸因")
     st.dataframe(round_numbers(broader_attribution), use_container_width=True, hide_index=True)
+    st.subheader("多因子候選的最佳持有期")
+    st.caption("目前只有固定持有10個交易日在四段期間皆維持正的每週等權超額；5日過短，15日以上跨期不穩。報酬尚未扣交易成本。")
+    st.dataframe(round_numbers(multifactor_horizon), use_container_width=True, hide_index=True)
+    st.subheader("產業同步性驗證")
+    st.caption("產業同步在2017–2023有加分，但2024與2026可用樣本不足；目前只列為觀察因子，不列入硬性進場條件。")
+    st.dataframe(round_numbers(industry_sync), use_container_width=True, hide_index=True)
 
 with tab_method:
     st.markdown("""
