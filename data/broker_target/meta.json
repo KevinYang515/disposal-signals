@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-07-20T00:42:42",
+  "generated_at": "2026-07-20T19:56:41",
   "source": "D:\\stock\\tw-quant-research\\work\\optimization_2025\\enriched\\enriched_ticker_day.csv",
-  "n_rows": 2851,
+  "n_rows": 3322,
   "date_min": "2025-01-02",
-  "date_max": "2026-07-17",
-  "n_v1_candidates": 68,
-  "n_pending": 1,
+  "date_max": "2026-07-20",
+  "n_v1_candidates": 71,
+  "n_pending": 17,
   "status": "testing",
   "max_horizon_days": 8,
   "notes": "研究/紙上模擬資料，非即時交易訊號。OCR raw whole-row QA 293/301=97.34%，低於專案自訂99%品質門檻；ticker/company撞號bug已修復並經使用者逐筆確認。2025年部分來自獨立的擴充enrichment pipeline(work/optimization_2025)，跟主要2026資料集共用同一份已修正的原始事件檔，但市場面板與enrichment是分開跑的，不覆寫主要2026輸出。D1-D8持有期報酬為獨立計算，非原始pipeline輸出（方法已與pipeline之D0/D1/D3/D5對照驗證誤差為0）。v1候選條件與回測結果詳見 D:\\stock\\tw-quant-research\\HANDOFF_2026-07-18_CODEX_UPDATE.md"

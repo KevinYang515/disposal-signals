@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v6-march2025_added_0719"
+DATA_VERSION = "v7-20260720-pending-visible"
 
 
 @st.cache_data(ttl=3600)
@@ -115,7 +115,7 @@ def _reset_all():
             positive_only=False,
             upgrade_only=False,
             tradable_only=False,
-            exclude_pending=True,
+            exclude_pending=False,
         )
     )
 
@@ -259,7 +259,10 @@ with st.sidebar:
     st.session_state.setdefault("f_positive_only", True)
     st.session_state.setdefault("f_upgrade_only", False)
     st.session_state.setdefault("f_tradable_only", True)
-    st.session_state.setdefault("f_exclude_pending", True)
+    # Keep the newest events visible in the detail table.  They have no D0-D8
+    # outcome yet, but are explicitly labelled pending; the v1 preset still
+    # excludes them for scored-strategy views.
+    st.session_state.setdefault("f_exclude_pending", False)
     positive_only = st.checkbox("只看偏多事件", key="f_positive_only")
     upgrade_only = st.checkbox("只看評等上調", key="f_upgrade_only")
     tradable_only = st.checkbox("只看開盤可成交", key="f_tradable_only")
