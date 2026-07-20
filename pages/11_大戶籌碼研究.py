@@ -9,7 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="大戶籌碼研究", page_icon="🐋", layout="wide")
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "whale_research"
-DATA_VERSION = "2026-07-20-v5"
+DATA_VERSION = "2026-07-20-v6"
 STRATEGY_LABELS = {
     "dip_10_20d_above_ma240": "多頭回檔承接", "dip_5_10d_above_ma240": "淺幅回檔承接",
     "ma20_reclaim_uptrend": "月線重新站回", "ma20_support_uptrend": "月線支撐",
@@ -55,6 +55,7 @@ try:
     industry_sync = load_csv("whale_industry_sync_validation.csv", DATA_VERSION)
     relative_liquidity = load_csv("relative_liquidity_percentile_validation.csv", DATA_VERSION)
     relative_liquidity_market = load_csv("relative_liquidity_market_regime_validation.csv", DATA_VERSION)
+    factor_ablation = load_csv("relaxed_whale_factor_ablation.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -171,6 +172,10 @@ with tab_recommended:
     st.subheader("相對流動性與市場環境的交叉驗證")
     st.caption("候選強化條件：相對流動性前30%且0050近20日上漲。四段期間均為正超額，但近年樣本較少，暫不列為硬性條件。")
     st.dataframe(round_numbers(relative_liquidity_market), use_container_width=True, hide_index=True)
+
+    st.subheader("放寬條件後：哪些因子真正有增益？")
+    st.caption("先以寬鬆母體檢驗單一因子，再從相同的大戶基準逐步加回動能、均線與流動性。請以四段期間是否一致、以及樣本數是否足夠判讀，不能只看單一年度。")
+    st.dataframe(round_numbers(factor_ablation), use_container_width=True, hide_index=True, height=620)
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
