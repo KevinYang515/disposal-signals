@@ -53,6 +53,7 @@ try:
     broader_candidates = load_csv("broader_whale_multifactor_stage2.csv", DATA_VERSION)
     multifactor_horizon = load_csv("multifactor_holding_horizon_validation.csv", DATA_VERSION)
     industry_sync = load_csv("whale_industry_sync_validation.csv", DATA_VERSION)
+    relative_liquidity = load_csv("relative_liquidity_percentile_validation.csv", DATA_VERSION)
 except FileNotFoundError:
     st.error("找不到大戶研究資料。請先執行 export_whale_research_to_site.py。")
     st.stop()
@@ -162,6 +163,9 @@ with tab_recommended:
     st.subheader("推薦多因子候選的產業同步性驗證")
     st.caption("產業同步在2017–2023有加分，但2024與2026可用樣本不足；目前只列為觀察因子，不列入硬性進場條件。")
     st.dataframe(round_numbers(industry_sync), use_container_width=True, hide_index=True)
+    st.subheader("相對流動性：固定金額或全市場排名？")
+    st.caption("相對流動性前30%目前在四段期間均為正超額，且2026優於固定1.5億元門檻；先列為候選替代因子，仍需持續監測。")
+    st.dataframe(round_numbers(relative_liquidity), use_container_width=True, hide_index=True)
 
 with tab_signal:
     st.subheader("目前符合主要候選模型")
