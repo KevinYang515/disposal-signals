@@ -51,6 +51,8 @@ def load_ml():
     d["validate_liquidity"] = pd.read_csv(ML_DATA_DIR / "validate_liquidity.csv")
     d["margin_level_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_level_quantiles.csv")
     d["margin_level_vs_change_summary"] = pd.read_csv(ML_DATA_DIR / "margin_level_vs_change_summary.csv")
+    d["margin_maint_ratio_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_maint_ratio_quantiles.csv")
+    d["margin_maint_chg5_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_maint_chg5_quantiles.csv")
     with open(ML_DATA_DIR / "ga_best_rule.json", encoding="utf-8") as f:
         d["rule"] = json.load(f)
     d["final_signals"]["date"] = pd.to_datetime(d["final_signals"]["date"])
@@ -476,6 +478,34 @@ with tab_ml:
             "GA也把「水位門檻」收斂到完全不設限。**真正有貢獻的是「5日內融資餘額下降」這個變化量**"
             "(已經用在上面的最終規則裡)——不是「這支股票原本槓桿重不重」重要，"
             "是「槓桿部位正在被強制/主動清洗」重要，這是動態訊號、不是靜態體質。"
+        )
+
+        st.markdown("### 自製「融資維持率」估算版：測了，但沒有增量貢獻")
+        st.markdown(
+            "台股個股層級的整戶維持率是券商帳戶私有資料，沒有公開API（Shioaji的`margin()`查的是期貨保證金專戶，"
+            "不是股票信用交易；富邦API也一樣沒有這個端點）。XQ選股系統雖然有`GetField(\"融資維持率\")`這個欄位，"
+            "但那是XQ內部估算值，沒辦法匯入這套 finlab-based 回測管線。"
+        )
+        st.markdown(
+            "改用 finlab 現成的 `margin_融資今日餘額` 逐日餘額變化，自己重建「融資成本線」"
+            "（餘額增加時，新部位按當天收盤價併入加權平均成本；餘額減少時，剩餘部位平均成本不變），"
+            "算出 **維持率估算值 = 收盤價 / (自建融資成本線 × 0.6) × 100%**，抽查台積電/鴻海/聯發科等"
+            "近期數值落在160~210%，跟真實世界的合理範圍相符。"
+        )
+        mrq = ml_data["margin_maint_ratio_quantiles"]
+        st.caption("估算維持率分5組（q0=最接近斷頭～q4=最安全）：")
+        st.dataframe(
+            mrq[["q", "mean_fwd10", "n", "win%"]].rename(
+                columns={"q": "分組", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+            ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+            use_container_width=True, hide_index=True)
+        st.markdown(
+            "單獨看這個因子，效果其實不差（最接近斷頭那組 +2.54% 勝率57.1%，明顯優於其他組），"
+            "**但把它加進已經有「20日回檔幅度」的GA規則重新優化，train t-統計量沒有進步(34.7 vs 34.97)，"
+            "GA選的門檻也很寬鬆(接近不設限)；如果拿它整個取代回檔幅度，規則反而明顯變差**"
+            "(TRAIN均報酬從9.95%掉到3.13%，TEST從13.01%掉到5.33%)。原因很合理：股價從高點回檔越深，"
+            "融資部位的估算維持率本來就會等比例下降，這兩個因子高度重疊，「20日回檔幅度」是更乾淨、"
+            "沒有估算誤差、算起來更即時的同一件事——不需要額外疊加這個自建的估算維持率。"
         )
 
         st.markdown("### GA 最終規則與報酬")
