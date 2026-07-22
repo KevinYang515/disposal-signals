@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v14-20260723-company-name-and-schema-guard"
+DATA_VERSION = "v15-20260723-taiex-otc-columns"
 
 
 @st.cache_data(ttl=3600)
@@ -71,6 +71,10 @@ if "event_market_index_name" not in events.columns:
     events["event_market_index_name"] = pd.NA
 if "event_market_index_return_pct" not in events.columns:
     events["event_market_index_return_pct"] = pd.NA
+if "taiex_event_return_pct" not in events.columns:
+    events["taiex_event_return_pct"] = pd.NA
+if "otc_event_return_pct" not in events.columns:
+    events["otc_event_return_pct"] = pd.NA
 
 st.title("🎯 法人目標價事件研究（D0-D8）")
 st.caption(
@@ -459,14 +463,14 @@ display_cols = {
     "event_close": "收盤",
     GROSS_COL: f"D{horizon}毛報酬%",
     NET_COL: f"D{horizon}淨報酬%",
-    "event_market_index_name": "事件日指數",
-    MKT_ADJ_COL: "事件日指數漲跌%",
+    "taiex_event_return_pct": "加權當日漲跌%",
+    "otc_event_return_pct": "櫃買當日漲跌%",
     "v1_candidate": "v1候選",
 }
 show = filtered[list(display_cols.keys())].rename(columns=display_cols).copy()
 show["事件日"] = show["事件日"].dt.date
 numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤",
-                f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", "事件日指數漲跌%"]
+                f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", "加權當日漲跌%", "櫃買當日漲跌%"]
 for c in numeric_cols:
     if c in show.columns:
         show[c] = show[c].round(2)
