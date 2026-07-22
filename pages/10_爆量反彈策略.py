@@ -74,6 +74,21 @@ try:
 except FileNotFoundError:
     ML_AVAILABLE = False
 
+
+@st.cache_data(ttl=1800)
+def load_daily_watch():
+    qualified = pd.read_csv(ML_DATA_DIR / "daily_watch_qualified.csv")
+    watch = pd.read_csv(ML_DATA_DIR / "daily_watch_nearmiss.csv")
+    meta = pd.read_csv(ML_DATA_DIR / "daily_watch_meta.csv").iloc[0]
+    return qualified, watch, meta
+
+
+try:
+    daily_qualified, daily_watch, daily_meta = load_daily_watch()
+    DAILY_WATCH_AVAILABLE = True
+except FileNotFoundError:
+    DAILY_WATCH_AVAILABLE = False
+
 core_signals = data["core_signals"]
 core_horizon = data["core_horizon_stats"]
 control_horizon = data["control_horizon_stats"]
@@ -101,10 +116,72 @@ st.warning(
     "本頁為描述性事件研究，非投資建議，跌停鎖死期間也未必能真的買到。"
 )
 
-tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_ml, tab_history = st.tabs(
-    ["📊 核心數據", "🌪️ 關鍵發現：市場寬度", "❓一定要跌停嗎", "🔄 反向：高檔爆量出貨？",
+tab_watch, tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_ml, tab_history = st.tabs(
+    ["🔎 明日觀察", "📊 核心數據", "🌪️ 關鍵發現：市場寬度", "❓一定要跌停嗎", "🔄 反向：高檔爆量出貨？",
      "🏭 市值/流動性/產業", "🤖 ML+GA挖掘版", "📜 歷史事件"]
 )
+
+# ============================================================
+# Tab 0: 明日觀察 (每日掃描，手動執行版)
+# ============================================================
+with tab_watch:
+    st.markdown("### 🔎 每日觀察名單")
+    st.caption(
+        "用已驗證的4因子規則(市場寬度/20日回檔/融資5日變化/爆量)掃描最新一個交易日資料。"
+        "資料由 D:\\stock\\stock\\burst_ml_ga_study\\daily_scan.py 產生，目前為手動執行，尚未排程自動更新。"
+    )
+    if not DAILY_WATCH_AVAILABLE:
+        st.error("找不到每日掃描資料，請先執行 `daily_scan.py` 產生 data/burst_ml_ga/daily_watch_*.csv")
+    else:
+        st.caption(
+            f"掃描日期：{daily_meta['scan_date']}　產生時間：{daily_meta['generated_at']} (台灣時間)　"
+            f"當天全市場同時跌停家數：**{int(daily_meta['breadth_severe_today'])}**　"
+            f"規則門檻：寬度≥{int(daily_meta['rule_breadth_min'])}檔 / "
+            f"20日回檔≤{daily_meta['rule_drawdown_max']:.0f}% / "
+            f"融資5日變化≤{daily_meta['rule_margin_max']:.0f} / 量比≥{daily_meta['rule_vol_min']:.1f}倍"
+        )
+        st.warning(
+            "⚠️ **這份清單目前是手動產生的研究工具，還沒有排程自動每日更新**——"
+            "上面「產生時間」如果不是今天，代表資料是舊的，先確認時間再參考。"
+            "**市場寬度是必要條件，不是加分項**：如果當天全市場跌停家數遠低於規則門檻，"
+            "即使某檔股票其他3個條件都符合，歷史上也沒有可靠的正期望值——下面的"
+            "「觀察名單」只代表「差臨門一腳」，不是「可以進場」，除非市場寬度真的跟上來。"
+        )
+
+        sub_q, sub_w = st.tabs(
+            [f"✅ 完全符合訊號 ({len(daily_qualified)})", f"👀 觀察名單/差1個條件 ({len(daily_watch)})"])
+
+        def render_daily_table(df):
+            if df.empty:
+                st.info("目前沒有符合的股票。")
+                return
+            disp = df.rename(columns={
+                "code": "代號", "name": "名稱", "industry": "產業", "close_px": "收盤價",
+                "ret_pct": "當日漲跌%", "drawdown_20d": "20日回檔%", "vol_ratio": "量比",
+                "margin_chg5": "融資5日變化", "breadth_severe": "當天全市場跌停家數",
+                "ok_breadth": "寬度✓", "ok_drawdown": "回檔✓", "ok_margin": "融資✓", "ok_volume": "量比✓",
+                "n_ok": "符合條件數",
+            })
+
+            def color_ret(v):
+                if pd.isna(v):
+                    return ""
+                return f"color: {UP_COLOR}" if v > 0 else (f"color: {DOWN_COLOR}" if v < 0 else "")
+
+            st.dataframe(
+                disp.style.map(color_ret, subset=["當日漲跌%"]).format({
+                    "收盤價": "{:.2f}", "當日漲跌%": "{:+.2f}%", "20日回檔%": "{:+.2f}%",
+                    "量比": "{:.2f}", "融資5日變化": "{:+.2f}", "當天全市場跌停家數": "{:.0f}",
+                    "符合條件數": "{:.0f}",
+                }, na_rep="—"),
+                use_container_width=True, hide_index=True, height=420)
+
+        with sub_q:
+            st.caption("4個條件(市場寬度/20日回檔/融資5日變化/量比)全部符合——歷史上驗證有效的完整訊號。")
+            render_daily_table(daily_qualified)
+        with sub_w:
+            st.caption("符合3個條件、通常是差市場寬度這一項——先觀察，等寬度真的跟上來再考慮，不要單獨依賴這份清單進場。")
+            render_daily_table(daily_watch)
 
 # ============================================================
 # Tab 1: 核心數據
