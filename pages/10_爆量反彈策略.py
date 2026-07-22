@@ -45,8 +45,10 @@ def load_all():
 @st.cache_data(ttl=3600)
 def load_ml():
     d = {}
-    for name in ["final_signals", "final_horizon_stats", "shap_importance", "univariate_quantiles"]:
+    for name in ["final_signals", "final_horizon_stats"]:
         d[name] = pd.read_csv(ML_DATA_DIR / f"ga_{name}.csv")
+    for name in ["shap_importance", "univariate_quantiles"]:
+        d[name] = pd.read_csv(ML_DATA_DIR / f"{name}.csv")
     d["validate_yearly"] = pd.read_csv(ML_DATA_DIR / "validate_yearly.csv")
     d["validate_liquidity"] = pd.read_csv(ML_DATA_DIR / "validate_liquidity.csv")
     d["margin_level_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_level_quantiles.csv")
@@ -116,9 +118,9 @@ st.warning(
     "本頁為描述性事件研究，非投資建議，跌停鎖死期間也未必能真的買到。"
 )
 
-tab_watch, tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_ml, tab_history = st.tabs(
+tab_watch, tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_ml, tab_ml_history, tab_history = st.tabs(
     ["🔎 明日觀察", "📊 核心數據", "🌪️ 關鍵發現：市場寬度", "❓一定要跌停嗎", "🔄 反向：高檔爆量出貨？",
-     "🏭 市值/流動性/產業", "🤖 ML+GA挖掘版", "📜 歷史事件"]
+     "🏭 市值/流動性/產業", "🤖 ML+GA挖掘版", "📜 歷史事件(現用規則)", "📜 歷史事件(初版規則)"]
 )
 
 # ============================================================
@@ -627,7 +629,7 @@ with tab_ml:
             f"- 當天全市場同時 ≥ **{rule['breadth_severe_min']:.0f}檔**跌停（市場壓力門檻，比人工版「30+檔」寬鬆很多）\n"
             f"- 融資使用率5日變化 ≤ **{rule['margin_chg5_max']:.2f}**（沒有還在加碼融資）\n"
             "- **不要求連續跌停、不要求52週低點**——這是跟人工版最大的不同\n\n"
-            f"TRAIN(2015~2023) t-統計量高達 **{rule['train_tstat_with_position']:.2f}**，"
+            f"TRAIN(2015~2023) t-統計量高達 **{ml_data['rule']['train_tstat_with_position']:.2f}**，"
             "但這個數字本身會嚴重高估信心水準——訊號在同一次崩盤日高度相關(不是統計獨立樣本)，"
             "不能直接套 sqrt(n) 解讀成「非常顯著」，實際可信度要看下面的逐年穩健度。"
         )
@@ -711,7 +713,65 @@ with tab_ml:
             use_container_width=True, hide_index=True, height=380)
 
 # ============================================================
-# Tab: 歷史事件
+# Tab: 歷史事件 (現用規則 = ML+GA 4因子)
+# ============================================================
+with tab_ml_history:
+    st.markdown("### 📜 歷史事件（現用規則：ML+GA 4因子）")
+    st.caption(
+        "這是目前實際在用的規則（市場寬度/20日回檔/融資5日變化/爆量4因子，跟「🔎明日觀察」"
+        "同一套規則），不是最早那版手動規則（連續跌停2-3天+爆量2倍，見「📜歷史事件(初版規則)」tab）。"
+        "想查某檔股票過去有沒有觸發過現用規則的訊號，用這個tab查才是準的。"
+    )
+    if not ML_AVAILABLE:
+        st.info("ML+GA 挖掘資料尚未產生，無法顯示。")
+    else:
+        yr_min_ml = int(final_sig["date"].dt.year.min())
+        yr_max_ml = int(final_sig["date"].dt.year.max())
+        yr_range_ml = st.slider("年份範圍", yr_min_ml, yr_max_ml, (yr_min_ml, yr_max_ml), key="ml_hist_yr")
+        only_high_breadth_ml = st.checkbox("只看「當天全市場30檔以上同時跌停」的訊號", value=False, key="ml_hist_breadth")
+
+        hd_ml = final_sig[(final_sig["date"].dt.year >= yr_range_ml[0]) &
+                           (final_sig["date"].dt.year <= yr_range_ml[1])]
+        if only_high_breadth_ml:
+            hd_ml = hd_ml[hd_ml["breadth_severe"] >= 30]
+
+        show_cols_ml_hist = ["date", "code", "industry", "drawdown_20d", "vol_ratio", "breadth_severe",
+                              "margin_chg5", "is_limit_down", "fwd5_pct", "fwd10_pct", "fwd20_pct"]
+        hd_ml_disp = hd_ml[show_cols_ml_hist].sort_values("date", ascending=False).rename(columns={
+            "date": "日期", "code": "代號", "industry": "產業", "drawdown_20d": "20日回檔%",
+            "vol_ratio": "量比", "breadth_severe": "當天全市場跌停家數", "margin_chg5": "融資5日變化",
+            "is_limit_down": "當天是否跌停", "fwd5_pct": "+5日%", "fwd10_pct": "+10日%", "fwd20_pct": "+20日%",
+        })
+        st.dataframe(
+            hd_ml_disp.style.format({
+                "20日回檔%": "{:+.2f}%", "量比": "{:.2f}", "當天全市場跌停家數": "{:.0f}",
+                "融資5日變化": "{:+.2f}", "當天是否跌停": "{:.0f}",
+                "+5日%": "{:+.2f}%", "+10日%": "{:+.2f}%", "+20日%": "{:+.2f}%",
+            }, na_rep="—"),
+            use_container_width=True, hide_index=True, height=420)
+
+        with st.expander("🔍 查特定股票的歷史事件（現用規則）"):
+            code_q_ml = st.text_input("輸入股票代號", key="ml_hist_code_lookup")
+            if code_q_ml:
+                sub_ml = final_sig[final_sig["code"] == code_q_ml.strip()].sort_values("date", ascending=False)
+                if sub_ml.empty:
+                    st.caption("查無事件（該股從未觸發過現用4因子規則的訊號）")
+                else:
+                    st.dataframe(
+                        sub_ml[show_cols_ml_hist].rename(columns={
+                            "date": "日期", "code": "代號", "industry": "產業", "drawdown_20d": "20日回檔%",
+                            "vol_ratio": "量比", "breadth_severe": "當天全市場跌停家數",
+                            "margin_chg5": "融資5日變化", "is_limit_down": "當天是否跌停",
+                            "fwd5_pct": "+5日%", "fwd10_pct": "+10日%", "fwd20_pct": "+20日%",
+                        }).style.format({
+                            "20日回檔%": "{:+.2f}%", "量比": "{:.2f}", "當天全市場跌停家數": "{:.0f}",
+                            "融資5日變化": "{:+.2f}", "當天是否跌停": "{:.0f}",
+                            "+5日%": "{:+.2f}%", "+10日%": "{:+.2f}%", "+20日%": "{:+.2f}%",
+                        }, na_rep="—"),
+                        use_container_width=True, hide_index=True)
+
+# ============================================================
+# Tab: 歷史事件 (初版規則)
 # ============================================================
 with tab_history:
     st.markdown("### 逐筆訊號明細")
