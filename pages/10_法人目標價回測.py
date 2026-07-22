@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v13-20260723-broker-canonical-index-return"
+DATA_VERSION = "v14-20260723-company-name-and-schema-guard"
 
 
 @st.cache_data(ttl=3600)
@@ -63,6 +63,14 @@ except FileNotFoundError:
         "`tools/_export_for_disposal_signals_site.py`"
     )
     st.stop()
+
+# Allow a rolling deployment to serve an older events.csv briefly while the
+# matching data commit is propagating; the page stays available and fills the
+# new benchmark fields automatically once that CSV arrives.
+if "event_market_index_name" not in events.columns:
+    events["event_market_index_name"] = pd.NA
+if "event_market_index_return_pct" not in events.columns:
+    events["event_market_index_return_pct"] = pd.NA
 
 st.title("🎯 法人目標價事件研究（D0-D8）")
 st.caption(
