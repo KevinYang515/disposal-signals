@@ -1,0 +1,19 @@
+{
+  "with_position": {
+    "breadth_severe_min": 12.66222543578873,
+    "price_position_max": 0.7799054650837187,
+    "drawdown_20d_max": -25.93390557679036,
+    "streak_min": 1.0,
+    "margin_chg5_max": 2.707515929878615,
+    "vol_ratio_min": 1.5025805581036191
+  },
+  "train_tstat_with_position": 34.863153302504884,
+  "no_position": {
+    "breadth_severe_min": 50.772681572656204,
+    "drawdown_20d_max": -25.180720224634385,
+    "streak_min": 1.0,
+    "margin_chg5_max": 0.8428930443278014,
+    "vol_ratio_min": 1.5016904282671957
+  },
+  "train_tstat_no_position": 34.40343606958286
+}
