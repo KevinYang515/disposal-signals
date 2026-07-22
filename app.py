@@ -428,8 +428,8 @@ with tab_5m:
 
             st.dataframe(
                 s5.style.apply(hl_hit, axis=1)
-                  .format({c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1跳空(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns}, na_rep='-')
-                  .format({'進場價(D1收)': '{:.2f}'}, na_rep='-'),
+                  .format({**{c: '{:+.2f}' for c in ['前日漲幅(%)', 'D1跳空(%)', '目前損益(%)', '今日漲跌'] if c in s5.columns},
+                            **({'進場價(D1收)': '{:.2f}'} if '進場價(D1收)' in s5.columns else {})}, na_rep='-'),
                 use_container_width=True, hide_index=True)
             st.markdown("""
 **訊號欄說明**：
@@ -666,8 +666,8 @@ with tab_t20:
 
             st.dataframe(
                 s_t.style.apply(hl_t20, axis=1)
-                   .format({c: '{:+.2f}' for c in ['目前損益(%)', '今日漲跌'] if c in s_t.columns}, na_rep='-')
-                   .format({'進場價': '{:.2f}'}, na_rep='-'),
+                   .format({**{c: '{:+.2f}' for c in ['目前損益(%)', '今日漲跌'] if c in s_t.columns},
+                             **({'進場價': '{:.2f}'} if '進場價' in s_t.columns else {})}, na_rep='-'),
                 use_container_width=True, hide_index=True)
             st.markdown("""
 **訊號欄說明**：
