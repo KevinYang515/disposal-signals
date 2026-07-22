@@ -187,8 +187,10 @@ def color_fwd(val):
         pass
     return ""
 
+fmt_events = {"當日跌幅(%)": "{:+.2f}", "收盤價": "{:,.0f}"}
+fmt_events.update({c: "{:+.2f}" for c in fwd_cols})
 st.dataframe(
-    events_df.style.map(color_fwd, subset=fwd_cols),
+    events_df.style.map(color_fwd, subset=fwd_cols).format(fmt_events, na_rep="-"),
     use_container_width=True,
     hide_index=True,
     height=500,

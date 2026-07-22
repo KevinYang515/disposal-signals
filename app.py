@@ -760,8 +760,10 @@ with tab_t20:
 
             disp_t = v_t.sort_values('起始日', ascending=False).reset_index(drop=True)
             disp_t['策略報酬(%)'] = disp_t['策略報酬(%)'].apply(fmt_pct)
+            price_cols_t = [c for c in ['進場價', '出場價'] if c in disp_t.columns]
             st.dataframe(
-                disp_t.style.map(_c_res_t, subset=['結果']),
+                disp_t.style.map(_c_res_t, subset=['結果'])
+                    .format({c: '{:.2f}' for c in price_cols_t}, na_rep='-'),
                 use_container_width=True, hide_index=True, height=520)
             st.caption('策略報酬 = 出關前第3個交易日收盤買 → 出關當天收盤賣（持有3天），已扣成本 0.357%')
             st.download_button('📥 下載此表 CSV', disp_t.to_csv(index=False, encoding='utf-8-sig'),
@@ -1821,7 +1823,9 @@ with tab_exit:
                         return 'color:#e74c3c;font-weight:700'
                     except:
                         return ''
-                return df.style.map(color_mean, subset=['平均報酬(%)','中位數(%)'])
+                fmt_et = {c: '{:+.2f}' for c in ['平均報酬(%)','中位數(%)'] if c in df.columns}
+                fmt_et.update({c: '{:.2f}' for c in ['上漲機率(%)','跌>3%機率(%)','跌>5%機率(%)'] if c in df.columns})
+                return df.style.map(color_mean, subset=['平均報酬(%)','中位數(%)']).format(fmt_et, na_rep='-')
 
             display_cols = ['時間點','平均報酬(%)','中位數(%)','上漲機率(%)','跌>3%機率(%)','跌>5%機率(%)']
             st.dataframe(
@@ -1859,7 +1863,9 @@ with tab_exit:
                         return 'color:#e74c3c'
                     except:
                         return ''
-                return df.style.map(color_d3, subset=['D3均值(%)'])
+                fmt_strat = {c: '{:+.2f}' for c in ['D3均值(%)'] if c in df.columns}
+                fmt_strat.update({c: '{:.2f}' for c in ['佔比(%)','D3比D1好機率(%)'] if c in df.columns})
+                return df.style.map(color_d3, subset=['D3均值(%)']).format(fmt_strat, na_rep='-')
             st.dataframe(
                 style_strat(et_strat),
                 use_container_width=True,
