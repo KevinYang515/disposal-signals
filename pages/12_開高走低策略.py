@@ -26,6 +26,15 @@ st.markdown("""
 .metric-val  { font-size: 1.8em; font-weight: 700; color: #4ade80; }
 .metric-val2 { font-size: 1.8em; font-weight: 700; color: #f87171; }
 .metric-lab  { font-size: 0.8em; color: #94a3b8; margin-top: 2px; }
+.cand-card {
+    background: #1e2530; border-radius: 8px;
+    padding: 12px 16px; margin: 4px 0;
+    border-left: 3px solid #f87171;
+}
+.cand-stock { font-size: 1.1em; font-weight: 700; color: #f1f5f9; }
+.cand-meta  { font-size: 0.85em; color: #94a3b8; margin-top: 4px; }
+.up   { color: #f87171; font-weight: 600; }
+.down { color: #4ade80; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,10 +47,17 @@ def load_data():
     yearly = pd.read_csv(os.path.join(DATA_DIR, 'gapfade_yearly.csv'))
     with open(os.path.join(DATA_DIR, 'gapfade_stats.json'), encoding='utf-8') as f:
         stats = json.load(f)
-    return trades, daily, yearly, stats
+    stock_names = pd.read_csv(os.path.join(DATA_DIR, 'stock_names.csv'))
+    stock_names['ticker'] = stock_names['ticker'].astype(str)
+    live = None
+    live_path = os.path.join(DATA_DIR, 'gapfade_live_signal.json')
+    if os.path.exists(live_path):
+        with open(live_path, encoding='utf-8') as f:
+            live = json.load(f)
+    return trades, daily, yearly, stats, stock_names, live
 
 try:
-    trades, daily, yearly, stats = load_data()
+    trades, daily, yearly, stats, stock_names, live = load_data()
 except FileNotFoundError:
     st.error('找不到資料檔，請先執行 build_gapfade_data.py')
     st.stop()
@@ -50,16 +66,47 @@ except FileNotFoundError:
 st.title('📉 開高走低策略')
 st.caption(
     f"策略：**{stats['strategy']}**　　"
-    f"資料區間：{stats['period']}　　"
+    f"回測資料區間：{stats['period']}　　"
     f"最後更新：{stats['latest_date']}"
 )
 
-st.warning(
-    '⚠️ 這個頁面目前只顯示**樣本外歷史回測**結果，還沒有建立每日自動訊號產生流程，'
-    '「今日候選股」功能尚未上線。所有數字都已扣除0.207%當沖成本（永豐2折手續費+當沖稅減半），'
-    '但未計入滑價與部分低流動性股票的實際成交風險。',
-    icon='⚠️',
+st.caption(
+    '⚠️ 回測數字已扣除0.207%當沖成本（永豐2折手續費+當沖稅減半），'
+    '但未計入滑價與部分低流動性股票的實際成交風險，僅供參考，非投資建議。'
 )
+
+st.divider()
+
+# ── 今日候選股 (VM Stage2 於開盤後自動產生) ──────────────
+st.subheader(f'📋 今日候選股')
+if live is None:
+    st.info('尚未產生今日訊號（每日09:00開盤後由VM自動更新，若當天還沒更新過會顯示這則訊息）。')
+else:
+    st.caption(f"更新時間：{live['generated_at']}　　候選池：{live['n_candidates_pool']}檔　　"
+               f"開高≥3%符合：{live['n_signal']}檔　　需要≥{live['min_candidates_required']}檔才進場")
+    if not live['triggered']:
+        st.info(f"今日候選數 {live['n_signal']} < {live['min_candidates_required']}，未達門檻，今日空手觀望。")
+    else:
+        picks = pd.DataFrame(live['picks'])
+        picks['code'] = picks['code'].astype(str)
+        picks = picks.merge(stock_names, left_on='code', right_on='ticker', how='left')
+        picks['name'] = picks['name'].fillna('')
+        cols = st.columns(len(picks))
+        for i, (_, row) in enumerate(picks.iterrows()):
+            cols[i].markdown(
+                f'<div class="cand-card">'
+                f'<div class="cand-stock">{row["code"]} {row["name"]}</div>'
+                f'<div class="cand-meta">'
+                f'開盤 <b style="color:#f1f5f9">{row["open_px"]:.2f}</b> 元　'
+                f'跳空 <span class="up">+{row["gap_pct"]:.2f}%</span><br>'
+                f'市值 {row["mktcap_e8"]:.1f}億　{row["industry"]}<br>'
+                f'配置權重 <b>{row["weight"]:.1%}</b>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+st.divider()
 
 # ── 績效指標 ────────────────────────────────────────────
 st.subheader('績效摘要（樣本外，未曾用來挑選門檻）')
