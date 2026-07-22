@@ -1,0 +1,60 @@
+{
+  "date": "2026-07-22",
+  "generated_at": "2026-07-22T16:39:09.343683",
+  "n_candidates_pool": 922,
+  "n_signal": 23,
+  "min_candidates_required": 7,
+  "triggered": true,
+  "picks": [
+    {
+      "code": "7584",
+      "gap_pct": 6.88,
+      "open_px": 27.95,
+      "prev_close": 26.15,
+      "mktcap_e8": 4.3,
+      "industry": "文化創意業",
+      "pred_score": 3.6324,
+      "weight": 0.5753
+    },
+    {
+      "code": "4564",
+      "gap_pct": 7.49,
+      "open_px": 20.1,
+      "prev_close": 18.7,
+      "mktcap_e8": 43.5,
+      "industry": "電機機械",
+      "pred_score": 2.8176,
+      "weight": 0.1987
+    },
+    {
+      "code": "8024",
+      "gap_pct": 6.13,
+      "open_px": 16.45,
+      "prev_close": 15.5,
+      "mktcap_e8": 7.0,
+      "industry": "半導體業",
+      "pred_score": 2.804,
+      "weight": 0.1925
+    },
+    {
+      "code": "8421",
+      "gap_pct": 6.1,
+      "open_px": 15.65,
+      "prev_close": 14.75,
+      "mktcap_e8": 8.1,
+      "industry": "其他",
+      "pred_score": 2.4501,
+      "weight": 0.0289
+    },
+    {
+      "code": "3171",
+      "gap_pct": 3.98,
+      "open_px": 68.0,
+      "prev_close": 65.4,
+      "mktcap_e8": 21.7,
+      "industry": "居家生活",
+      "pred_score": 2.3976,
+      "weight": 0.0046
+    }
+  ]
+}
