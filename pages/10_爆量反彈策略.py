@@ -49,6 +49,8 @@ def load_ml():
         d[name] = pd.read_csv(ML_DATA_DIR / f"ga_{name}.csv")
     d["validate_yearly"] = pd.read_csv(ML_DATA_DIR / "validate_yearly.csv")
     d["validate_liquidity"] = pd.read_csv(ML_DATA_DIR / "validate_liquidity.csv")
+    d["margin_level_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_level_quantiles.csv")
+    d["margin_level_vs_change_summary"] = pd.read_csv(ML_DATA_DIR / "margin_level_vs_change_summary.csv")
     with open(ML_DATA_DIR / "ga_best_rule.json", encoding="utf-8") as f:
         d["rule"] = json.load(f)
     d["final_signals"]["date"] = pd.to_datetime(d["final_signals"]["date"])
@@ -453,6 +455,27 @@ with tab_ml:
             "它已經被「20日回檔幅度」跟「市場寬度」間接涵蓋了，不需要額外要求股價一定要在52週新低附近\n"
             "- **新發現的因子：融資使用率5日變化**——這支股票的融資使用率最近5天正在明顯下降(去槓桿/斷頭)的那組，"
             "後續報酬也比較好，訊號背後有合理的故事：融資戶已經先被洗出場，賣壓提前釋放"
+        )
+
+        st.markdown("### 融資：水位重要，還是變化量重要？")
+        st.markdown(
+            "個股層級的「整戶維持率」(斷頭門檻，通常130%)是券商帳戶層級的私有資料，"
+            "沒有公開的逐股資料源可以取得(永豐/富邦API也查不到，見下方討論)。"
+            "能拿到最接近的替代指標是「融資使用率」(該股融資餘額占融資限額的比例)，"
+            "測了兩種用法看哪個才是真正有效的："
+        )
+        mlq = ml_data["margin_level_quantiles"]
+        st.caption("融資使用率「水位」分5組（q0=水位最低～q4=水位最高）：")
+        st.dataframe(
+            mlq[["q", "mean_fwd10", "win%", "n"]].rename(
+                columns={"q": "分組", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+            ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+            use_container_width=True, hide_index=True)
+        st.markdown(
+            "水位越高反而報酬略差(q4最高水位組僅+0.60%勝率48%，比q0低水位組還差)，"
+            "GA也把「水位門檻」收斂到完全不設限。**真正有貢獻的是「5日內融資餘額下降」這個變化量**"
+            "(已經用在上面的最終規則裡)——不是「這支股票原本槓桿重不重」重要，"
+            "是「槓桿部位正在被強制/主動清洗」重要，這是動態訊號、不是靜態體質。"
         )
 
         st.markdown("### GA 最終規則與報酬")
