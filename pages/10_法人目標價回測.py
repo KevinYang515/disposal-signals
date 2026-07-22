@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v12-20260723-excess-return-refresh"
+DATA_VERSION = "v13-20260723-broker-canonical-index-return"
 
 
 @st.cache_data(ttl=3600)
@@ -322,7 +322,7 @@ filtered = apply_filters(events).copy()
 
 GROSS_COL = f"open_to_d{horizon}_close_pct"
 NET_COL = f"net_d{horizon}_return_pct"
-MKT_ADJ_COL = f"market_adjusted_open_to_d{horizon}_close_pct"
+MKT_ADJ_COL = "event_market_index_return_pct"
 filtered[NET_COL] = filtered[GROSS_COL] - cost_pct
 
 is_v1_default = all(
@@ -351,16 +351,15 @@ if len(scored):
     c4.metric("淨報酬勝率", f"{win:.2f}%")
     mkt_scored = filtered[filtered[MKT_ADJ_COL].notna()]
     c5.metric(
-        "超額報酬均值（扣加權指數）",
+        "事件日指數漲跌均值",
         f"{mkt_scored[MKT_ADJ_COL].mean():.2f}%" if len(mkt_scored) else "—",
-        help="個股毛報酬 － 同期加權指數(TAIEX)開盤到收盤報酬。上櫃股嚴格說該扣櫃買指數，"
-             "但finlab目前查無櫃買開盤指數資料集，暫時統一用加權指數計算，上櫃股的超額報酬解讀請保守。",
+        help="上市股顯示加權指數、上櫃股顯示櫃買指數；均為事件日收盤相對前一交易日收盤的漲跌幅。",
     )
 else:
     c2.metric(f"D{horizon} 毛報酬均值", "—")
     c3.metric(f"D{horizon} 淨報酬均值", "—")
     c4.metric("淨報酬勝率", "—")
-    c5.metric("超額報酬均值（扣加權指數）", "—")
+    c5.metric("事件日指數漲跌均值", "—")
 
 if 0 < len(scored) < 30:
     st.info(f"⚠️ 目前有結算報酬的樣本只有 {len(scored)} 筆，統計量不穩定，僅供參考。")
@@ -371,20 +370,18 @@ st.divider()
 st.subheader("持有天數輪廓：報酬如何隨持有天數變化（依目前篩選條件）")
 profile_rows = []
 for n in range(0, max_h + 1):
-    g, m = f"open_to_d{n}_close_pct", f"market_adjusted_open_to_d{n}_close_pct"
+    g = f"open_to_d{n}_close_pct"
     gs = filtered[filtered[g].notna()][g]
-    ms = filtered[filtered[m].notna()][m] if m in filtered.columns else pd.Series(dtype=float)
     profile_rows.append({
         "持有天數": n,
         "毛報酬均值%": gs.mean() if len(gs) else None,
         "淨報酬均值%": (gs.mean() - cost_pct) if len(gs) else None,
-        "超額報酬均值%": ms.mean() if len(ms) else None,
         "樣本數": len(gs),
     })
 profile = pd.DataFrame(profile_rows)
 if profile["樣本數"].max() > 0:
     prof_long = profile.melt(
-        id_vars=["持有天數", "樣本數"], value_vars=["毛報酬均值%", "淨報酬均值%", "超額報酬均值%"],
+        id_vars=["持有天數", "樣本數"], value_vars=["毛報酬均值%", "淨報酬均值%"],
         var_name="指標", value_name="報酬%",
     )
     chart = alt.Chart(prof_long).mark_line(point=True).encode(
@@ -454,13 +451,14 @@ display_cols = {
     "event_close": "收盤",
     GROSS_COL: f"D{horizon}毛報酬%",
     NET_COL: f"D{horizon}淨報酬%",
-    MKT_ADJ_COL: f"D{horizon}超額報酬%",
+    "event_market_index_name": "事件日指數",
+    MKT_ADJ_COL: "事件日指數漲跌%",
     "v1_candidate": "v1候選",
 }
 show = filtered[list(display_cols.keys())].rename(columns=display_cols).copy()
 show["事件日"] = show["事件日"].dt.date
 numeric_cols = ["Potential中位數%", "目標價調整中位數%", "前5日報酬%", "開盤", "收盤",
-                f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", f"D{horizon}超額報酬%"]
+                f"D{horizon}毛報酬%", f"D{horizon}淨報酬%", "事件日指數漲跌%"]
 for c in numeric_cols:
     if c in show.columns:
         show[c] = show[c].round(2)
