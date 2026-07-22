@@ -53,6 +53,8 @@ def load_ml():
     d["margin_level_vs_change_summary"] = pd.read_csv(ML_DATA_DIR / "margin_level_vs_change_summary.csv")
     d["margin_maint_ratio_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_maint_ratio_quantiles.csv")
     d["margin_maint_chg5_quantiles"] = pd.read_csv(ML_DATA_DIR / "margin_maint_chg5_quantiles.csv")
+    d["inst_net_pct_quantiles"] = pd.read_csv(ML_DATA_DIR / "inst_net_pct_quantiles.csv")
+    d["bigholder_chg4w_quantiles"] = pd.read_csv(ML_DATA_DIR / "bigholder_chg4w_quantiles.csv")
     with open(ML_DATA_DIR / "ga_best_rule.json", encoding="utf-8") as f:
         d["rule"] = json.load(f)
     d["final_signals"]["date"] = pd.to_datetime(d["final_signals"]["date"])
@@ -506,6 +508,39 @@ with tab_ml:
             "(TRAIN均報酬從9.95%掉到3.13%，TEST從13.01%掉到5.33%)。原因很合理：股價從高點回檔越深，"
             "融資部位的估算維持率本來就會等比例下降，這兩個因子高度重疊，「20日回檔幅度」是更乾淨、"
             "沒有估算誤差、算起來更即時的同一件事——不需要額外疊加這個自建的估算維持率。"
+        )
+
+        st.markdown("### 換個角度：新資金進場(三大法人)、大戶有沒有退場？")
+        st.markdown(
+            "融資只反映散戶的槓桿資金，換個角度看「聰明錢」——**三大法人(外資+投信+自營商)當天/近5日的"
+            "買賣超占成交量比例**，以及**大戶(400張以上)持股比例的4週變化**(是不是原本的大部位悄悄退場了)："
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            inq = ml_data["inst_net_pct_quantiles"]
+            st.caption("三大法人買賣超占成交量% 分5組（q0=法人賣最兇～q4=法人買最兇）：")
+            st.dataframe(
+                inq[["q", "mean_fwd10", "n", "win%"]].rename(
+                    columns={"q": "分組", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+                ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+                use_container_width=True, hide_index=True)
+        with c2:
+            bhq = ml_data["bigholder_chg4w_quantiles"]
+            st.caption("大戶持股比例4週變化 分5組（q0=大戶減碼最多～q4=大戶加碼最多）：")
+            st.dataframe(
+                bhq[["q", "mean_fwd10", "n", "win%"]].rename(
+                    columns={"q": "分組", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+                ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+                use_container_width=True, hide_index=True)
+        st.markdown(
+            "**法人買賣超有一定訊號**：法人當天/近5日淨買超最兇的那組明顯最好(+2.0%／勝率54.7%)，"
+            "SHAP聯合模型排名中段(比爆量倍數、連續天數都重要)，加進模型後TEST期IC從0.239小幅提升到0.262。"
+            "但拿去GA做增量測試——加進已有的規則重新優化門檻，train t-統計量沒有進步(33.4 vs 34.8)，"
+            "GA選的門檻直接收斂到搜尋範圍下限(等於不設限)，**代表雖然法人買超是好事，"
+            "但爆量本身已經某種程度隱含了「有資金進場承接」這件事，法人買賣超沒有再疊加額外的可交易增量**。\n\n"
+            "**大戶持股比例變化幾乎沒有訊號**（5組報酬都在0.56~0.97%之間，沒有清楚方向）——"
+            "這份資料是集保週報，每週才更新一次，4週的變化窗口對「單一天爆量事件」來說太粗太慢，"
+            "抓不到事件當下的動態，跟這個短周期策略的時間尺度不匹配。"
         )
 
         st.markdown("### GA 最終規則與報酬")
