@@ -231,7 +231,9 @@ with st.sidebar:
     st.caption("拉不準可以直接在右邊的框輸入數字")
 
     pot_lo, pot_hi = float(min(float(events["median_potential_pct"].min()), 0)), round(float(events["median_potential_pct"].max()), 0)
-    _clamp_state("f_potential_min", 0.0, pot_lo, pot_hi)
+    # The event-detail view is an audit surface as well as a screener: start
+    # at the full available range so downside target-price events are visible.
+    _clamp_state("f_potential_min", pot_lo, pot_lo, pot_hi)
     _synced_slider("Potential 中位數 ≥ (%)", "f_potential_min", pot_lo, pot_hi, 1.0)
     potential_min = st.session_state["f_potential_min"]
 
