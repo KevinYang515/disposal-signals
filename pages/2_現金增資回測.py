@@ -214,7 +214,7 @@ with tab1:
                 x=alt.X("offset:Q", title="交易日 (0=各自錨點)",
                          scale=alt.Scale(domain=[-30,60])),
                 y=alt.Y("ret:Q", title="累積報酬",
-                         axis=alt.Axis(format=".1%")),
+                         axis=alt.Axis(format=".2%")),
                 color=alt.Color("series:N", scale=color_scale,
                                 legend=alt.Legend(orient="top", columns=2)),
                 strokeDash=alt.StrokeDash("type:N",
@@ -267,7 +267,7 @@ with tab1:
                 .encode(
                     x=alt.X("label:N", sort=None, title="期間"),
                     y=alt.Y("mean_ret:Q", title="平均報酬",
-                             axis=alt.Axis(format=".1%")),
+                             axis=alt.Axis(format=".2%")),
                     color=alt.Color("mean_ret:Q",
                         scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
                         legend=None),
@@ -286,7 +286,7 @@ with tab1:
                 .encode(
                     x=alt.X("label:N", sort=None, title=""),
                     y=alt.Y("win_rate:Q", title="勝率",
-                             axis=alt.Axis(format=".0%"),
+                             axis=alt.Axis(format=".2%"),
                              scale=alt.Scale(domain=[0,1])),
                     tooltip=[alt.Tooltip("win_rate:Q", format=".2%")]
                 )
@@ -375,7 +375,7 @@ with tab2:
                      scale=alt.Scale(domain=[-10.5,10.5]),
                      axis=alt.Axis(tickCount=21)),
             y=alt.Y("mean_ret:Q", title="平均累積報酬",
-                     axis=alt.Axis(format=".1%")),
+                     axis=alt.Axis(format=".2%")),
             color=alt.condition(
                 alt.datum.mean_ret >= 0,
                 alt.value("#26c281"), alt.value("#e74c3c")
@@ -396,7 +396,7 @@ with tab2:
         .encode(
             x=alt.X("day:Q", scale=alt.Scale(domain=[-10.5,10.5])),
             y=alt.Y("win_rate:Q", title="勝率",
-                     axis=alt.Axis(format=".0%"),
+                     axis=alt.Axis(format=".2%"),
                      scale=alt.Scale(domain=[0,1])),
             tooltip=[alt.Tooltip("day:Q"), alt.Tooltip("win_rate:Q", format=".2%")]
         )
@@ -434,7 +434,7 @@ with tab3:
             .mark_bar(opacity=0.8, color="#4a90d9")
             .encode(
                 x=alt.X("disc:Q", bin=alt.Bin(maxbins=50),
-                         title="折扣", axis=alt.Axis(format=".0%")),
+                         title="折扣", axis=alt.Axis(format=".2%")),
                 y=alt.Y("count():Q", title="頻次"),
             )
             .properties(height=260)
@@ -456,9 +456,9 @@ with tab3:
                 .mark_circle(opacity=0.45, size=40)
                 .encode(
                     x=alt.X("discount_pct:Q", title="認購折扣",
-                             axis=alt.Axis(format=".0%")),
+                             axis=alt.Axis(format=".2%")),
                     y=alt.Y("ret_+20d:Q", title="+20日報酬",
-                             axis=alt.Axis(format=".0%")),
+                             axis=alt.Axis(format=".2%")),
                     color=alt.Color("ret_+20d:Q",
                         scale=alt.Scale(scheme="redyellowgreen", domainMid=0),
                         legend=None),

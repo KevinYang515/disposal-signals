@@ -346,7 +346,7 @@ if len(scored):
     c2.metric(f"D{horizon} 毛報酬均值", f"{scored[GROSS_COL].mean():.2f}%")
     c3.metric(f"D{horizon} 淨報酬均值", f"{scored[NET_COL].mean():.2f}%")
     win = (scored[NET_COL] > 0).mean() * 100
-    c4.metric("淨報酬勝率", f"{win:.1f}%")
+    c4.metric("淨報酬勝率", f"{win:.2f}%")
     mkt_scored = filtered[filtered[MKT_ADJ_COL].notna()]
     c5.metric(
         "超額報酬均值（扣加權指數）",

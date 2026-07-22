@@ -372,7 +372,7 @@ if not selected.empty and n_fills > 0:
         x=alt.X("label:N", title="股票", sort="-y"),
         y=alt.Y("net:Q", title="淨 PnL (元)"),
         color=alt.Color("color:N", scale=None),
-        tooltip=["label", alt.Tooltip("net:Q", format=",.0f", title="淨 PnL")]
+        tooltip=["label", alt.Tooltip("net:Q", format=",.2f", title="淨 PnL")]
     ).properties(height=220)
     st.altair_chart(bar2, use_container_width=True)
 

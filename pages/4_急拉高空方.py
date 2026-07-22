@@ -86,7 +86,7 @@ st.caption("爆量急拉後推不動 → 流動性/市值/大盤regime三層濾�
 
 st.success(
     f"✅ **{variant}版**：{h['desc']}\n\n"
-    f"3.5年(2023-01~2026-07) 全期 Sharpe **{h['sharpe']}**、累積報酬 **+{h['cum']:.2f}%**、"
+    f"3.5年(2023-01~2026-07) 全期 Sharpe **{h['sharpe']:.2f}**、累積報酬 **+{h['cum']:.2f}%**、"
     f"MaxDD **{h['mdd']:.2f}%**、2026單獨均報酬 **+{h['avg2026']:.2f}%/筆**\n\n"
     f"ℹ️ {h['note']}"
 )
@@ -108,7 +108,7 @@ n_days = sub["date"].nunique()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("交易次數", f"{n:,}")
-col2.metric("投組層級 Sharpe", f"{h['sharpe']}",
+col2.metric("投組層級 Sharpe", f"{h['sharpe']:.2f}",
             help="每日取當日所有候選、平均分配部位計算的投組層級年化Sharpe，3.5年(2023-01~2026-07)全期")
 col3.metric("期望報酬(均報酬/筆)", f"{avg_r:.2%}",
             help="所有交易的報酬平均值 = 每筆交易的期望值。這跟Profit Factor是不同的指標，見右方說明")
@@ -191,14 +191,14 @@ yr = (sub.groupby("year")
 
 bar_wr = alt.Chart(yr).mark_bar(color="#4a90d9").encode(
     x=alt.X("year:O", title="年度"),
-    y=alt.Y("勝率:Q", title="勝率", scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format=".0%")),
+    y=alt.Y("勝率:Q", title="勝率", scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format=".2%")),
     tooltip=[alt.Tooltip("year:O", title="年"), alt.Tooltip("勝率:Q", format=".2%"),
              alt.Tooltip("次數:Q"), alt.Tooltip("均報酬:Q", format=".2%")]
 ).properties(height=200, title="年度勝率")
 
 bar_ret = alt.Chart(yr).mark_bar(color="#27ae60").encode(
     x=alt.X("year:O", title="年度"),
-    y=alt.Y("均報酬:Q", title="均報酬", axis=alt.Axis(format=".1%")),
+    y=alt.Y("均報酬:Q", title="均報酬", axis=alt.Axis(format=".2%")),
     tooltip=[alt.Tooltip("year:O", title="年"), alt.Tooltip("均報酬:Q", format=".2%"),
              alt.Tooltip("次數:Q")]
 ).properties(height=200, title="年度均報酬")
@@ -215,7 +215,7 @@ sub_sorted["trade_no"] = sub_sorted.index + 1
 
 line = alt.Chart(sub_sorted).mark_line(color="#e74c3c").encode(
     x=alt.X("trade_no:Q", title="累計交易筆數"),
-    y=alt.Y("cum_ret:Q", title="累計報酬", axis=alt.Axis(format=".0%")),
+    y=alt.Y("cum_ret:Q", title="累計報酬", axis=alt.Axis(format=".2%")),
     tooltip=[alt.Tooltip("date:T", title="日期"), alt.Tooltip("ticker:N", title="股票"),
              alt.Tooltip("cum_ret:Q", format=".2%", title="累計報酬")]
 ).properties(height=300)
@@ -237,7 +237,7 @@ else:
 
     bar_month = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:O", title="月份"),
-        y=alt.Y("月報酬合計:Q", title="當月報酬合計(逐筆加總)", axis=alt.Axis(format=".0%")),
+        y=alt.Y("月報酬合計:Q", title="當月報酬合計(逐筆加總)", axis=alt.Axis(format=".2%")),
         color=alt.condition(alt.datum.月報酬合計 > 0, alt.value("#27ae60"), alt.value("#e74c3c")),
         tooltip=[alt.Tooltip("month:O", title="月份"), alt.Tooltip("次數:Q", title="交易次數"),
                  alt.Tooltip("勝率:Q", format=".2%"), alt.Tooltip("月報酬合計:Q", format=".2%")]

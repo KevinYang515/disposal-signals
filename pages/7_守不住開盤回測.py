@@ -181,7 +181,7 @@ mbox(c1, f"{cagr*100:+.2f}%", "CAGR")
 mbox(c2, f"{sharpe:.2f}", "Sharpe (年化)")
 mbox(c3, f"{dd.min()*100:+.2f}%", "MaxDD", positive_good=False)
 mbox(c4, f"{wr*100:.2f}%", "日勝率")
-mbox(c5, f"{total_net/1e6:+.2f}M", f"總淨 PnL ({n_yr:.1f}y)")
+mbox(c5, f"{total_net/1e6:+.2f}M", f"總淨 PnL ({n_yr:.2f}y)")
 mbox(c6, f"{daily['n'].mean():.2f}", "平均 fills/日")
 
 # ── Equity curve ────────────────────────────────────────────
@@ -192,8 +192,8 @@ eq["equity"] = budget + eq["cum_net"]
 chart = alt.Chart(eq).mark_line(color="#4ade80").encode(
     x=alt.X("date:T", title="日期"),
     y=alt.Y("equity:Q", title="權益 (NTD)", scale=alt.Scale(zero=False)),
-    tooltip=["date:T", alt.Tooltip("equity:Q", format=",.0f"),
-             alt.Tooltip("net:Q", format=",.0f", title="當日 PnL")]
+    tooltip=["date:T", alt.Tooltip("equity:Q", format=",.2f"),
+             alt.Tooltip("net:Q", format=",.2f", title="當日 PnL")]
 ).properties(height=320).interactive()
 st.altair_chart(chart, use_container_width=True)
 
@@ -222,7 +222,7 @@ mo_chart = alt.Chart(monthly).mark_bar().encode(
     y=alt.Y("ret_pct:Q", title="月報酬 %"),
     color=alt.condition(alt.datum.ret_pct > 0, alt.value("#4ade80"), alt.value("#f87171")),
     tooltip=["ym", alt.Tooltip("ret_pct:Q", format=".2f"),
-             alt.Tooltip("net:Q", format=",.0f"), "fills"]
+             alt.Tooltip("net:Q", format=",.2f"), "fills"]
 ).properties(height=240)
 st.altair_chart(mo_chart, use_container_width=True)
 

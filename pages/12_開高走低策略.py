@@ -99,8 +99,8 @@ else:
                 f'<div class="cand-meta">'
                 f'開盤 <b style="color:#f1f5f9">{row["open_px"]:.2f}</b> 元　'
                 f'跳空 <span class="up">+{row["gap_pct"]:.2f}%</span><br>'
-                f'市值 {row["mktcap_e8"]:.1f}億　{row["industry"]}<br>'
-                f'配置權重 <b>{row["weight"]:.1%}</b>'
+                f'市值 {row["mktcap_e8"]:.2f}億　{row["industry"]}<br>'
+                f'配置權重 <b>{row["weight"]:.2%}</b>'
                 f'</div>'
                 f'</div>',
                 unsafe_allow_html=True
@@ -225,8 +225,8 @@ styled = (
     .map(style_ret, subset=pct_cols)
     .format({
         '開盤跳空%': '{:+.2f}%',
-        '市值(億)': '{:.1f}',
-        '配置權重': '{:.1%}',
+        '市值(億)': '{:.2f}',
+        '配置權重': '{:.2%}',
         '毛損益%': '{:+.2f}%',
         '淨損益%': '{:+.2f}%',
     }, na_rep='—')

@@ -129,9 +129,9 @@ def sharpe_pf(s):
     s = pd.Series(s).dropna()
     if len(s) == 0:
         return np.nan, np.nan
-    sharpe = round(s.mean() / s.std(), 3) if s.std() > 0 else np.nan
+    sharpe = round(s.mean() / s.std(), 2) if s.std() > 0 else np.nan
     wins = s[s > 0]; loss = s[s <= 0]
-    pf = round(wins.mean() / abs(loss.mean()), 3) if len(loss) > 0 and loss.mean() != 0 else np.nan
+    pf = round(wins.mean() / abs(loss.mean()), 2) if len(loss) > 0 and loss.mean() != 0 else np.nan
     return sharpe, pf
 
 tab_lab, tab1, tab_5m, tab_t20, tab_cmp, tab2, tab3, tab4, tab5, tab_exit, tab6 = st.tabs(['🧪 策略研發', '🔔 今日訊號', '⚡ 5分盤動能', '🚪 出關動能', '⚖️ 策略比較', '📜 歷史回測紀錄', '🔬 自訂策略', '📊 進場網格回測', '📖 策略說明', '📤 持有出清時機', '⚙️ 使用方式'])
@@ -827,8 +827,8 @@ with tab_cmp:
         .apply(_cmp_best('MaxDD(%)', higher_is_better=True), subset=['MaxDD(%)'])  # MaxDD 越接近0(越大)越好
         .format({
             '平均持有天數': '{:.2f}', '平均報酬/筆(%)': '{:+.2f}', '中位數報酬/筆(%)': '{:+.2f}',
-            '勝率(%)': '{:.2f}', '賺賠比': '{:.2f}', '資金效率(%/天)': '{:.3f}',
-            '年化交易頻率(筆/年)': '{:.1f}', 'Sharpe': '{:.2f}', 'MaxDD(%)': '{:.2f}',
+            '勝率(%)': '{:.2f}', '賺賠比': '{:.2f}', '資金效率(%/天)': '{:.2f}',
+            '年化交易頻率(筆/年)': '{:.2f}', 'Sharpe': '{:.2f}', 'MaxDD(%)': '{:.2f}',
         })
     )
     st.dataframe(styled_cmp, use_container_width=True)

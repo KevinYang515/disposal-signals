@@ -427,7 +427,7 @@ with tab_ml:
             chart = alt.Chart(shap_df.head(10)).mark_bar(color=NEUTRAL_COLOR).encode(
                 x=alt.X("mean_abs_shap:Q", title="平均|SHAP值|(重要性)"),
                 y=alt.Y("feature_cn:N", sort="-x", title=None),
-                tooltip=["feature_cn", alt.Tooltip("mean_abs_shap:Q", format=".3f")],
+                tooltip=["feature_cn", alt.Tooltip("mean_abs_shap:Q", format=".2f")],
             ).properties(height=320)
             st.altair_chart(chart, use_container_width=True)
         with c2:
@@ -454,8 +454,8 @@ with tab_ml:
             "- **52週檔位(低不低)排名中段**，單變量檢查也顯示：最低檔那組(q0)平均報酬確實略高，"
             "但差距不大（+1.24% vs 其他組+0.4~1.0%），**不是決定性因子**\n"
             "- 用GA做消融測試(ablation)——拿掉「必須在低檔」這個限制重新優化，"
-            f"TRAIN t-統計量幾乎不變（{ml_data['rule']['train_tstat_no_position']:.1f} vs "
-            f"{ml_data['rule']['train_tstat_with_position']:.1f}），**代表低檔位置對這個策略沒有增量貢獻**——"
+            f"TRAIN t-統計量幾乎不變（{ml_data['rule']['train_tstat_no_position']:.2f} vs "
+            f"{ml_data['rule']['train_tstat_with_position']:.2f}），**代表低檔位置對這個策略沒有增量貢獻**——"
             "它已經被「20日回檔幅度」跟「市場寬度」間接涵蓋了，不需要額外要求股價一定要在52週新低附近\n"
             "- **新發現的因子：融資使用率5日變化**——這支股票的融資使用率最近5天正在明顯下降(去槓桿/斷頭)的那組，"
             "後續報酬也比較好，訊號背後有合理的故事：融資戶已經先被洗出場，賣壓提前釋放"
@@ -550,7 +550,7 @@ with tab_ml:
             f"- 當天全市場同時 ≥ **{rule['breadth_severe_min']:.0f}檔**跌停（市場壓力門檻，比人工版「30+檔」寬鬆很多）\n"
             f"- 融資使用率5日變化 ≤ **{rule['margin_chg5_max']:.2f}**（沒有還在加碼融資）\n"
             "- **不要求連續跌停、不要求52週低點**——這是跟人工版最大的不同\n\n"
-            f"TRAIN(2015~2023) t-統計量高達 **{rule['train_tstat_with_position']:.1f}**，"
+            f"TRAIN(2015~2023) t-統計量高達 **{rule['train_tstat_with_position']:.2f}**，"
             "但這個數字本身會嚴重高估信心水準——訊號在同一次崩盤日高度相關(不是統計獨立樣本)，"
             "不能直接套 sqrt(n) 解讀成「非常顯著」，實際可信度要看下面的逐年穩健度。"
         )
