@@ -1,0 +1,16 @@
+{
+  "period": "2024-04-23 ~ 2026-07-15 (樣本外)",
+  "n_trades": 345,
+  "n_days": 69,
+  "sharpe": 6.34,
+  "ann_ret_pct": 1549.7,
+  "max_dd_pct": -6.46,
+  "win_rate_pct": 58.26,
+  "profit_factor": 1.61,
+  "avg_net_pct": 0.772,
+  "avg_gross_pct": 0.979,
+  "cost_pct": 0.207,
+  "latest_date": "2026-07-15",
+  "strategy": "全市場開高>=3% | 市值<=76億 | 排除鎖漲停 | 候選>=7才進場 | top5 ML分數加權 | 8%停損(保險)",
+  "has_live_signal": false
+}
