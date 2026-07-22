@@ -9,6 +9,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
+import json
 from pathlib import Path
 
 st.set_page_config(page_title="爆量反彈策略", page_icon="💥", layout="wide")
@@ -21,6 +22,9 @@ NEUTRAL_COLOR = "#60a5fa"
 
 HORIZON_ORDER = [1, 3, 5, 10, 20]
 HORIZON_LABELS = {1: "+1日", 3: "+3日", 5: "+5日", 10: "+10日", 20: "+20日"}
+
+
+ML_DATA_DIR = Path(__file__).parent.parent / "data" / "burst_ml_ga"
 
 
 @st.cache_data(ttl=3600)
@@ -38,11 +42,31 @@ def load_all():
     return d
 
 
+@st.cache_data(ttl=3600)
+def load_ml():
+    d = {}
+    for name in ["final_signals", "final_horizon_stats", "shap_importance", "univariate_quantiles"]:
+        d[name] = pd.read_csv(ML_DATA_DIR / f"ga_{name}.csv")
+    d["validate_yearly"] = pd.read_csv(ML_DATA_DIR / "validate_yearly.csv")
+    d["validate_liquidity"] = pd.read_csv(ML_DATA_DIR / "validate_liquidity.csv")
+    with open(ML_DATA_DIR / "ga_best_rule.json", encoding="utf-8") as f:
+        d["rule"] = json.load(f)
+    d["final_signals"]["date"] = pd.to_datetime(d["final_signals"]["date"])
+    d["final_signals"]["code"] = d["final_signals"]["code"].astype(str)
+    return d
+
+
 try:
     data = load_all()
 except FileNotFoundError:
     st.error("找不到資料，請確認 data/burst_study/ 目錄下的 burst_*.csv 存在")
     st.stop()
+
+try:
+    ml_data = load_ml()
+    ML_AVAILABLE = True
+except FileNotFoundError:
+    ML_AVAILABLE = False
 
 core_signals = data["core_signals"]
 core_horizon = data["core_horizon_stats"]
@@ -71,9 +95,9 @@ st.warning(
     "本頁為描述性事件研究，非投資建議，跌停鎖死期間也未必能真的買到。"
 )
 
-tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_history = st.tabs(
+tab_overview, tab_breadth, tab_q1, tab_q2, tab_q3, tab_ml, tab_history = st.tabs(
     ["📊 核心數據", "🌪️ 關鍵發現：市場寬度", "❓一定要跌停嗎", "🔄 反向：高檔爆量出貨？",
-     "🏭 市值/流動性/產業", "📜 歷史事件"]
+     "🏭 市值/流動性/產業", "🤖 ML+GA挖掘版", "📜 歷史事件"]
 )
 
 # ============================================================
@@ -365,7 +389,140 @@ with tab_q3:
     st.caption("半導體/通訊業/其他電子偏強，塑膠工業接近打平——電子權值股在歷次系統性股災中本來就佔比最高，可能只是反映台股結構而非產業本身的獨立因子。")
 
 # ============================================================
-# Tab 6: 歷史事件
+# Tab: ML+GA挖掘版
+# ============================================================
+with tab_ml:
+    if not ML_AVAILABLE:
+        st.info("ML+GA 挖掘資料尚未產生，請先執行 D:\\stock\\stock\\burst_ml_ga_study\\ 底下的流程。")
+    else:
+        rule = ml_data["rule"]["with_position"]
+        final_sig = ml_data["final_signals"]
+        st.markdown("### 用 LightGBM+SHAP 找因子，GA(deap) 優化門檻")
+        st.markdown(
+            "為了回答「一定要跌停鎖死嗎？低檔爆量算不算？」，這裡把事件母體放寬到"
+            "**不限跌停**：只要「當日收黑≥3% + 成交量≥1.5倍均量」就算候選"
+            f"（{len(final_sig):,} 筆候選在此規則下被選中），"
+            "讓機器學習從一堆候選特徵裡自己找出真正重要的，而不是人工預設「一定要跌停」。"
+        )
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.markdown("#### SHAP 特徵重要性排序")
+            shap_df = ml_data["shap_importance"].copy()
+            shap_df["feature_cn"] = shap_df["feature"].map({
+                "breadth_severe": "市場寬度(跌停家數)", "breadth_moderate": "市場寬度(跌5%+家數)",
+                "breadth_up_severe": "市場寬度(漲停家數)", "ret_20d": "20日累積報酬",
+                "price_position_252": "52週檔位(低檔位置)", "log_liquidity": "流動性(對數)",
+                "is_limit_down": "是否跌停", "industry": "產業", "margin_chg5": "融資使用率5日變化",
+                "drawdown_20d": "20日回檔幅度", "ret_5d": "5日累積報酬", "log_mktcap": "市值(對數)",
+                "streak_down_days": "連續收黑天數", "near_day_low": "收盤貼近當日低點",
+                "vol_ratio": "爆量倍數", "market": "市場別",
+            }).fillna(shap_df["feature"])
+            chart = alt.Chart(shap_df.head(10)).mark_bar(color=NEUTRAL_COLOR).encode(
+                x=alt.X("mean_abs_shap:Q", title="平均|SHAP值|(重要性)"),
+                y=alt.Y("feature_cn:N", sort="-x", title=None),
+                tooltip=["feature_cn", alt.Tooltip("mean_abs_shap:Q", format=".3f")],
+            ).properties(height=320)
+            st.altair_chart(chart, use_container_width=True)
+        with c2:
+            st.markdown("#### 關鍵單變量檢查（回答「一定要低檔嗎」）")
+            uq = ml_data["univariate_quantiles"]
+            pos_q = uq[uq["feature"] == "price_position_252"]
+            dd_q = uq[uq["feature"] == "drawdown_20d"]
+            st.caption("52週檔位分5組（q0=最接近52週低點的「低檔」～q4=接近52週高點）：")
+            st.dataframe(
+                pos_q[["q", "mean_fwd10", "win%", "n"]].rename(
+                    columns={"q": "分組(0=最低檔)", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+                ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+                use_container_width=True, hide_index=True)
+            st.caption("20日回檔幅度分5組（q0=跌最深）：")
+            st.dataframe(
+                dd_q[["q", "mean_fwd10", "win%", "n"]].rename(
+                    columns={"q": "分組(0=跌最深)", "mean_fwd10": "+10日均報酬%", "win%": "勝率%", "n": "樣本數"}
+                ).style.format({"+10日均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "樣本數": "{:,}"}),
+                use_container_width=True, hide_index=True)
+
+        st.markdown("#### 結論：市場寬度依然是王者，「低檔」不是必要條件")
+        st.markdown(
+            "- **市場寬度**（同一天全市場多少檔跌停/跌5%以上）在 SHAP 排名第1、2名，跟先前純統計研究的發現完全一致\n"
+            "- **52週檔位(低不低)排名中段**，單變量檢查也顯示：最低檔那組(q0)平均報酬確實略高，"
+            "但差距不大（+1.24% vs 其他組+0.4~1.0%），**不是決定性因子**\n"
+            "- 用GA做消融測試(ablation)——拿掉「必須在低檔」這個限制重新優化，"
+            f"TRAIN t-統計量幾乎不變（{ml_data['rule']['train_tstat_no_position']:.1f} vs "
+            f"{ml_data['rule']['train_tstat_with_position']:.1f}），**代表低檔位置對這個策略沒有增量貢獻**——"
+            "它已經被「20日回檔幅度」跟「市場寬度」間接涵蓋了，不需要額外要求股價一定要在52週新低附近\n"
+            "- **新發現的因子：融資使用率5日變化**——這支股票的融資使用率最近5天正在明顯下降(去槓桿/斷頭)的那組，"
+            "後續報酬也比較好，訊號背後有合理的故事：融資戶已經先被洗出場，賣壓提前釋放"
+        )
+
+        st.markdown("### GA 最終規則與報酬")
+        st.markdown(
+            f"- 20日內從高點回檔 ≤ **{rule['drawdown_20d_max']:.1f}%**\n"
+            f"- 當日成交量 ≥ **{rule['vol_ratio_min']:.2f}倍**均量（比人工版寬鬆，不用到2倍）\n"
+            f"- 當天全市場同時 ≥ **{rule['breadth_severe_min']:.0f}檔**跌停（市場壓力門檻，比人工版「30+檔」寬鬆很多）\n"
+            f"- 融資使用率5日變化 ≤ **{rule['margin_chg5_max']:.2f}**（沒有還在加碼融資）\n"
+            "- **不要求連續跌停、不要求52週低點**——這是跟人工版最大的不同\n\n"
+            f"TRAIN(2015~2023) t-統計量高達 **{rule['train_tstat_with_position']:.1f}**，"
+            "但這個數字本身會嚴重高估信心水準——訊號在同一次崩盤日高度相關(不是統計獨立樣本)，"
+            "不能直接套 sqrt(n) 解讀成「非常顯著」，實際可信度要看下面的逐年穩健度。"
+        )
+        hz = ml_data["final_horizon_stats"].rename(columns={"horizon": "持有天數", "n": "樣本數", "mean": "平均報酬%",
+                                                              "win": "勝率%", "sharpe": "Sharpe", "pf": "賺賠比"})
+        st.dataframe(
+            hz[["持有天數", "樣本數", "平均報酬%", "勝率%", "Sharpe", "賺賠比"]].style.format(
+                {"平均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "Sharpe": "{:.2f}", "賺賠比": "{:.2f}", "樣本數": "{:,}"}),
+            use_container_width=True, hide_index=True)
+
+        st.markdown("### 三層驗證")
+        v1, v2 = st.columns(2)
+        with v1:
+            st.markdown("**逐年穩健度（+10日）**")
+            yr = ml_data["validate_yearly"].rename(columns={"year": "年份", "n": "樣本數", "mean": "平均報酬%",
+                                                              "win": "勝率%", "sharpe": "Sharpe", "pf": "賺賠比"})
+            st.dataframe(
+                yr.style.format({"平均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "Sharpe": "{:.2f}", "賺賠比": "{:.2f}",
+                                  "樣本數": "{:.0f}", "年份": "{:.0f}"}, na_rep="—"),
+                use_container_width=True, hide_index=True)
+            neg = (yr["平均報酬%"] < 0).sum()
+            st.caption(f"{len(yr)}年中只有 {neg} 年平均為負（2019年樣本數僅4筆不列入判斷）——"
+                       "比先前純跌停版本(11年5年負)明顯更穩健，這是放寬到不限跌停之後樣本更分散帶來的好處。")
+        with v2:
+            st.markdown("**流動性分組（+10日）**")
+            liq = ml_data["validate_liquidity"].rename(columns={"liq_bucket": "流動性分組", "n": "樣本數",
+                                                                  "mean": "平均報酬%", "win": "勝率%",
+                                                                  "sharpe": "Sharpe", "pf": "賺賠比"})
+            st.dataframe(
+                liq[["流動性分組", "樣本數", "平均報酬%", "勝率%", "Sharpe", "賺賠比"]].style.format(
+                    {"平均報酬%": "{:+.2f}%", "勝率%": "{:.2f}%", "Sharpe": "{:.2f}", "賺賠比": "{:.2f}",
+                     "樣本數": "{:.0f}"}),
+                use_container_width=True, hide_index=True)
+            st.caption("四個流動性分組報酬都差不多，不是靠殭屍股/極端小型股撐出來的假訊號。")
+
+        st.warning(
+            "⚠️ **凍結進出場誠實檢查**：約8.6%的訊號日、6.7%的出場日該股票整天鎖死無實際換手(open==close)。"
+            "已用「延伸到真正解鎖那天的開盤價」重新估算，修正後 +10日均報酬僅從10.54%微調到10.65%，"
+            "**不是靠鎖死無法成交的假訊號撐出來的**——但實際下單時遇到鎖死當天仍要有應變計畫(隔天再補、分批)。"
+        )
+
+        st.markdown("### 歷史訊號明細（ML+GA規則）")
+        show_cols_ml = ["date", "code", "drawdown_20d", "vol_ratio", "breadth_severe", "margin_chg5",
+                         "price_position_252", "is_limit_down", "fwd5_pct", "fwd10_pct", "fwd20_pct"]
+        ml_disp = final_sig[show_cols_ml].sort_values("date", ascending=False).rename(columns={
+            "date": "日期", "code": "代號", "drawdown_20d": "20日回檔%", "vol_ratio": "量比",
+            "breadth_severe": "當天全市場跌停家數", "margin_chg5": "融資使用率5日變化",
+            "price_position_252": "52週檔位(0=低)", "is_limit_down": "當天是否跌停",
+            "fwd5_pct": "+5日%", "fwd10_pct": "+10日%", "fwd20_pct": "+20日%",
+        })
+        st.dataframe(
+            ml_disp.style.format({
+                "20日回檔%": "{:+.2f}%", "量比": "{:.2f}", "當天全市場跌停家數": "{:.0f}",
+                "融資使用率5日變化": "{:+.2f}", "52週檔位(0=低)": "{:.2f}", "當天是否跌停": "{:.0f}",
+                "+5日%": "{:+.2f}%", "+10日%": "{:+.2f}%", "+20日%": "{:+.2f}%",
+            }, na_rep="—"),
+            use_container_width=True, hide_index=True, height=380)
+
+# ============================================================
+# Tab: 歷史事件
 # ============================================================
 with tab_history:
     st.markdown("### 逐筆訊號明細")
