@@ -37,7 +37,7 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v15-20260723-taiex-otc-columns"
+DATA_VERSION = "v16-20260723-broker-events"
 
 
 @st.cache_data(ttl=3600)
