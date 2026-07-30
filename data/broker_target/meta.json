@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-31T02:06:21",
+  "generated_at": "2026-07-31T02:35:35",
   "source": "D:\\stock\\tw-quant-research\\work\\optimization_2025\\enriched\\enriched_ticker_day.csv",
-  "n_rows": 4483,
+  "n_rows": 4580,
   "date_min": "2025-01-02",
   "date_max": "2026-07-30",
-  "n_v1_candidates": 107,
+  "n_v1_candidates": 109,
   "n_pending": 6,
   "status": "testing",
   "max_horizon_days": 8,
