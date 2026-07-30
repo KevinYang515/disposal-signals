@@ -37,7 +37,20 @@ V1_PRESET = dict(
 
 
 # 手動bump：資料schema變了但函式原始碼沒變時，強制cache失效（見「9_漲跌停事件研究」同款寫法）
-DATA_VERSION = "v16-20260723-broker-events"
+DATA_SCHEMA_VERSION = "v16-20260723-broker-events"
+
+
+def _data_cache_key() -> str:
+    """把 events.csv 的 mtime 併進cache key，讓每天的自動資料更新
+    （只改資料檔、不改這支程式碼）也能自動讓cache失效，不用每次手動bump版本字串。
+    這個檔案本身之前就吃過虧：DATA_SCHEMA_VERSION 從07-23後沒再手動bump過，
+    導致07-24~07-30好幾次資料更新在1小時cache TTL內都沒被看到。"""
+    events_path = os.path.join(DATA_DIR, "events.csv")
+    try:
+        mtime = os.path.getmtime(events_path)
+    except OSError:
+        mtime = 0
+    return f"{DATA_SCHEMA_VERSION}-{mtime}"
 
 
 @st.cache_data(ttl=3600)
@@ -56,7 +69,7 @@ def load_data(_version):
 
 
 try:
-    events, meta, brokers_all, industries_all = load_data(DATA_VERSION)
+    events, meta, brokers_all, industries_all = load_data(_data_cache_key())
 except FileNotFoundError:
     st.error(
         "找不到資料檔，請先在 tw-quant-research 執行 "
