@@ -65,11 +65,12 @@ def load_data(_version):
         meta = json.load(f)
     brokers_all = sorted(set(b for row in ev["brokers"].dropna() for b in row.split(";")))
     industries_all = sorted(ev["industry"].dropna().unique().tolist())
-    return ev, meta, brokers_all, industries_all
+    themes_all = sorted(set(t for row in ev.get("theme", pd.Series(dtype=str)).dropna() for t in row.split("、")))
+    return ev, meta, brokers_all, industries_all, themes_all
 
 
 try:
-    events, meta, brokers_all, industries_all = load_data(_data_cache_key())
+    events, meta, brokers_all, industries_all, themes_all = load_data(_data_cache_key())
 except FileNotFoundError:
     st.error(
         "找不到資料檔，請先在 tw-quant-research 執行 "
@@ -88,6 +89,8 @@ if "taiex_event_return_pct" not in events.columns:
     events["taiex_event_return_pct"] = pd.NA
 if "otc_event_return_pct" not in events.columns:
     events["otc_event_return_pct"] = pd.NA
+if "theme" not in events.columns:
+    events["theme"] = pd.NA
 
 st.title("🎯 法人目標價事件研究（D0-D8）")
 st.caption(
@@ -122,6 +125,7 @@ def _apply_preset(preset: dict):
     st.session_state["f_exclude_pending"] = preset["exclude_pending"]
     st.session_state["f_brokers"] = []
     st.session_state["f_industries"] = []
+    st.session_state["f_themes"] = []
     # 滑桿旁邊的「直接輸入」數字欄位是獨立的 widget key，套用預設值時要一起同步，
     # 不然按鈕改了滑桿，旁邊的輸入框卻還停在舊數字。
     for k in NUMERIC_FILTER_KEYS:
@@ -297,8 +301,12 @@ with st.sidebar:
 
     st.session_state.setdefault("f_brokers", [])
     st.session_state.setdefault("f_industries", [])
+    st.session_state.setdefault("f_themes", [])
     broker_sel = st.multiselect("券商（符合任一即可）", brokers_all, key="f_brokers")
     industry_sel = st.multiselect("產業（符合任一即可）", industries_all, key="f_industries")
+    theme_sel = st.multiselect(
+        "細產業題材（符合任一即可，涵蓋範圍較小，未列入的個股不受影響）", themes_all, key="f_themes"
+    )
 
     market_boards = sorted(events["market_board"].dropna().unique().tolist())
     st.session_state.setdefault("f_market", [])
@@ -338,6 +346,9 @@ def apply_filters(df):
         d = d[d["brokers"].fillna("").str.contains(pattern, regex=True)]
     if industry_sel:
         d = d[d["industry"].isin(industry_sel)]
+    if theme_sel:
+        pattern = "|".join(pd.Series(theme_sel).str.replace(r"([.^$*+?{}\[\]\\|()])", r"\\\1", regex=True))
+        d = d[d["theme"].fillna("").str.contains(pattern, regex=True)]
     if market_sel:
         d = d[d["market_board"].isin(market_sel)]
     return d
@@ -464,6 +475,7 @@ display_cols = {
     "ticker": "代號",
     "company": "公司",
     "industry": "產業",
+    "theme": "細產業題材",
     "market_board": "市場別",
     "brokers": "券商",
     "positive_event_flag": "偏多",
