@@ -1,60 +1,9 @@
 {
-  "date": "2026-07-31",
-  "generated_at": "2026-07-31T09:02:14.143263",
-  "n_candidates_pool": 124,
-  "n_signal": 17,
+  "date": "2026-08-03",
+  "generated_at": "2026-08-03T09:02:00.866579",
+  "n_candidates_pool": 95,
+  "n_signal": 0,
   "min_candidates_required": 7,
-  "triggered": true,
-  "picks": [
-    {
-      "code": "6933",
-      "gap_pct": 9.09,
-      "open_px": 150.0,
-      "prev_close": 137.5,
-      "mktcap_e8": 58.3,
-      "industry": "電腦及週邊設備業",
-      "pred_score": 1.2295,
-      "weight": 0.4966
-    },
-    {
-      "code": "8105",
-      "gap_pct": 8.56,
-      "open_px": 15.85,
-      "prev_close": 14.6,
-      "mktcap_e8": 64.5,
-      "industry": "光電業",
-      "pred_score": 1.1278,
-      "weight": 0.3824
-    },
-    {
-      "code": "6517",
-      "gap_pct": 5.23,
-      "open_px": 62.4,
-      "prev_close": 59.3,
-      "mktcap_e8": 18.1,
-      "industry": "光電業",
-      "pred_score": 0.8681,
-      "weight": 0.0908
-    },
-    {
-      "code": "6141",
-      "gap_pct": 5.98,
-      "open_px": 31.0,
-      "prev_close": 29.25,
-      "mktcap_e8": 33.2,
-      "industry": "電子零組件業",
-      "pred_score": 0.8042,
-      "weight": 0.019
-    },
-    {
-      "code": "5386",
-      "gap_pct": 8.45,
-      "open_px": 224.5,
-      "prev_close": 207.0,
-      "mktcap_e8": 74.7,
-      "industry": "電腦及週邊設備業",
-      "pred_score": 0.7973,
-      "weight": 0.0112
-    }
-  ]
+  "triggered": false,
+  "picks": []
 }
