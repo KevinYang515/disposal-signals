@@ -162,19 +162,59 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
     if yr_rows:
         st.dataframe(pd.DataFrame(yr_rows).set_index('年份'), use_container_width=True)
 
-# ── 完整逐筆明細 ────────────────────────────────────────
-with st.expander(f'📋 完整逐筆明細（{len(view)} 筆，依目前篩選條件）'):
-    show_cols = ['d0', 'code', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
-                 'cz_influence_pct', 'd1_frozen', 'censored', 'short_ret_open_to_close_pct',
-                 'short_mae_pct', 'success']
-    show = view[show_cols].sort_values('d0', ascending=False).copy()
-    show.columns = ['D0訊號日', '股票', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
-                     '影響力%', 'D1鎖死', '截尾', '放空報酬%', '最大不利波動%', '成功']
-    st.dataframe(
-        show.style.format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.0f}', '影響力%': '{:.2f}',
-                            '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
-        use_container_width=True, height=400,
-    )
+# ── 完整逐筆明細（主表，直接顯示，比照「歷史回測紀錄」頁樣式）──
+st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
+
+show_cols = ['d0', 'code', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
+             'cz_influence_pct', 'd1_frozen', 'censored', 'short_ret_open_to_close_pct',
+             'short_mae_pct', 'success']
+show = view[show_cols].sort_values('d0', ascending=False).copy()
+show.columns = ['D0訊號日', '股票', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
+                 '影響力%', 'D1鎖死', '截尾', '放空報酬%', '最大不利波動%', '成功']
+
+
+def color_success(val):
+    if val is True:
+        return 'color: #26c281; font-weight: 700'
+    if val is False:
+        return 'color: #e74c3c; font-weight: 700'
+    return ''
+
+
+def color_ret(val):
+    try:
+        v = float(val)
+        if v > 5:
+            return 'color: #26c281; font-weight: 700'
+        if v > 0:
+            return 'color: #2ecc71'
+        if v > -5:
+            return 'color: #e67e22'
+        return 'color: #e74c3c; font-weight: 700'
+    except Exception:
+        return ''
+
+
+st.dataframe(
+    show.style
+        .map(color_success, subset=['成功'])
+        .map(color_ret, subset=['放空報酬%'])
+        .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.0f}', '影響力%': '{:.2f}',
+                 '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
+    use_container_width=True, height=520,
+)
+st.download_button('📥 下載此表 CSV', show.to_csv(index=False, encoding='utf-8-sig'),
+                    'citycenter_ga_events_filtered.csv', 'text/csv', key='dl_events_full')
+
+st.divider()
+st.markdown('**累積報酬走勢**（假設每筆等權重，依D0訊號日排序）')
+cum_src = view[~view['censored']].sort_values('d0')['short_ret_open_to_close_pct'].dropna()
+if len(cum_src) >= 2:
+    cum = (cum_src / 100 + 1).cumprod() - 1
+    cum.index = range(len(cum))
+    st.line_chart(pd.DataFrame({'累積報酬(%)': (cum * 100).values}), height=250)
+else:
+    st.caption('目前篩選條件下已結算筆數不足，無法繪製累積報酬走勢。')
 
 st.markdown('---')
 st.subheader('🔎 其他研究結論（非本頁資料表涵蓋範圍）')
