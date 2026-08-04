@@ -25,6 +25,11 @@ def sharpe_pf(returns):
 def load_events():
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
+    df['code'] = df['code'].astype(str)
+    names_fp = os.path.join(DATA_DIR, 'stock_names.csv')
+    names = pd.read_csv(names_fp, dtype={'code': str})
+    df = df.merge(names, on='code', how='left')
+    df['name'] = df['name'].fillna('')
     return df
 
 
@@ -165,11 +170,13 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
 # ── 完整逐筆明細（主表，直接顯示，比照「歷史回測紀錄」頁樣式）──
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
 
-show_cols = ['d0', 'code', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
+show_cols = ['d0', 'code', 'name', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
              'cz_influence_pct', 'd1_frozen', 'censored', 'short_ret_open_to_close_pct',
              'short_mae_pct', 'success']
 show = view[show_cols].sort_values('d0', ascending=False).copy()
-show.columns = ['D0訊號日', '股票', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
+show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
+show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
+show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
                  '影響力%', 'D1鎖死', '截尾', '放空報酬%', '最大不利波動%', '成功']
 
 
