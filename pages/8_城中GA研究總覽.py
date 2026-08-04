@@ -48,21 +48,31 @@ with col_f1:
 with col_f2:
     sel_market = st.multiselect('市場', sorted(events['market'].dropna().unique().tolist()), default=sorted(events['market'].dropna().unique().tolist()))
 with col_f3:
-    gap_bins = ['<0%', '0-1%', '1-9%(甜蜜點)', '9-9.5%', '≥9.5%(避開)']
+    gap_bins = ['<-5%', '-5~-2%', '-2~0%', '0~1%', '1~3%', '3~5%', '5~7%', '7~9%', '9~9.5%', '≥9.5%(避開)']
     sel_gap = st.multiselect('D1開盤跳空區間', gap_bins, default=gap_bins)
 with col_f4:
     sel_streak = st.multiselect('連續鎖漲停天數', [1, 2, 3, 4], default=[1, 2, 3, 4])
 
 
 def gap_bucket(g):
+    if g < -5:
+        return '<-5%'
+    if g < -2:
+        return '-5~-2%'
     if g < 0:
-        return '<0%'
+        return '-2~0%'
     if g < 1:
-        return '0-1%'
+        return '0~1%'
+    if g < 3:
+        return '1~3%'
+    if g < 5:
+        return '3~5%'
+    if g < 7:
+        return '5~7%'
     if g < 9:
-        return '1-9%(甜蜜點)'
+        return '7~9%'
     if g < 9.5:
-        return '9-9.5%'
+        return '9~9.5%'
     return '≥9.5%(避開)'
 
 
@@ -132,7 +142,63 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
             ),
             use_container_width=True,
         )
-        st.caption('⭐ 9.5%以上是關鍵懸崖：D1鎖死率從9%以下的個位數暴增，最慘單筆也急遽惡化。這是目前找到最有效的防嘎漲停規則。')
+        st.caption('⭐ 9.5%以上是關鍵懸崖：D1鎖死率從9%以下的個位數暴增，最慘單筆也急遽惡化。這是目前找到最有效的防嘎漲停規則。跳空1~9%整體是甜蜜點，細分後可看到區間內部仍有差異；負跳空（開低）樣本數較少，僅供參考。')
+
+# ── 停損/停利模擬器 ──────────────────────────────────────
+with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價估算）'):
+    st.caption(
+        '設定「股價漲多少%停損」「股價跌多少%停利」，用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
+        '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天直接鎖死鎖漲停（完全無法交易）的事件不受影響，維持原本「延伸到解鎖日開盤強制回補」的出場方式。'
+        '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
+    )
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        stop_pct = st.slider('停損：股價比進場價漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
+    with col_s2:
+        tp_pct = st.slider('停利：股價比進場價跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
+
+    def simulate_ret(row):
+        if row['censored'] or pd.isna(row['d1_open']):
+            return np.nan
+        if row['d1_frozen']:
+            return row['short_ret_open_to_close_pct']
+        entry = row['d1_open']
+        exit_price = row['d1_close']
+        stop_price = entry * (1 + stop_pct / 100) if stop_pct > 0 else None
+        tp_price = entry * (1 - tp_pct / 100) if tp_pct > 0 else None
+        hit_stop = stop_price is not None and row['d1_high'] >= stop_price
+        hit_tp = tp_price is not None and row['d1_low'] <= tp_price
+        if hit_stop:
+            exit_price = stop_price
+        elif hit_tp:
+            exit_price = tp_price
+        return (entry - exit_price) / entry * 100
+
+    sim = view.copy()
+    sim['sim_ret'] = sim.apply(simulate_ret, axis=1)
+    sim_settled = sim[~sim['censored']]
+
+    if len(sim_settled) == 0:
+        st.warning('目前篩選條件下無已結算資料')
+    else:
+        base_wr = sim_settled['success'].mean() * 100
+        base_avg = sim_settled['short_ret_open_to_close_pct'].mean()
+        base_sh, _ = sharpe_pf(sim_settled['short_ret_open_to_close_pct'])
+        base_worst = sim_settled['short_ret_open_to_close_pct'].min()
+
+        sim_wr = (sim_settled['sim_ret'] > 0).mean() * 100
+        sim_avg = sim_settled['sim_ret'].mean()
+        sim_sh, _ = sharpe_pf(sim_settled['sim_ret'])
+        sim_worst = sim_settled['sim_ret'].min()
+
+        cmp_df = pd.DataFrame({
+            '原本（持有到收盤/延伸強制回補）': [f'{base_wr:.2f}%', f'{base_avg:+.3f}%',
+                                    f'{base_sh:.2f}' if pd.notna(base_sh) else '-', f'{base_worst:+.2f}%'],
+            '套用停損/停利後': [f'{sim_wr:.2f}%', f'{sim_avg:+.3f}%',
+                          f'{sim_sh:.2f}' if pd.notna(sim_sh) else '-', f'{sim_worst:+.2f}%'],
+        }, index=['勝率', '平均報酬', 'Sharpe(近似)', '最慘單筆'])
+        st.dataframe(cmp_df, use_container_width=True)
+        st.caption(f'已結算 {len(sim_settled)} 筆（D1鎖死延伸案例維持原出場不變）。')
 
 # ── lock_streak 分組表 ──────────────────────────────────
 with st.expander('📊 依「連續鎖漲停天數」分組（跟FlipBranch規律相反）'):
