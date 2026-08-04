@@ -157,25 +157,30 @@ with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價
     with col_s2:
         tp_pct = st.slider('停利：股價比進場價跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
 
-    def simulate_ret(row):
-        if row['censored'] or pd.isna(row['d1_open']):
-            return np.nan
-        if row['d1_frozen']:
-            return row['short_ret_open_to_close_pct']
-        entry = row['d1_open']
-        exit_price = row['d1_close']
-        stop_price = entry * (1 + stop_pct / 100) if stop_pct > 0 else None
-        tp_price = entry * (1 - tp_pct / 100) if tp_pct > 0 else None
-        hit_stop = stop_price is not None and row['d1_high'] >= stop_price
-        hit_tp = tp_price is not None and row['d1_low'] <= tp_price
-        if hit_stop:
-            exit_price = stop_price
-        elif hit_tp:
-            exit_price = tp_price
-        return (entry - exit_price) / entry * 100
-
     sim = view.copy()
-    sim['sim_ret'] = sim.apply(simulate_ret, axis=1)
+    entry = sim['d1_open'].to_numpy(dtype=float)
+    close = sim['d1_close'].to_numpy(dtype=float)
+    high = sim['d1_high'].to_numpy(dtype=float)
+    low = sim['d1_low'].to_numpy(dtype=float)
+    frozen = sim['d1_frozen'].to_numpy(dtype=bool)
+    censored_arr = sim['censored'].to_numpy(dtype=bool)
+    base_ret = sim['short_ret_open_to_close_pct'].to_numpy(dtype=float)
+
+    with np.errstate(invalid='ignore'):
+        stop_price = entry * (1 + stop_pct / 100)
+        tp_price = entry * (1 - tp_pct / 100)
+        hit_stop = (stop_pct > 0) & (high >= stop_price)
+        hit_tp = (tp_pct > 0) & (low <= tp_price)
+
+        exit_price = close.copy()
+        exit_price = np.where(hit_tp, tp_price, exit_price)
+        exit_price = np.where(hit_stop, stop_price, exit_price)  # 停損優先，覆蓋停利
+
+        sim_ret = (entry - exit_price) / entry * 100
+        sim_ret = np.where(frozen, base_ret, sim_ret)
+        sim_ret = np.where(censored_arr | np.isnan(entry), np.nan, sim_ret)
+
+    sim['sim_ret'] = sim_ret
     sim_settled = sim[~sim['censored']]
 
     if len(sim_settled) == 0:
