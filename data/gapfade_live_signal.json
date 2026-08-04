@@ -1,8 +1,8 @@
 {
-  "date": "2026-08-03",
-  "generated_at": "2026-08-03T09:02:00.866579",
-  "n_candidates_pool": 95,
-  "n_signal": 0,
+  "date": "2026-08-04",
+  "generated_at": "2026-08-04T09:09:10.141141",
+  "n_candidates_pool": 90,
+  "n_signal": 1,
   "min_candidates_required": 7,
   "triggered": false,
   "picks": []
