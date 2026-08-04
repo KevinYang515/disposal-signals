@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """凱基-城中GA 隔日沖放空策略：歷史回測紀錄與因子挖掘總覽。"""
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -21,6 +22,15 @@ def sharpe_pf(returns):
     return sharpe, pf
 
 
+def _parse_spark(v):
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=3600)
 def load_events():
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
@@ -30,6 +40,7 @@ def load_events():
     names = pd.read_csv(names_fp, dtype={'code': str})
     df = df.merge(names, on='code', how='left')
     df['name'] = df['name'].fillna('')
+    df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
     return df
 
 
@@ -242,13 +253,15 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
 
 show_cols = ['d0', 'code', 'name', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
-             'cz_influence_pct', 'd1_frozen', 'censored', 'short_ret_open_to_close_pct',
-             'short_mae_pct', 'success']
+             'cz_influence_pct', 'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen',
+             'censored', 'short_ret_open_to_close_pct', 'short_mae_pct', 'success']
 show = view[show_cols].sort_values('d0', ascending=False).copy()
 show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
 show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
-                 '影響力%', 'D1鎖死', '截尾', '放空報酬%', '最大不利波動%', '成功']
+                 '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
+                 '最大不利波動%', '成功']
+show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
 
 
 def color_success(val):
@@ -278,11 +291,22 @@ st.dataframe(
         .map(color_success, subset=['成功'])
         .map(color_ret, subset=['放空報酬%'])
         .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.0f}', '影響力%': '{:.2f}',
+                 '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
+    column_config={
+        'D1走勢': st.column_config.LineChartColumn(
+            'D1走勢（分K收盤）', width='medium',
+            help='D1當天每分鐘收盤價走勢；缺資料的事件（約11%）不顯示。',
+        ),
+    },
 )
-st.download_button('📥 下載此表 CSV', show.to_csv(index=False, encoding='utf-8-sig'),
-                    'citycenter_ga_events_filtered.csv', 'text/csv', key='dl_events_full')
+st.caption('開盤/最高/最低/收盤為D1當天日線價；「D1走勢」是D1當天逐分鐘收盤價的簡易走勢圖（涵蓋率約88.7%，2021-2026官方候選中有抓到分K的部分）。')
+st.download_button(
+    '📥 下載此表 CSV',
+    show.drop(columns=['D1走勢']).to_csv(index=False, encoding='utf-8-sig'),
+    'citycenter_ga_events_filtered.csv', 'text/csv', key='dl_events_full',
+)
 
 st.divider()
 st.markdown('**累積報酬走勢**（假設每筆等權重，依D0訊號日排序）')
