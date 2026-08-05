@@ -1,9 +1,60 @@
 {
-  "date": "2026-08-04",
-  "generated_at": "2026-08-04T09:09:10.141141",
-  "n_candidates_pool": 90,
-  "n_signal": 1,
+  "date": "2026-08-05",
+  "generated_at": "2026-08-05T09:01:07.996926",
+  "n_candidates_pool": 76,
+  "n_signal": 10,
   "min_candidates_required": 7,
-  "triggered": false,
-  "picks": []
+  "triggered": true,
+  "picks": [
+    {
+      "code": "6693",
+      "gap_pct": 8.9,
+      "open_px": 177.5,
+      "prev_close": 163.0,
+      "mktcap_e8": 74.5,
+      "industry": "半導體業",
+      "pred_score": 1.8559,
+      "weight": 0.5588
+    },
+    {
+      "code": "5392",
+      "gap_pct": 4.6,
+      "open_px": 44.3,
+      "prev_close": 42.35,
+      "mktcap_e8": 74.8,
+      "industry": "光電業",
+      "pred_score": 1.0633,
+      "weight": 0.1745
+    },
+    {
+      "code": "7712",
+      "gap_pct": 3.55,
+      "open_px": 146.0,
+      "prev_close": 141.0,
+      "mktcap_e8": 45.9,
+      "industry": "半導體業",
+      "pred_score": 1.0548,
+      "weight": 0.1704
+    },
+    {
+      "code": "3094",
+      "gap_pct": 5.51,
+      "open_px": 37.35,
+      "prev_close": 35.4,
+      "mktcap_e8": 29.4,
+      "industry": "半導體業",
+      "pred_score": 0.8922,
+      "weight": 0.0915
+    },
+    {
+      "code": "4939",
+      "gap_pct": 3.73,
+      "open_px": 58.4,
+      "prev_close": 56.3,
+      "mktcap_e8": 55.3,
+      "industry": "電子零組件業",
+      "pred_score": 0.7134,
+      "weight": 0.0048
+    }
+  ]
 }
