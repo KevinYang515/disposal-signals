@@ -32,7 +32,7 @@ def _parse_spark(v):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-07-disposal-cols'):
+def load_events(_cache_bust: str = '2026-08-07-mktcap-col'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -45,7 +45,8 @@ def load_events(_cache_bust: str = '2026-08-07-disposal-cols'):
     # KeyError('d1_disposal')，懷疑是舊worker的cache_data在redeploy後沒有確實失效。
     # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
     # 沒有這三欄的舊CSV，也用安全預設值補上，讓頁面不會直接crash。
-    for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', '')]:
+    for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
+                          ('mktcap_billion', float('nan'))]:
         if col not in df.columns:
             df[col] = default
     return df
@@ -87,6 +88,16 @@ with col_f6:
     sel_disposal_type = st.multiselect(
         '若納入處置股，分盤類型', disposal_type_options, default=disposal_type_options,
         disabled=(disposal_mode == '排除(建議)'),
+    )
+
+col_f7, _ = st.columns(2)
+with col_f7:
+    mktcap_max = st.slider(
+        'D0市值上限（億元）', min_value=0, max_value=int(events['mktcap_billion'].max()) + 100,
+        value=600, step=50,
+        help='2026-08-07驗證：D0市值按五分位切分，市值最大20%近期regime幾乎沒有優勢'
+             '(mean=+0.09%,t=0.29)，對照最強的Q2組(+1.52%,t=5.02)。預設600億是近期regime'
+             '(約589億)與全期(約442億)80百分位門檻之間的折衷值，可自行拖動調整。'
     )
 
 
@@ -131,6 +142,7 @@ elif disposal_mode == '只看處置股':
         )
         mask &= type_mask
 # '全部納入' 不額外過濾
+mask &= events['mktcap_billion'] <= mktcap_max
 
 view = events[mask].copy()
 
