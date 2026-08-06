@@ -32,7 +32,7 @@ def _parse_spark(v):
 
 
 @st.cache_data(ttl=3600)
-def load_events():
+def load_events(_cache_bust: str = '2026-08-07-disposal-cols'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -41,6 +41,13 @@ def load_events():
     df = df.merge(names, on='code', how='left')
     df['name'] = df['name'].fillna('')
     df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
+    # 2026-08-07新增: 防禦性欄位補齊——Streamlit Cloud曾在CSV已更新後仍持續回報
+    # KeyError('d1_disposal')，懷疑是舊worker的cache_data在redeploy後沒有確實失效。
+    # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
+    # 沒有這三欄的舊CSV，也用安全預設值補上，讓頁面不會直接crash。
+    for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', '')]:
+        if col not in df.columns:
+            df[col] = default
     return df
 
 
