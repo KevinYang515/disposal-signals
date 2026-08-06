@@ -64,6 +64,24 @@ with col_f3:
 with col_f4:
     sel_streak = st.multiselect('連續鎖漲停天數', [1, 2, 3, 4], default=[1, 2, 3, 4])
 
+col_f5, col_f6 = st.columns(2)
+with col_f5:
+    disposal_mode = st.radio(
+        'D1處置股(分盤集合競價)',
+        ['排除(建議)', '全部納入', '只看處置股'],
+        index=0,
+        horizontal=True,
+        help='2026-08-07驗證(CODEX_處置期間污染評估_REPORT.md)：D1落在處置分盤期間的事件近期regime平均報酬'
+             '-1.529%，明顯劣於正常組+0.850%(Welch p=0.0038)。分盤集合競價沒有連續撮合，現行盤中監控/'
+             '09:15加碼/停損邏輯在這段期間不成立，預設排除。'
+    )
+with col_f6:
+    disposal_type_options = ['5分鐘', '20分鐘', '25分鐘', '其他/未知']
+    sel_disposal_type = st.multiselect(
+        '若納入處置股，分盤類型', disposal_type_options, default=disposal_type_options,
+        disabled=(disposal_mode == '排除(建議)'),
+    )
+
 
 def gap_bucket(g):
     if g < -5:
@@ -90,12 +108,24 @@ def gap_bucket(g):
 events['gap_bucket'] = events['gap_pct'].apply(gap_bucket)
 events['streak_capped'] = events['lock_streak'].clip(upper=4)
 
-view = events[
+mask = (
     events['period'].isin(sel_period)
     & events['market'].isin(sel_market)
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
-].copy()
+)
+if disposal_mode == '排除(建議)':
+    mask &= ~events['d1_disposal']
+elif disposal_mode == '只看處置股':
+    mask &= events['d1_disposal']
+    if sel_disposal_type:
+        type_mask = events['d1_disposal_type'].fillna('').apply(
+            lambda s: any(t in s for t in sel_disposal_type) or (s == '' and '其他/未知' in sel_disposal_type)
+        )
+        mask &= type_mask
+# '全部納入' 不額外過濾
+
+view = events[mask].copy()
 
 st.divider()
 
