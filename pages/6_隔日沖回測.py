@@ -18,29 +18,84 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.metric-box {
-    background: #1e2530; border-radius: 10px;
-    padding: 14px 18px; margin: 4px; text-align: center;
-}
-.metric-val  { font-size: 1.8em; font-weight: 700; color: #4ade80; }
-.metric-val2 { font-size: 1.8em; font-weight: 700; color: #f87171; }
-.metric-lab  { font-size: 0.8em; color: #94a3b8; margin-top: 2px; }
-.cand-card {
-    background: #1e2530; border-radius: 8px;
-    padding: 12px 16px; margin: 4px 0;
-    border-left: 3px solid #4ade80;
-}
-.cand-stock { font-size: 1.1em; font-weight: 700; color: #f1f5f9; }
-.cand-meta  { font-size: 0.85em; color: #94a3b8; margin-top: 4px; }
-.pnl-box {
-    background: #1a2535; border-radius: 10px;
-    padding: 16px 20px; margin: 6px 0;
-    border: 1px solid #2d3748;
-}
-.pnl-title { font-size: 0.85em; color: #94a3b8; }
-.pnl-val   { font-size: 1.5em; font-weight: 700; color: #4ade80; margin-top: 4px; }
-.up   { color: #f87171; font-weight: 600; }
-.down { color: #4ade80; font-weight: 600; }
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --border: #dde1e7;
+    --text: #1a1d24; --text-dim: #666e7c; --text-faint: #9aa2b1;
+    --accent: #2c7a7b; --accent-soft: #e3f1f1;
+    --up: #b8322a; --up-bg: rgba(184, 50, 42, 0.09);
+    --down: #1a7f3c; --down-bg: rgba(26, 127, 60, 0.10);
+    --shadow: 0 1px 2px rgba(20, 24, 32, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1215; --surface: #171a1f; --surface-2: #1d2128; --border: #2a2f38;
+      --text: #e7eaee; --text-dim: #9aa2b1; --text-faint: #6b7280;
+      --accent: #5fc4c1; --accent-soft: rgba(95, 196, 193, 0.12);
+      --up: #ff6b62; --up-bg: rgba(255, 107, 98, 0.11);
+      --down: #4fd17a; --down-bg: rgba(79, 209, 122, 0.12);
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  html[data-theme="dark"] :root, html[data-theme="dark"] {
+      --bg: #0f1215; --surface: #171a1f; --surface-2: #1d2128; --border: #2a2f38;
+      --text: #e7eaee; --text-dim: #9aa2b1; --text-faint: #6b7280;
+      --accent: #5fc4c1; --accent-soft: rgba(95, 196, 193, 0.12);
+      --up: #ff6b62; --up-bg: rgba(255, 107, 98, 0.11);
+      --down: #4fd17a; --down-bg: rgba(79, 209, 122, 0.12);
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  html[data-theme="light"] :root, html[data-theme="light"] {
+      --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --border: #dde1e7;
+      --text: #1a1d24; --text-dim: #666e7c; --text-faint: #9aa2b1;
+      --accent: #2c7a7b; --accent-soft: #e3f1f1;
+      --up: #b8322a; --up-bg: rgba(184, 50, 42, 0.09);
+      --down: #1a7f3c; --down-bg: rgba(26, 127, 60, 0.10);
+      --shadow: 0 1px 2px rgba(20, 24, 32, 0.06);
+  }
+
+  .eyebrow {
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--accent); font-weight: 600; margin-bottom: 2px;
+  }
+
+  .metric-box {
+      background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+      border-radius: 10px; padding: 14px 18px; margin: 4px 0; text-align: center;
+  }
+  .metric-val, .metric-val2 {
+      font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+      font-variant-numeric: tabular-nums; font-size: 1.7em; font-weight: 700;
+  }
+  .metric-val  { color: var(--down); }
+  .metric-val2 { color: var(--up); }
+  .metric-lab  { font-size: 11.5px; color: var(--text-faint); text-transform: uppercase;
+                 letter-spacing: 0.04em; margin-top: 4px; }
+
+  .cand-card {
+      background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+      border-radius: 8px; padding: 12px 16px; margin: 4px 0;
+      border-left: 3px solid var(--accent);
+  }
+  .cand-stock { font-size: 1.05em; font-weight: 700; color: var(--text); }
+  .cand-meta  { font-size: 0.85em; color: var(--text-dim); margin-top: 4px; line-height: 1.6; }
+
+  .pnl-box {
+      background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+      border-radius: 10px; padding: 16px 20px; margin: 6px 0;
+  }
+  .pnl-title { font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .pnl-val   { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+               font-variant-numeric: tabular-nums; font-size: 1.5em; font-weight: 700;
+               color: var(--down); margin-top: 4px; }
+
+  .up   { color: var(--up); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .down { color: var(--down); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .callout {
+      margin: 10px 0 4px; padding: 12px 16px; background: var(--accent-soft);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      border-radius: 8px; font-size: 13.5px; color: var(--text);
+  }
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,15 +130,12 @@ net_yf_pct    = stats['avg_bps'] / 100          # 淨日均報酬（2折）
 avg_gross_pct = stats.get('avg_gross_bps', stats['avg_bps'] + COST_DISC_PCT * 10000) / 100
 
 # ── 標題 ────────────────────────────────────────────────
-st.title('⚡ 隔日沖回測')
-st.caption(
-    f"策略：**{stats['strategy']}**　　"
-    f"資料區間：{stats['period']}　　"
-    f"最後更新：{stats['latest_date']}"
-)
+st.markdown('<div class="eyebrow">⚡ 隔日沖回測策略</div>', unsafe_allow_html=True)
+st.markdown(f"## {stats['strategy']}")
+st.caption(f"資料區間：{stats['period']}　　最後更新：{stats['latest_date']}")
 
 # ── 績效指標 ────────────────────────────────────────────
-st.subheader('績效摘要')
+st.markdown('<div class="eyebrow">績效摘要</div>', unsafe_allow_html=True)
 
 def mbox(col, val, label, positive_good=True):
     v = str(val)
@@ -108,18 +160,22 @@ st.caption(
     f"　　Sharpe / 勝率 / DD 均已扣費計算"
 )
 
+if stats.get('note_2022_risk'):
+    st.markdown(f'<div class="callout">⚠️ {stats["note_2022_risk"]}</div>', unsafe_allow_html=True)
+
 st.divider()
 
 # ── 資金試算 ────────────────────────────────────────────
-st.subheader('💰 資金試算')
+st.markdown('<div class="eyebrow">💰 資金試算</div>', unsafe_allow_html=True)
 st.caption('2 檔等金額部位，每檔 50% 本金（手續費兩折，扣費後淨報酬）')
 
 cap_col, note_col = st.columns([1, 2])
 with cap_col:
     capital = st.number_input(
         '投入本金（元）', min_value=100_000, max_value=50_000_000,
-        value=1_000_000, step=100_000, format='%d'
+        value=2_000_000, step=100_000, format='%d'
     )
+    st.caption('⚠️ 2026-07-29整張配置誤差分析：100萬本金在2026現股價水位下誤差偏大(90分位16.5%)，200萬才收斂到~3%')
 with note_col:
     st.markdown(f"""
 每檔部位 **{capital // 2:,.0f} 元**（2 檔各 50%）
@@ -159,7 +215,7 @@ b4.markdown(
 st.divider()
 
 # ── 候選股 ──────────────────────────────────────────────
-st.subheader(f'📋 最新候選股  {stats["candidate_date"]}  收盤買進 → 隔日開盤賣')
+st.markdown(f'<div class="eyebrow">📋 最新候選股　{stats["candidate_date"]}　收盤買進 → 隔日開盤賣</div>', unsafe_allow_html=True)
 st.caption('⚠️ 回測訊號，非投資建議。已排除當日漲停股（尾盤無法成交）。')
 
 if len(cands) == 0:
@@ -187,7 +243,7 @@ else:
 st.divider()
 
 # ── 資金曲線 ────────────────────────────────────────────
-st.subheader('📈 資金曲線')
+st.markdown('<div class="eyebrow">📈 資金曲線</div>', unsafe_allow_html=True)
 daily_gross = trades.groupby('signal_date')['ret_pct'].mean().reset_index()
 daily_net   = trades.groupby('signal_date')['net_ret_pct'].mean().reset_index()
 daily_avg   = daily_gross.merge(daily_net, on='signal_date')
@@ -225,7 +281,7 @@ st.altair_chart(chart, use_container_width=True)
 st.divider()
 
 # ── 交易明細 ────────────────────────────────────────────
-st.subheader('📋 交易明細')
+st.markdown('<div class="eyebrow">📋 交易明細</div>', unsafe_allow_html=True)
 
 col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
 with col_f1:
