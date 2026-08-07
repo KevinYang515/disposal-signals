@@ -32,7 +32,7 @@ def _parse_spark(v):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-07-mktcap-col'):
+def load_events(_cache_bust: str = '2026-08-07-taiex-col'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -46,7 +46,7 @@ def load_events(_cache_bust: str = '2026-08-07-mktcap-col'):
     # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
     # 沒有這三欄的舊CSV，也用安全預設值補上，讓頁面不會直接crash。
     for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
-                          ('mktcap_billion', float('nan'))]:
+                          ('mktcap_billion', float('nan')), ('taiex_2day_mom_pct', float('nan'))]:
         if col not in df.columns:
             df[col] = default
     return df
@@ -90,7 +90,7 @@ with col_f6:
         disabled=(disposal_mode == '排除(建議)'),
     )
 
-col_f7, _ = st.columns(2)
+col_f7, col_f8 = st.columns(2)
 with col_f7:
     mktcap_max = st.slider(
         'D0市值上限（億元）', min_value=0, max_value=int(events['mktcap_billion'].max()) + 100,
@@ -98,6 +98,17 @@ with col_f7:
         help='2026-08-07驗證：D0市值按五分位切分，市值最大20%近期regime幾乎沒有優勢'
              '(mean=+0.09%,t=0.29)，對照最強的Q2組(+1.52%,t=5.02)。預設600億是近期regime'
              '(約589億)與全期(約442億)80百分位門檻之間的折衷值，可自行拖動調整。'
+    )
+with col_f8:
+    taiex_mode = st.radio(
+        '大盤(加權指數)D0前2日累積漲幅',
+        ['排除過熱天(建議)', '全部納入', '只看過熱天'],
+        index=0,
+        horizontal=True,
+        help='2026-08-07驗證：D0收盤時往前2個交易日的加權指數累積漲幅按五分位切分，'
+             '最強20%那組近期regime優勢幾乎消失甚至轉負(mean=-0.05%,t=-0.15)，對照最強'
+             'Q2組(+1.51%,t=4.71)。門檻2.6%，取全期(2.35%)與近期regime(2.69%)80百分位'
+             '之間。現行live候選腳本已用同一門檻直接停發當天全部候選。'
     )
 
 
@@ -143,6 +154,10 @@ elif disposal_mode == '只看處置股':
         mask &= type_mask
 # '全部納入' 不額外過濾
 mask &= events['mktcap_billion'] <= mktcap_max
+if taiex_mode == '排除過熱天(建議)':
+    mask &= events['taiex_2day_mom_pct'] <= 2.6
+elif taiex_mode == '只看過熱天':
+    mask &= events['taiex_2day_mom_pct'] > 2.6
 
 view = events[mask].copy()
 
