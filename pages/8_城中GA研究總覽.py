@@ -32,7 +32,7 @@ def _parse_spark(v):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-07-taiex-col'):
+def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -53,7 +53,7 @@ def load_events(_cache_bust: str = '2026-08-07-taiex-col'):
 
 
 st.title('🏙️ 凱基-城中GA 隔日沖放空策略｜歷史回測紀錄')
-st.caption('D0嚴格鎖漲停 + 凱基-城中淨買超金額/影響力雙門檻達標 → D1開盤放空、收盤回補。動態門檻：net_amt_wan≥263.568萬 且 cz_influence_pct≥0.86301%（TRAIN 2021-2023自身分布40百分位校準，取代舊版固定絕對金額門檻）。資料截至2026-07-24，2026-08-04整理，即時候選/模擬單請見「城中GA放空策略」頁。')
+st.caption('D0嚴格鎖漲停 + 凱基-城中淨買超金額/影響力雙門檻達標 → D1開盤放空、收盤回補。現行門檻（2026-08-10更新，較舊門檻更嚴格）：net_amt_wan≥458.689萬 且 cz_influence_pct≥1.93204%。資料範圍2018-01-09～2026-08-07，2026-08-11整理；結算採D1開盤放空/收盤回補（非延伸多日回補），與最新門檻比較報告一致。即時候選/模擬單請見「城中GA放空策略」頁。')
 
 events = load_events()
 events['censored'] = events['censored'].astype(bool)
@@ -213,7 +213,7 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
 
         st.dataframe(
             gdf.style.map(_wr_color, subset=['勝率(%)']).format(
-                {'平均報酬(%)': '{:+.3f}', '最慘單筆(%)': '{:+.2f}', 'D1鎖死率(%)': '{:.1f}'}, na_rep='-'
+                {'平均報酬(%)': '{:+.2f}', '最慘單筆(%)': '{:+.2f}', 'D1鎖死率(%)': '{:.1f}'}, na_rep='-'
             ),
             use_container_width=True,
         )
@@ -223,7 +223,7 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
 with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價估算）'):
     st.caption(
         '設定「股價漲多少%停損」「股價跌多少%停利」，用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
-        '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天直接鎖死鎖漲停（完全無法交易）的事件不受影響，維持原本「延伸到解鎖日開盤強制回補」的出場方式。'
+        '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
         '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
     )
     col_s1, col_s2 = st.columns(2)
@@ -272,13 +272,13 @@ with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價
         sim_worst = sim_settled['sim_ret'].min()
 
         cmp_df = pd.DataFrame({
-            '原本（持有到收盤/延伸強制回補）': [f'{base_wr:.2f}%', f'{base_avg:+.3f}%',
+            '原本（持有到收盤）': [f'{base_wr:.2f}%', f'{base_avg:+.2f}%',
                                     f'{base_sh:.2f}' if pd.notna(base_sh) else '-', f'{base_worst:+.2f}%'],
-            '套用停損/停利後': [f'{sim_wr:.2f}%', f'{sim_avg:+.3f}%',
+            '套用停損/停利後': [f'{sim_wr:.2f}%', f'{sim_avg:+.2f}%',
                           f'{sim_sh:.2f}' if pd.notna(sim_sh) else '-', f'{sim_worst:+.2f}%'],
         }, index=['勝率', '平均報酬', 'Sharpe(近似)', '最慘單筆'])
         st.dataframe(cmp_df, use_container_width=True)
-        st.caption(f'已結算 {len(sim_settled)} 筆（D1鎖死延伸案例維持原出場不變）。')
+        st.caption(f'已結算 {len(sim_settled)} 筆（D1整日無成交的censored事件已排除）。')
 
 # ── lock_streak 分組表 ──────────────────────────────────
 with st.expander('📊 依「連續鎖漲停天數」分組（跟FlipBranch規律相反）'):
@@ -291,11 +291,11 @@ with st.expander('📊 依「連續鎖漲停天數」分組（跟FlipBranch規�
             'lock_streak': f'{s}{"+" if s == 4 else ""}',
             '筆數': len(sub),
             '勝率(%)': round(sub['success'].mean() * 100, 2),
-            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 3),
+            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 2),
         })
     if rows:
-        st.dataframe(pd.DataFrame(rows).set_index('lock_streak').style.format({'平均報酬(%)': '{:+.3f}'}), use_container_width=True)
-    st.caption('城中GA連續鎖漲停天數越多、隔日勝率越高（streak≥3達73.7%），跟FlipBranch「連鎖越多越差」剛好相反，不要混用兩策略的濾網邏輯。')
+        st.dataframe(pd.DataFrame(rows).set_index('lock_streak').style.format({'平均報酬(%)': '{:+.2f}'}), use_container_width=True)
+    st.caption('城中GA連續鎖漲停天數越多、隔日勝率越高（實際數字依上方篩選條件即時計算），跟FlipBranch「連鎖越多越差」剛好相反，不要混用兩策略的濾網邏輯。')
 
 # ── 逐年穩定性 ──────────────────────────────────────────
 with st.expander('📅 逐年穩定性（目前篩選條件下）'):
@@ -397,7 +397,7 @@ bonus_rule_df = pd.DataFrame([
     {'bonus訊號數': '3個', 'n': 11, '加碼筆均報酬%': 3.037, '勝率%': 81.8, 't值': 4.565},
 ]).set_index('bonus訊號數')
 st.dataframe(
-    bonus_rule_df.style.format({'加碼筆均報酬%': '{:+.3f}', '勝率%': '{:.1f}', 't值': '{:.3f}'}),
+    bonus_rule_df.style.format({'加碼筆均報酬%': '{:+.2f}', '勝率%': '{:.1f}', 't值': '{:.2f}'}),
     use_container_width=True,
 )
 st.caption('近期regime(2025-2026)，樣本數皆為n≥100之穩固樣本(3個bonus除外，n=11僅供參考)。資料來源：CODEX_0915加碼規則正式驗證_REPORT.md。')

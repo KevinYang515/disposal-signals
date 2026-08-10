@@ -123,13 +123,13 @@ with st.expander('📊 樣本內 vs 樣本外對照（此組合，未套用上�
             '期間': '樣本內(2018~2026-05-05)' if p == 'in_sample' else '樣本外(2026-05-06起)',
             '筆數': len(sub),
             '勝率(%)': round(sub['success'].mean() * 100, 2),
-            '平均報酬(%)': round(sub['short_ret_pct'].mean(), 3),
-            '中位數報酬(%)': round(sub['short_ret_pct'].median(), 3),
+            '平均報酬(%)': round(sub['short_ret_pct'].mean(), 2),
+            '中位數報酬(%)': round(sub['short_ret_pct'].median(), 2),
             'Sharpe(近似)': round(sh, 2) if pd.notna(sh) else None,
         })
     if rows:
         st.dataframe(pd.DataFrame(rows).set_index('期間').style.format(
-            {'平均報酬(%)': '{:+.3f}', '中位數報酬(%)': '{:+.3f}'}), use_container_width=True)
+            {'平均報酬(%)': '{:+.2f}', '中位數報酬(%)': '{:+.2f}'}), use_container_width=True)
     st.caption('樣本外筆數天生較少（統計力較弱），這是為何正式顯著性對校正方式敏感的直接原因，不代表訊號變弱。')
 
 # ── 完整逐筆歷史紀錄 ──────────────────────────────────────
@@ -205,10 +205,10 @@ for p in events['pair'].unique():
     compare_rows.append({
         '組合': p, '總筆數': len(sub),
         '勝率(%)': round(sub['success'].mean() * 100, 2),
-        '平均報酬(%)': round(sub['short_ret_pct'].mean(), 3),
+        '平均報酬(%)': round(sub['short_ret_pct'].mean(), 2),
     })
 st.dataframe(pd.DataFrame(compare_rows).set_index('組合').style.format(
-    {'平均報酬(%)': '{:+.3f}'}), use_container_width=True)
+    {'平均報酬(%)': '{:+.2f}'}), use_container_width=True)
 
 st.caption(
     '此頁與 `pages/14_城中富邦組合訊號研究_20260810.py`（同日較早建立的摘要頁）互為補充：14號頁是'
