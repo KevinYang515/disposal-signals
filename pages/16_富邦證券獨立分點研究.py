@@ -108,7 +108,8 @@ events['年份'] = events['d0'].dt.year.astype(str)
 # ── 篩選器 ──────────────────────────────────────────────
 col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 with col_f1:
-    sel_year = st.selectbox('年份', ['全部'] + sorted(events['年份'].unique().tolist(), reverse=True))
+    sel_years = st.multiselect('年份', sorted(events['年份'].unique().tolist(), reverse=True),
+                                default=sorted(events['年份'].unique().tolist(), reverse=True))
 with col_f2:
     sel_market = st.multiselect('市場', sorted(events['market'].dropna().unique().tolist()), default=sorted(events['market'].dropna().unique().tolist()))
 with col_f3:
@@ -173,8 +174,7 @@ mask = (
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
 )
-if sel_year != '全部':
-    mask &= events['年份'] == sel_year
+mask &= events['年份'].isin(sel_years)
 mask &= ~events['d1_disposal']
 mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
 if taiex_mode == '排除過熱天(≥2.6%)':
