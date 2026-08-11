@@ -58,7 +58,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-11-0915-addon-v1'):
+def load_events(_cache_bust: str = '2026-08-12-mktcap-percentile-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -96,9 +96,11 @@ def load_events(_cache_bust: str = '2026-08-11-0915-addon-v1'):
     # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
     # 沒有這三欄的舊CSV，也用安全預設值補上，讓頁面不會直接crash。
     for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
-                          ('mktcap_billion', float('nan')), ('taiex_2day_mom_pct', float('nan'))]:
+                          ('mktcap_billion', float('nan')), ('mktcap_pct_rank', float('nan')),
+                          ('taiex_2day_mom_pct', float('nan'))]:
         if col not in df.columns:
             df[col] = default
+    df['mktcap_pct_rank'] = pd.to_numeric(df['mktcap_pct_rank'], errors='coerce')
     return df
 
 
@@ -115,8 +117,10 @@ events['年份'] = events['d0'].dt.year.astype(str)
 if ADDON_TOGGLE_KEY not in st.session_state:
     # 以 2025 作樣本內、2026 作保留樣本的同一事件重跑皆顯示：等權加碼會稀釋報酬，預設不加碼。
     st.session_state[ADDON_TOGGLE_KEY] = False
-if 'mktcap_8' not in st.session_state:
-    st.session_state['mktcap_8'] = 600
+MKT_CAP_QUINTILES = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']
+DEFAULT_MKT_CAP_QUINTILES = ['Q1', 'Q2', 'Q3', 'Q4']
+if 'mktcap_quintiles_8' not in st.session_state:
+    st.session_state['mktcap_quintiles_8'] = DEFAULT_MKT_CAP_QUINTILES.copy()
 if 'gap_mode_8' not in st.session_state:
     st.session_state['gap_mode_8'] = GAP_MODE_ALL_EXECUTABLE
 if 'taiex_mode_8' not in st.session_state:
@@ -150,8 +154,8 @@ st.caption(
     '這類事件近期regime平均報酬-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)，方向也支持排除。'
 )
 
-if st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommended_8'):
-    st.session_state['mktcap_8'] = 600
+def apply_recommended_parameters():
+    st.session_state['mktcap_quintiles_8'] = DEFAULT_MKT_CAP_QUINTILES.copy()
     st.session_state['taiex_mode_8'] = '排除過熱天(建議)'
     st.session_state['stop_8_slider'] = 0.0
     st.session_state['stop_8_num'] = 0.0
@@ -159,17 +163,22 @@ if st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommen
     st.session_state['tp_8_num'] = 0.0
     st.session_state[ADDON_TOGGLE_KEY] = False
     st.session_state['gap_mode_8'] = GAP_MODE_VALIDATED
-    st.rerun()
+
+
+st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommended_8', on_click=apply_recommended_parameters)
 st.caption('研究建議依據：`exit_grid_scan_with_risk_20260810.md`、`CODEX_0915加碼規則正式驗證_REPORT.md`，並以本頁現行事件資料重跑 2025 樣本內／2026 保留樣本。')
 
 col_f7, col_f8 = st.columns(2)
 with col_f7:
-    mktcap_max = st.slider(
-        'D0市值上限（億元）', min_value=0, max_value=int(events['mktcap_billion'].max()) + 100,
-        step=50, key='mktcap_8',
-        help='2026-08-07驗證：D0市值按五分位切分，市值最大20%近期regime幾乎沒有優勢'
-             '(mean=+0.09%,t=0.29)，對照最強的Q2組(+1.52%,t=5.02)。預設600億是近期regime'
-             '(約589億)與全期(約442億)80百分位門檻之間的折衷值，可自行拖動調整。'
+    sel_mktcap_quintiles = st.multiselect(
+        'D0市值百分位分組', MKT_CAP_QUINTILES,
+        key='mktcap_quintiles_8',
+        help='逐筆以 D0 當日全市場可交易股票的市值百分位分成五組：Q1 最小、Q5 最大。'
+    )
+    st.caption(
+        'Q5 的固定邊界是當日市值第 80.00 百分位；預設排除 Q5。2026-08-11 研究的 IS Q1–Q4 '
+        '切點為 83.08%，接近但不等同於 80.00%；其 holdout 相對優勢 p=0.609，未證明回測較佳。'
+        '改用百分位／分組是為避免固定金額隨市場成長而漂移，不是績效宣稱。'
     )
 with col_f8:
     taiex_mode = st.radio(
@@ -206,8 +215,16 @@ def gap_bucket(g):
     return '≥9.5%(避開)'
 
 
+def mktcap_quintile(percentile):
+    """Q1 is the smallest 20% of the same-D0 investable universe."""
+    if not np.isfinite(percentile):
+        return np.nan
+    return f'Q{min(int(np.ceil(percentile / 20.0)), 5)}'
+
+
 events['gap_bucket'] = events['gap_pct'].apply(gap_bucket)
 events['streak_capped'] = events['lock_streak'].clip(upper=4)
+events['mktcap_quintile'] = events['mktcap_pct_rank'].apply(mktcap_quintile)
 
 mask = (
     events['年份'].isin(sel_years)
@@ -220,7 +237,7 @@ mask &= events['gap_pct'] < CITY_GAP_EXECUTABLE_MAX
 if gap_mode == GAP_MODE_VALIDATED:
     mask &= events['gap_pct'] >= CITY_GAP_VALIDATED_MIN
 mask &= ~events['d1_disposal']
-mask &= events['mktcap_billion'] <= mktcap_max
+mask &= events['mktcap_quintile'].isin(sel_mktcap_quintiles)
 if taiex_mode == '排除過熱天(建議)':
     mask &= events['taiex_2day_mom_pct'] <= 2.6
 elif taiex_mode == '只看過熱天':
