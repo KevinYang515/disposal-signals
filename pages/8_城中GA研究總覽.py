@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """凱基-城中GA 隔日沖放空策略：歷史回測紀錄與因子挖掘總覽。"""
-import json
 import os
 import numpy as np
 import pandas as pd
@@ -22,15 +21,6 @@ def sharpe_pf(returns):
     return sharpe, pf
 
 
-def _parse_spark(v):
-    if not isinstance(v, str) or not v:
-        return None
-    try:
-        return json.loads(v)
-    except Exception:
-        return None
-
-
 @st.cache_data(ttl=3600)
 def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
@@ -40,7 +30,6 @@ def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
     names = pd.read_csv(names_fp, dtype={'code': str})
     df = df.merge(names, on='code', how='left')
     df['name'] = df['name'].fillna('')
-    df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
     # 2026-08-07新增: 防禦性欄位補齊——Streamlit Cloud曾在CSV已更新後仍持續回報
     # KeyError('d1_disposal')，懷疑是舊worker的cache_data在redeploy後沒有確實失效。
     # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
@@ -53,7 +42,7 @@ def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
 
 
 st.title('🏙️ 凱基-城中GA 隔日沖放空策略｜歷史回測紀錄')
-st.caption('D0嚴格鎖漲停 + 凱基-城中淨買超金額/影響力雙門檻達標 → D1開盤放空、收盤回補。現行門檻（2026-08-10更新，較舊門檻更嚴格）：net_amt_wan≥458.689萬 且 cz_influence_pct≥1.93204%。資料範圍2018-01-09～2026-08-07，2026-08-11整理；結算採D1開盤放空/收盤回補（非延伸多日回補），與最新門檻比較報告一致。即時候選/模擬單請見「城中GA放空策略」頁。')
+st.caption('D0嚴格鎖漲停 + 凱基-城中淨買超金額/影響力雙門檻達標 → D1開盤放空、收盤回補。現行門檻（2026-08-10更新，較舊門檻更嚴格）：net_amt_wan≥458.69萬 且 cz_influence_pct≥1.93%。資料範圍2018-01-09～2026-08-07，2026-08-11整理；結算採D1開盤放空/收盤回補（非延伸多日回補），與最新門檻比較報告一致。即時候選/模擬單請見「城中GA放空策略」頁。')
 
 events = load_events()
 events['censored'] = events['censored'].astype(bool)
@@ -80,7 +69,7 @@ with col_f5:
         index=0,
         horizontal=True,
         help='2026-08-07驗證(CODEX_處置期間污染評估_REPORT.md)：D1落在處置分盤期間的事件近期regime平均報酬'
-             '-1.529%，明顯劣於正常組+0.850%(Welch p=0.0038)。分盤集合競價沒有連續撮合，現行盤中監控/'
+             '-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)。分盤集合競價沒有連續撮合，現行盤中監控/'
              '09:15加碼/停損邏輯在這段期間不成立，預設排除。'
     )
 with col_f6:
@@ -194,10 +183,10 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
             '跳空區間': g,
             '筆數': len(sub),
             '勝率(%)': round(sub['success'].mean() * 100, 2),
-            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 3),
+            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 2),
             '最慘單筆(%)': round(sub['short_ret_open_to_close_pct'].min(), 2),
             'Sharpe(近似)': round(sh, 2) if pd.notna(sh) else None,
-            'D1鎖死率(%)': round(view[view['gap_bucket'] == g]['d1_frozen'].mean() * 100, 1),
+            'D1鎖死率(%)': round(view[view['gap_bucket'] == g]['d1_frozen'].mean() * 100, 2),
         })
     if rows:
         gdf = pd.DataFrame(rows).set_index('跳空區間')
@@ -213,7 +202,8 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
 
         st.dataframe(
             gdf.style.map(_wr_color, subset=['勝率(%)']).format(
-                {'平均報酬(%)': '{:+.2f}', '最慘單筆(%)': '{:+.2f}', 'D1鎖死率(%)': '{:.1f}'}, na_rep='-'
+                {'勝率(%)': '{:.2f}', '平均報酬(%)': '{:+.2f}', '最慘單筆(%)': '{:+.2f}',
+                 'Sharpe(近似)': '{:.2f}', 'D1鎖死率(%)': '{:.2f}'}, na_rep='-'
             ),
             use_container_width=True,
         )
@@ -222,18 +212,19 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
 # ── 停損/停利模擬器 ──────────────────────────────────────
 with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價估算）'):
     st.caption(
-        '設定「股價漲多少%停損」「股價跌多少%停利」，用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
+        '設定「D1股價比D0收盤漲多少%停損」「D1股價比D0收盤跌多少%停利」（標準的漲跌幅%報價方式），用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
         '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
         '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
     )
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        stop_pct = st.slider('停損：股價比進場價漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
+        stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
     with col_s2:
-        tp_pct = st.slider('停利：股價比進場價跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
+        tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
 
     sim = view.copy()
     entry = sim['d1_open'].to_numpy(dtype=float)
+    d0_close_arr = sim['d0_close'].to_numpy(dtype=float)
     close = sim['d1_close'].to_numpy(dtype=float)
     high = sim['d1_high'].to_numpy(dtype=float)
     low = sim['d1_low'].to_numpy(dtype=float)
@@ -242,8 +233,8 @@ with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價
     base_ret = sim['short_ret_open_to_close_pct'].to_numpy(dtype=float)
 
     with np.errstate(invalid='ignore'):
-        stop_price = entry * (1 + stop_pct / 100)
-        tp_price = entry * (1 - tp_pct / 100)
+        stop_price = d0_close_arr * (1 + stop_pct / 100)
+        tp_price = d0_close_arr * (1 - tp_pct / 100)
         hit_stop = (stop_pct > 0) & (high >= stop_price)
         hit_tp = (tp_pct > 0) & (low <= tp_price)
 
@@ -294,7 +285,12 @@ with st.expander('📊 依「連續鎖漲停天數」分組（跟FlipBranch規�
             '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 2),
         })
     if rows:
-        st.dataframe(pd.DataFrame(rows).set_index('lock_streak').style.format({'平均報酬(%)': '{:+.2f}'}), use_container_width=True)
+        st.dataframe(
+            pd.DataFrame(rows).set_index('lock_streak').style.format(
+                {'勝率(%)': '{:.2f}', '平均報酬(%)': '{:+.2f}'}
+            ),
+            use_container_width=True,
+        )
     st.caption('城中GA連續鎖漲停天數越多、隔日勝率越高（實際數字依上方篩選條件即時計算），跟FlipBranch「連鎖越多越差」剛好相反，不要混用兩策略的濾網邏輯。')
 
 # ── 逐年穩定性 ──────────────────────────────────────────
@@ -307,11 +303,16 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
         yr_rows.append({
             '年份': yr, '筆數': len(sub),
             '勝率(%)': round(sub['success'].mean() * 100, 2),
-            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 3),
+            '平均報酬(%)': round(sub['short_ret_open_to_close_pct'].mean(), 2),
             'Sharpe(近似)': round(sh, 2) if pd.notna(sh) else None,
         })
     if yr_rows:
-        st.dataframe(pd.DataFrame(yr_rows).set_index('年份'), use_container_width=True)
+        st.dataframe(
+            pd.DataFrame(yr_rows).set_index('年份').style.format(
+                {'勝率(%)': '{:.2f}', '平均報酬(%)': '{:+.2f}', 'Sharpe(近似)': '{:.2f}'}, na_rep='-'
+            ),
+            use_container_width=True,
+        )
 
 # ── 完整逐筆明細（主表，直接顯示，比照「歷史回測紀錄」頁樣式）──
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
@@ -325,7 +326,6 @@ show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
                  '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
                  '最大不利波動%', '成功']
-show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
 
 
 def color_success(val):
@@ -354,21 +354,15 @@ st.dataframe(
     show.style
         .map(color_success, subset=['成功'])
         .map(color_ret, subset=['放空報酬%'])
-        .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.0f}', '影響力%': '{:.2f}',
+        .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.2f}', '影響力%': '{:.2f}',
                  '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
-    column_config={
-        'D1走勢': st.column_config.LineChartColumn(
-            'D1走勢（分K收盤）', width='medium',
-            help='D1當天每分鐘收盤價走勢；缺資料的事件（約11%）不顯示。',
-        ),
-    },
 )
-st.caption('開盤/最高/最低/收盤為D1當天日線價；「D1走勢」是D1當天逐分鐘收盤價的簡易走勢圖（涵蓋率約88.7%，2021-2026官方候選中有抓到分K的部分）。')
+st.caption('開盤/最高/最低/收盤為D1當天日線價。')
 st.download_button(
     '📥 下載此表 CSV',
-    show.drop(columns=['D1走勢']).to_csv(index=False, encoding='utf-8-sig'),
+    show.to_csv(index=False, encoding='utf-8-sig'),
     'citycenter_ga_events_filtered.csv', 'text/csv', key='dl_events_full',
 )
 
@@ -397,7 +391,7 @@ bonus_rule_df = pd.DataFrame([
     {'bonus訊號數': '3個', 'n': 11, '加碼筆均報酬%': 3.037, '勝率%': 81.8, 't值': 4.565},
 ]).set_index('bonus訊號數')
 st.dataframe(
-    bonus_rule_df.style.format({'加碼筆均報酬%': '{:+.2f}', '勝率%': '{:.1f}', 't值': '{:.2f}'}),
+    bonus_rule_df.style.format({'加碼筆均報酬%': '{:+.2f}', '勝率%': '{:.2f}', 't值': '{:.2f}'}),
     use_container_width=True,
 )
 st.caption('近期regime(2025-2026)，樣本數皆為n≥100之穩固樣本(3個bonus除外，n=11僅供參考)。資料來源：CODEX_0915加碼規則正式驗證_REPORT.md。')
@@ -408,7 +402,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("""
 **承接／低接與做多方向**
-- D1收盤守住D0收盤 → D1收→D2收顯著偏強（TRAIN+1.72%/p=0.02、TEST+0.70%/p=0.0035），持股遇賣壓但收平/收紅不用因此恐慌減碼
+- D1收盤守住D0收盤 → D1收→D2收顯著偏強（TRAIN+1.72%/p=0.02、TEST+0.70%/p<0.01），持股遇賣壓但收平/收紅不用因此恐慌減碼
 - D1承接強度越強，D2再度鎖漲停機率越高（弱承接7.5% → 極強承接25.0%，單調遞增）
 - ⚠️但「D2開盤買進」做多策略判死：承接的漲幅主要在隔夜跳空(+1.0%)，D2盤中段反而是負的(-1.17%)
 - 台新台北+凱基城中同時進D0前3大買方：n僅6筆，勝率83.3%/+3.33%，方向支持但樣本嚴重不足
@@ -423,7 +417,7 @@ with col2:
 **已測試、判死或需更多資料**
 - 是否首次買這檔股票、連續買超天數(不要求鎖漲停版)：樣本不足或方向不穩
 - 分點共現(265高flip分點)：**負向訊號**——多個知名分點同時買超代表真買盤，隔日放空表現反而更差
-- ML(LightGBM+SHAP)+GA系統性挖掘：TEST預測分數與實際報酬相關係數僅-0.012，現行兩門檻已是資料極限
+- ML(LightGBM+SHAP)+GA系統性挖掘：TEST預測分數與實際報酬相關係數僅-0.01，現行兩門檻已是資料極限
 - 技術性鎖漲停比例因子：Spearman相關幾乎是0，沒有支持證據
 - 09:15檢查點拿來當「原本部位」的進場/出場觸發規則(延後進場/提早出場/分批建倉)全部判死，唯一驗證有效的是上方「額外加碼」規則，不可拿來改變原本開盤進場、收盤出場的做法
 - 盤中停損/停利(2-8%)：全部測過，沒有一組贏過持有到收盤

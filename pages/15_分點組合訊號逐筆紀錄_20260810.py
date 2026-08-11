@@ -103,7 +103,7 @@ else:
     c2.metric('勝率', f'{wr:.2f}%')
     c3.metric('平均放空報酬', f'{avg_r:+.2f}%', delta=f'中位數 {med_r:+.2f}%', delta_color='off')
     c4.metric('Sharpe(近似, 事件層級非日組合)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
-    c5.metric('觸停損天花板比例', f'{stop_rate:.1f}%')
+    c5.metric('觸停損天花板比例', f'{stop_rate:.2f}%')
 
 st.divider()
 
@@ -129,7 +129,9 @@ with st.expander('📊 各期間績效對照（此組合，未套用上方篩選
         })
     if rows:
         st.dataframe(pd.DataFrame(rows).set_index('期間').style.format(
-            {'平均報酬(%)': '{:+.2f}', '中位數報酬(%)': '{:+.2f}'}), use_container_width=True)
+            {'勝率(%)': '{:.2f}', '平均報酬(%)': '{:+.2f}', '中位數報酬(%)': '{:+.2f}', 'Sharpe(近似)': '{:.2f}'},
+            na_rep='-',
+        ), use_container_width=True)
     st.caption('近期資料筆數天生較少（統計力較弱），這是為何正式顯著性對校正方式敏感的直接原因，不代表訊號變弱。')
 
 # ── 完整逐筆歷史紀錄 ──────────────────────────────────────
@@ -171,12 +173,17 @@ def color_ret(val):
         return ''
 
 
+show_format = {
+    f'{branch_i_label}買超(萬)': '{:,.2f}', f'{branch_i_label}影響力%': '{:.2f}',
+    f'{branch_j_label}買超(萬)': '{:,.2f}', f'{branch_j_label}影響力%': '{:.2f}',
+    '開盤': '{:.2f}', '最高': '{:.2f}', '收盤': '{:.2f}', '停損天花板價': '{:.2f}',
+    '放空報酬%': '{:+.2f}',
+}
 st.dataframe(
     show.style
         .map(color_success, subset=['成功'])
         .map(color_ret, subset=['放空報酬%'])
-        .format({'開盤': '{:.2f}', '最高': '{:.2f}', '收盤': '{:.2f}', '停損天花板價': '{:.2f}',
-                 '放空報酬%': '{:+.2f}'}, na_rep='-'),
+        .format(show_format, na_rep='-'),
     use_container_width=True, height=520,
 )
 st.caption('買超(萬)/影響力%欄位若空白，代表該分點在這筆事件當天的原始交易列在快取中找不到精確金額（通常是資料join邊界問題，不影響報酬計算本身，報酬只依賴D1的OHLC價格）。')
@@ -208,7 +215,7 @@ for p in events['pair'].unique():
         '平均報酬(%)': round(sub['short_ret_pct'].mean(), 2),
     })
 st.dataframe(pd.DataFrame(compare_rows).set_index('組合').style.format(
-    {'平均報酬(%)': '{:+.2f}'}), use_container_width=True)
+    {'勝率(%)': '{:.2f}', '平均報酬(%)': '{:+.2f}'}), use_container_width=True)
 
 st.caption(
     '本頁是三組配對訊號的可篩選、可下載逐筆事件明細；富邦證券(裸名稱)獨立分點的單獨規則（非配對）'
