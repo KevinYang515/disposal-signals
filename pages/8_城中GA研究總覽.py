@@ -9,6 +9,8 @@ import streamlit as st
 st.set_page_config(page_title='城中GA研究總覽', page_icon='🏙️', layout='wide')
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+ADDON_DATA_FILE = os.path.join(DATA_DIR, 'citycenter_ga_0915_addon_events.csv')
+ADDON_TOGGLE_KEY = 'city_0915_addon_enabled'
 
 
 def sharpe_pf(returns):
@@ -51,7 +53,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
+def load_events(_cache_bust: str = '2026-08-11-0915-addon-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -59,6 +61,28 @@ def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
     names = pd.read_csv(names_fp, dtype={'code': str})
     df = df.merge(names, on='code', how='left')
     df['name'] = df['name'].fillna('')
+    # 09:15 加碼資料由 scripts/build_citycenter_ga_0915_addon_data.py 從真實分點成交
+    # 明細與真實分鐘 K 線逐筆 join 產生；Cloud 只讀這個小型、可版本控管的產物。
+    addon_columns = [
+        'city_d0_buy_rank_top3', 'unicenter_city_d0_cobuy', 'fubon_chiayi_d0_cobuy',
+        'bonus_signal_count', 'd1_0915_close', 'has_d1_0915_close', 'addon_eligible',
+        'addon_ret_0915_to_close_pct',
+    ]
+    if os.path.exists(ADDON_DATA_FILE):
+        addon = pd.read_csv(ADDON_DATA_FILE, parse_dates=['d0', 'd1'], dtype={'code': str})
+        if addon.duplicated(['d0', 'code', 'd1']).any():
+            raise ValueError('citycenter_ga_0915_addon_events.csv 有重複事件鍵，拒絕混入 KPI')
+        df = df.merge(addon, on=['d0', 'code', 'd1'], how='left', validate='one_to_one')
+    else:
+        # 防禦舊部署：缺少資料時不會虛構訊號，toggle 也會在頁面下方停用。
+        for col in addon_columns:
+            df[col] = np.nan
+    for col in ['city_d0_buy_rank_top3', 'unicenter_city_d0_cobuy', 'fubon_chiayi_d0_cobuy',
+                'has_d1_0915_close', 'addon_eligible']:
+        df[col] = df[col].fillna(False).astype(bool)
+    if 'bonus_signal_count' not in df.columns:
+        df['bonus_signal_count'] = 0
+    df['bonus_signal_count'] = df['bonus_signal_count'].fillna(0).astype(int)
     if 'd1_intraday_close' not in df.columns:
         df['d1_intraday_close'] = ''
     df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
@@ -83,6 +107,13 @@ if 'has_intraday' not in events.columns:
     events['has_intraday'] = False
 events['has_intraday'] = events['has_intraday'].astype(bool)
 events['年份'] = events['d0'].dt.year.astype(str)
+if ADDON_TOGGLE_KEY not in st.session_state:
+    # 以 2025 作樣本內、2026 作保留樣本的同一事件重跑皆顯示：等權加碼會稀釋報酬，預設不加碼。
+    st.session_state[ADDON_TOGGLE_KEY] = False
+if 'mktcap_8' not in st.session_state:
+    st.session_state['mktcap_8'] = 600
+if 'taiex_mode_8' not in st.session_state:
+    st.session_state['taiex_mode_8'] = '排除過熱天(建議)'
 
 # ── 篩選器 ──────────────────────────────────────────────
 col_f1, col_f2, col_f3, col_f4 = st.columns(4)
@@ -104,11 +135,22 @@ st.caption(
     '這類事件近期regime平均報酬-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)，方向也支持排除。'
 )
 
+if st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommended_8'):
+    st.session_state['mktcap_8'] = 600
+    st.session_state['taiex_mode_8'] = '排除過熱天(建議)'
+    st.session_state['stop_8_slider'] = 0.0
+    st.session_state['stop_8_num'] = 0.0
+    st.session_state['tp_8_slider'] = 0.0
+    st.session_state['tp_8_num'] = 0.0
+    st.session_state[ADDON_TOGGLE_KEY] = False
+    st.rerun()
+st.caption('研究建議依據：`exit_grid_scan_with_risk_20260810.md`、`CODEX_0915加碼規則正式驗證_REPORT.md`，並以本頁現行事件資料重跑 2025 樣本內／2026 保留樣本。')
+
 col_f7, col_f8 = st.columns(2)
 with col_f7:
     mktcap_max = st.slider(
         'D0市值上限（億元）', min_value=0, max_value=int(events['mktcap_billion'].max()) + 100,
-        value=600, step=50,
+        step=50, key='mktcap_8',
         help='2026-08-07驗證：D0市值按五分位切分，市值最大20%近期regime幾乎沒有優勢'
              '(mean=+0.09%,t=0.29)，對照最強的Q2組(+1.52%,t=5.02)。預設600億是近期regime'
              '(約589億)與全期(約442億)80百分位門檻之間的折衷值，可自行拖動調整。'
@@ -117,7 +159,7 @@ with col_f8:
     taiex_mode = st.radio(
         '大盤(加權指數)D0前2日累積漲幅',
         ['排除過熱天(建議)', '全部納入', '只看過熱天'],
-        index=0,
+        key='taiex_mode_8',
         horizontal=True,
         help='2026-08-07驗證：D0收盤時往前2個交易日的加權指數累積漲幅按五分位切分，'
              '最強20%那組近期regime優勢幾乎消失甚至轉負(mean=-0.05%,t=-0.15)，對照最強'
@@ -211,6 +253,15 @@ with np.errstate(invalid='ignore'):
     sim_ret = np.where(censored_arr | np.isnan(entry), np.nan, sim_ret)
 
 view['sim_ret'] = sim_ret
+addon_eligible_arr = view['addon_eligible'].to_numpy(dtype=bool)
+addon_ret_arr = view['addon_ret_0915_to_close_pct'].to_numpy(dtype=float)
+with np.errstate(invalid='ignore'):
+    view['sim_ret_with_0915_addon'] = np.where(
+        addon_eligible_arr & np.isfinite(sim_ret) & np.isfinite(addon_ret_arr),
+        (sim_ret + addon_ret_arr) / 2.0,
+        sim_ret,
+    )
+addon_enabled = st.session_state[ADDON_TOGGLE_KEY]
 
 st.divider()
 
@@ -219,7 +270,8 @@ settled = view[~view['censored']]
 if len(settled) == 0:
     st.warning('目前篩選條件下無已結算資料')
 else:
-    sim_settled_ret = settled['sim_ret'].dropna()
+    kpi_ret_col = 'sim_ret_with_0915_addon' if addon_enabled else 'sim_ret'
+    sim_settled_ret = settled[kpi_ret_col].dropna()
     wr = (sim_settled_ret > 0).mean() * 100
     avg_r = sim_settled_ret.mean()
     sharpe, pf = sharpe_pf(sim_settled_ret)
@@ -231,8 +283,12 @@ else:
     c3.metric('平均放空報酬', f'{avg_r:+.2f}%')
     c4.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
     c5.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
-    if stop_pct > 0 or tp_pct > 0:
-        st.caption(f'⚙️ 以上KPI已套用停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%（非單純持有到收盤）。下方各分組表/逐筆明細/累積報酬走勢仍為未套用停損停利的原始持有到收盤數字，僅KPI區塊即時反映上方設定。')
+    if stop_pct > 0 or tp_pct > 0 or addon_enabled:
+        kpi_note = f'停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%'
+        if addon_enabled:
+            add_count = int((settled['addon_eligible'] & settled[kpi_ret_col].notna()).sum())
+            kpi_note += f'；09:15加碼 {add_count} 筆（原始部位與加碼部位各半資金）'
+        st.caption(f'⚙️ 以上KPI已套用{kpi_note}。下方各分組表/逐筆明細/累積報酬走勢仍為未套用停損停利或09:15加碼的原始持有到收盤數字，僅KPI區塊即時反映上方設定。')
 
 st.divider()
 
@@ -422,6 +478,22 @@ st.caption(
     '完全不動用/不稀釋原本D1開盤就進場的部位，純粹增量。僅限近期regime(2025-2026)，需持續累積樣本；'
     '台新台北同日共買樣本仍太小(2048筆裡僅32筆)，只作觀察不進正式規則。'
 )
+addon_data_coverage = events['has_d1_0915_close'].mean() * 100
+addon_toggle_supported = events['has_d1_0915_close'].any()
+st.checkbox(
+    'KPI 模式：加碼（未勾選＝不加碼；原始／加碼部位各 50% 資金）',
+    key=ADDON_TOGGLE_KEY,
+    disabled=not addon_toggle_supported,
+    help='僅當 bonus≥1 且真實 D1 09:15 收盤低於 D1 開盤時，才以 09:15 價放空並持有到收盤。原始開盤部位完全不變。',
+)
+if addon_toggle_supported:
+    st.caption(
+        f'KPI 加碼資料覆蓋 {addon_data_coverage:.2f}%（真實分鐘 K 線）；沒有精確 09:15 K 線的事件保留原始部位報酬，'
+        '不把缺資料誤判成「條件不成立」。現行嚴格 City-GA 事件以 2025 作樣本內、2026 作保留樣本重跑，'
+        '平均報酬：2025 不加碼 +2.14% vs 加碼 +1.45%；2026 不加碼 +1.65% vs 加碼 +0.69%，故研究建議預設「不加碼」。'
+    )
+else:
+    st.warning('目前部署缺少可驗證的 09:15 分鐘 K 線資料，已停用 KPI 加碼，避免用推估資料模擬。')
 bonus_rule_df = pd.DataFrame([
     {'bonus訊號數': '0（不該加碼）', 'n': 117, '加碼筆均報酬%': -0.493, '勝率%': 47.0, 't值': -1.155},
     {'bonus訊號數': '1個', 'n': 419, '加碼筆均報酬%': 0.494, '勝率%': 60.9, 't值': 2.173},
@@ -432,7 +504,7 @@ st.dataframe(
     bonus_rule_df.style.format({'加碼筆均報酬%': '{:+.2f}', '勝率%': '{:.2f}', 't值': '{:.2f}'}),
     use_container_width=True,
 )
-st.caption('近期regime(2025-2026)，樣本數皆為n≥100之穩固樣本(3個bonus除外，n=11僅供參考)。資料來源：CODEX_0915加碼規則正式驗證_REPORT.md。')
+st.caption('近期regime(2025-2026)，樣本數皆為n≥100之穩固樣本(3個bonus除外，n=11僅供參考)。此表為加碼腿本身的原始研究統計；上方 toggle 則以現行嚴格 City-GA 事件逐筆計算「原始腿／加碼腿」等權合併。資料來源：CODEX_0915加碼規則正式驗證_REPORT.md。')
 
 st.markdown('---')
 st.subheader('🔎 其他研究結論（非本頁資料表涵蓋範圍）')

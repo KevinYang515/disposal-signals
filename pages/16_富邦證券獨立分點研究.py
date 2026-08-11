@@ -200,6 +200,13 @@ st.caption(
     '設成7%；城中GA/統一城中做同樣測試則沒有穩定的樣本外證據支持停利有幫助，那兩頁預設維持0%（單純持有到收盤）。'
     '你隨時可以自行拖動滑桿覆蓋這個預設值。'
 )
+if st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommended_16'):
+    st.session_state['stop_16_slider'] = 0.0
+    st.session_state['stop_16_num'] = 0.0
+    st.session_state['tp_16_slider'] = 7.0
+    st.session_state['tp_16_num'] = 7.0
+    st.rerun()
+st.caption('研究建議依據：`exit_grid_scan_with_risk_20260810.md`（富邦樣本外：停損 0%、停利 7%）。')
 col_s1, col_s2 = st.columns(2)
 with col_s1:
     stop_pct = synced_pct_input('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 'stop_16')
