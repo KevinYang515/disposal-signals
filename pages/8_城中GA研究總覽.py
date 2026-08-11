@@ -31,6 +31,25 @@ def _parse_spark(v):
         return None
 
 
+def synced_pct_input(label, default, key):
+    """Slider + number_input synced via session_state — sliders are fiddly on mobile, this gives a typeable alternative."""
+    slider_key, num_key = f'{key}_slider', f'{key}_num'
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = default
+
+    def _from_slider():
+        st.session_state[num_key] = st.session_state[slider_key]
+
+    def _from_num():
+        st.session_state[slider_key] = st.session_state[num_key]
+
+    st.slider(label, 0.0, 10.0, step=0.5, key=slider_key, on_change=_from_slider)
+    if num_key not in st.session_state:
+        st.session_state[num_key] = st.session_state[slider_key]
+    st.number_input('或直接輸入數字（%，適合手機操作）', 0.0, 10.0, step=0.5, key=num_key, on_change=_from_num)
+    return st.session_state[slider_key]
+
+
 @st.cache_data(ttl=3600)
 def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
@@ -63,12 +82,13 @@ events['success'] = events['success'].astype(bool)
 if 'has_intraday' not in events.columns:
     events['has_intraday'] = False
 events['has_intraday'] = events['has_intraday'].astype(bool)
-events['period'] = np.where(events['d0'] < pd.Timestamp('2024-01-01'), 'TRAIN 2021-2023', 'TEST 2024-2026')
+events['年份'] = events['d0'].dt.year.astype(str)
 
 # ── 篩選器 ──────────────────────────────────────────────
 col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 with col_f1:
-    sel_period = st.multiselect('期間', ['TRAIN 2021-2023', 'TEST 2024-2026'], default=['TRAIN 2021-2023', 'TEST 2024-2026'])
+    sel_years = st.multiselect('年份', sorted(events['年份'].unique().tolist(), reverse=True),
+                                default=sorted(events['年份'].unique().tolist(), reverse=True))
 with col_f2:
     sel_market = st.multiselect('市場', sorted(events['market'].dropna().unique().tolist()), default=sorted(events['market'].dropna().unique().tolist()))
 with col_f3:
@@ -77,23 +97,12 @@ with col_f3:
 with col_f4:
     sel_streak = st.multiselect('連續鎖漲停天數', [1, 2, 3, 4], default=[1, 2, 3, 4])
 
-col_f5, col_f6 = st.columns(2)
-with col_f5:
-    disposal_mode = st.radio(
-        'D1處置股(分盤集合競價)',
-        ['排除(建議)', '全部納入', '只看處置股'],
-        index=0,
-        horizontal=True,
-        help='2026-08-07驗證(CODEX_處置期間污染評估_REPORT.md)：D1落在處置分盤期間的事件近期regime平均報酬'
-             '-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)。分盤集合競價沒有連續撮合，現行盤中監控/'
-             '09:15加碼/停損邏輯在這段期間不成立，預設排除。'
-    )
-with col_f6:
-    disposal_type_options = ['5分鐘', '20分鐘', '25分鐘', '其他/未知']
-    sel_disposal_type = st.multiselect(
-        '若納入處置股，分盤類型', disposal_type_options, default=disposal_type_options,
-        disabled=(disposal_mode == '排除(建議)'),
-    )
+st.caption(
+    '⚠️ D1落在處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，'
+    '現行盤中監控/09:15加碼/停損邏輯在這段期間不成立，等於無法照這個策略的方式實際執行，'
+    '不是單純「表現比較差」的統計選擇。2026-08-07驗證(CODEX_處置期間污染評估_REPORT.md)：'
+    '這類事件近期regime平均報酬-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)，方向也支持排除。'
+)
 
 col_f7, col_f8 = st.columns(2)
 with col_f7:
@@ -143,21 +152,12 @@ events['gap_bucket'] = events['gap_pct'].apply(gap_bucket)
 events['streak_capped'] = events['lock_streak'].clip(upper=4)
 
 mask = (
-    events['period'].isin(sel_period)
+    events['年份'].isin(sel_years)
     & events['market'].isin(sel_market)
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
 )
-if disposal_mode == '排除(建議)':
-    mask &= ~events['d1_disposal']
-elif disposal_mode == '只看處置股':
-    mask &= events['d1_disposal']
-    if sel_disposal_type:
-        type_mask = events['d1_disposal_type'].fillna('').apply(
-            lambda s: any(t in s for t in sel_disposal_type) or (s == '' and '其他/未知' in sel_disposal_type)
-        )
-        mask &= type_mask
-# '全部納入' 不額外過濾
+mask &= ~events['d1_disposal']
 mask &= events['mktcap_billion'] <= mktcap_max
 if taiex_mode == '排除過熱天(建議)':
     mask &= events['taiex_2day_mom_pct'] <= 2.6
@@ -173,14 +173,19 @@ st.markdown('#### 🎚️ 停損／停利設定')
 st.caption(
     '設定「D1股價比D0收盤漲多少%停損」「D1股價比D0收盤跌多少%停利」（標準的漲跌幅%報價方式），用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
     '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
-    '**下方KPI已套用這裡的設定**（預設0%/0%時，等同單純持有到收盤，跟不設停損/停利時完全一致）。'
-    '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
+    '**下方KPI已套用這裡的設定**（預設0%/0%＝單純持有到收盤）。'
+    '⚠️ 本專案先前針對城中GA/統一城中/富邦三個已驗證策略做過42組（7種停損%×6種停利%）網格掃描，'
+    '樣本內選出最佳組合後在完全沒碰過的樣本外資料驗證（見`E:\\stock\\reports\\exit_grid_scan_with_risk_20260810.md`）：'
+    '**拿掉停損這件事，三個策略樣本外都確定是對的**（加停損不只犧牲平均報酬，連最大回撤都一起變差）；'
+    '**但城中GA的停利，樣本外沒有穩定證據支持有幫助**（樣本外平均+1.32% vs 單純持有到收盤+1.34%，幾乎打平，'
+    '跟富邦那頁停利=7%樣本外真的贏的情況不同），所以這裡預設維持0%/0%（單純持有到收盤，就是目前驗證最紮實的做法）。'
+    '你隨時可以自行拖動滑桿覆蓋這個預設值做互動驗證。'
 )
 col_s1, col_s2 = st.columns(2)
 with col_s1:
-    stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 10.0, 0.0, 0.5)
+    stop_pct = synced_pct_input('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 'stop_8')
 with col_s2:
-    tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 10.0, 0.0, 0.5)
+    tp_pct = synced_pct_input('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 'tp_8')
 
 entry = view['d1_open'].to_numpy(dtype=float)
 d0_close_arr = view['d0_close'].to_numpy(dtype=float)

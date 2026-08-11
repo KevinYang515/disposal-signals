@@ -35,6 +35,25 @@ def _parse_spark(v):
         return None
 
 
+def synced_pct_input(label, default, key):
+    """Slider + number_input synced via session_state — sliders are fiddly on mobile, this gives a typeable alternative."""
+    slider_key, num_key = f'{key}_slider', f'{key}_num'
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = default
+
+    def _from_slider():
+        st.session_state[num_key] = st.session_state[slider_key]
+
+    def _from_num():
+        st.session_state[slider_key] = st.session_state[num_key]
+
+    st.slider(label, 0.0, 10.0, step=0.5, key=slider_key, on_change=_from_slider)
+    if num_key not in st.session_state:
+        st.session_state[num_key] = st.session_state[slider_key]
+    st.number_input('或直接輸入數字（%，適合手機操作）', 0.0, 10.0, step=0.5, key=num_key, on_change=_from_num)
+    return st.session_state[slider_key]
+
+
 @st.cache_data(ttl=3600)
 def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
@@ -98,23 +117,11 @@ with col_f3:
 with col_f4:
     sel_streak = st.multiselect('連續鎖漲停天數', [1, 2, 3, 4], default=[1, 2, 3, 4])
 
-col_f5, col_f6 = st.columns(2)
-with col_f5:
-    disposal_mode = st.radio(
-        'D1處置股(分盤集合競價)',
-        ['排除(建議)', '全部納入', '只看處置股'],
-        index=0,
-        horizontal=True,
-        help='沿用城中GA頁的既有驗證（分盤集合競價沒有連續撮合，現行盤中監控/停損邏輯在這段期間'
-             '不成立）：預設排除。富邦分點策略本身尚未針對處置期間污染單獨驗證，此為沿用同機制'
-             '的保守預設，可自行切換查看差異。'
-    )
-with col_f6:
-    disposal_type_options = ['5分鐘', '20分鐘', '25分鐘', '其他/未知']
-    sel_disposal_type = st.multiselect(
-        '若納入處置股，分盤類型', disposal_type_options, default=disposal_type_options,
-        disabled=(disposal_mode == '排除(建議)'),
-    )
+st.caption(
+    '⚠️ D1落在處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，'
+    '等於無法照這個策略的方式實際執行，不是單純「表現比較差」的統計選擇（沿用城中GA頁已驗證的'
+    '同一機制性理由；富邦分點策略本身尚未針對處置期間污染單獨驗證，此為保守預設）。'
+)
 
 col_f7, col_f8 = st.columns(2)
 with col_f7:
@@ -168,15 +175,7 @@ mask = (
 )
 if sel_year != '全部':
     mask &= events['年份'] == sel_year
-if disposal_mode == '排除(建議)':
-    mask &= ~events['d1_disposal']
-elif disposal_mode == '只看處置股':
-    mask &= events['d1_disposal']
-    if sel_disposal_type:
-        type_mask = events['d1_disposal_type'].fillna('').apply(
-            lambda s: any(t in s for t in sel_disposal_type) or (s == '' and '其他/未知' in sel_disposal_type)
-        )
-        mask &= type_mask
+mask &= ~events['d1_disposal']
 mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
 if taiex_mode == '排除過熱天(≥2.6%)':
     mask &= events['taiex_2day_mom_pct'].isna() | (events['taiex_2day_mom_pct'] <= 2.6)
@@ -192,15 +191,20 @@ st.markdown('#### 🎚️ 停損／停利設定')
 st.caption(
     '設定「D1股價比D0收盤漲多少%停損」「D1股價比D0收盤跌多少%停利」（標準的漲跌幅%報價方式），用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
     '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
-    '**下方KPI已套用這裡的設定**（預設0%/0%時，等同單純持有到收盤，跟不設停損/停利時完全一致）。'
-    '⚠️ 本專案先前針對城中GA/統一城中/富邦三個已驗證策略做過的完整逐筆停損/停利掃描發現：持有到收盤穩定優於加停損（見'
-    '`E:\\stock\\reports\\early_profit_take_exit_20260810.md`），這裡的簡化版本讓你自行互動驗證同樣的方向。'
+    '**下方KPI已套用這裡的設定**。'
+    '⚠️ 本專案先前針對城中GA/統一城中/富邦三個已驗證策略做過42組（7種停損%×6種停利%）網格掃描，'
+    '樣本內選出最佳組合後在完全沒碰過的樣本外資料驗證（見`E:\\stock\\reports\\exit_grid_scan_with_risk_20260810.md`）：'
+    '**拿掉停損（漲多少%就回補）這件事，三個策略樣本外都確定是對的**——加停損不只犧牲平均報酬，連風險'
+    '(最大回撤)都一起變差，所以下面預設停損=0%。**停利（跌多少%提早回補）則因策略而異**：富邦是唯一一個'
+    '停利=7%在樣本外真的贏過單純持有到收盤的（樣本外平均+0.92% vs +0.79%，回撤也更小），所以這裡預設幫你'
+    '設成7%；城中GA/統一城中做同樣測試則沒有穩定的樣本外證據支持停利有幫助，那兩頁預設維持0%（單純持有到收盤）。'
+    '你隨時可以自行拖動滑桿覆蓋這個預設值。'
 )
 col_s1, col_s2 = st.columns(2)
 with col_s1:
-    stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 10.0, 0.0, 0.5)
+    stop_pct = synced_pct_input('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 'stop_16')
 with col_s2:
-    tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 10.0, 0.0, 0.5)
+    tp_pct = synced_pct_input('停利：D1股價比D0收盤跌多少% 出場（0=不停利，網格掃描建議值7%）', 7.0, 'tp_16')
 
 entry = view['d1_open'].to_numpy(dtype=float)
 d0_close_arr = view['d0_close'].to_numpy(dtype=float)
