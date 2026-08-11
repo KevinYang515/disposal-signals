@@ -501,8 +501,16 @@ for c in numeric_cols:
         show[c] = show[c].round(2)
 show = show.sort_values("事件日", ascending=False)
 
+return_cols = [c for c in ["前5日報酬%", f"D{horizon}毛報酬%", f"D{horizon}淨報酬%",
+                            "加權當日漲跌%", "櫃買當日漲跌%"] if c in show.columns]
+
+def _color_return(val):
+    if pd.isna(val):
+        return ""
+    return f"color: {UP_COLOR if val >= 0 else DOWN_COLOR}; font-weight: 600"
+
 st.dataframe(
-    show,
+    show.style.map(_color_return, subset=return_cols),
     width="stretch",
     hide_index=True,
     height=520,
