@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """凱基-城中GA 隔日沖放空策略：歷史回測紀錄與因子挖掘總覽。"""
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -21,8 +22,17 @@ def sharpe_pf(returns):
     return sharpe, pf
 
 
+def _parse_spark(v):
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
+def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -30,6 +40,9 @@ def load_events(_cache_bust: str = '2026-08-11-strict-threshold'):
     names = pd.read_csv(names_fp, dtype={'code': str})
     df = df.merge(names, on='code', how='left')
     df['name'] = df['name'].fillna('')
+    if 'd1_intraday_close' not in df.columns:
+        df['d1_intraday_close'] = ''
+    df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
     # 2026-08-07新增: 防禦性欄位補齊——Streamlit Cloud曾在CSV已更新後仍持續回報
     # KeyError('d1_disposal')，懷疑是舊worker的cache_data在redeploy後沒有確實失效。
     # 除了下面靠_cache_bust參數強制失效既有cache外，這裡再加一層防禦：即使真的讀到
@@ -47,6 +60,9 @@ st.caption('D0嚴格鎖漲停 + 凱基-城中淨買超金額/影響力雙門檻�
 events = load_events()
 events['censored'] = events['censored'].astype(bool)
 events['success'] = events['success'].astype(bool)
+if 'has_intraday' not in events.columns:
+    events['has_intraday'] = False
+events['has_intraday'] = events['has_intraday'].astype(bool)
 events['period'] = np.where(events['d0'] < pd.Timestamp('2024-01-01'), 'TRAIN 2021-2023', 'TEST 2024-2026')
 
 # ── 篩選器 ──────────────────────────────────────────────
@@ -326,6 +342,8 @@ show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
                  '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
                  '最大不利波動%', '成功']
+show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
+intraday_coverage = view['has_intraday'].mean() * 100 if len(view) else 0.0
 
 
 def color_success(val):
@@ -358,11 +376,17 @@ st.dataframe(
                  '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
+    column_config={
+        'D1走勢': st.column_config.LineChartColumn(
+            'D1走勢（分K收盤）', width='medium',
+            help='D1當天每分鐘收盤價走勢（真實Shioaji歷史分K，2026-08-11回填）；沒有抓到分K資料的事件留空。',
+        ),
+    },
 )
-st.caption('開盤/最高/最低/收盤為D1當天日線價。')
+st.caption(f'開盤/最高/最低/收盤為D1當天日線價。「D1走勢」為D1當天逐分鐘收盤價，涵蓋率約{intraday_coverage:.2f}%（真實歷史分K，非模擬；缺資料事件留空，非100%覆蓋）。')
 st.download_button(
     '📥 下載此表 CSV',
-    show.to_csv(index=False, encoding='utf-8-sig'),
+    show.drop(columns=['D1走勢']).to_csv(index=False, encoding='utf-8-sig'),
     'citycenter_ga_events_filtered.csv', 'text/csv', key='dl_events_full',
 )
 

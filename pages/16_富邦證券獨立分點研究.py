@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """富邦證券(裸名稱/母公司)獨立分點隔日沖策略：歷史回測紀錄與因子挖掘總覽。"""
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -25,8 +26,17 @@ def sharpe_pf(s):
     return sharpe, pf
 
 
+def _parse_spark(v):
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-11-v1'):
+def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -37,6 +47,9 @@ def load_events(_cache_bust: str = '2026-08-11-v1'):
         df['name'] = df['name'].fillna('')
     else:
         df['name'] = ''
+    if 'd1_intraday_close' not in df.columns:
+        df['d1_intraday_close'] = ''
+    df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
     for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
                           ('mktcap_billion', float('nan')), ('taiex_2day_mom_pct', float('nan'))]:
         if col not in df.columns:
@@ -68,6 +81,9 @@ events['censored'] = events['censored'].astype(bool)
 events['success'] = events['success'].astype(bool)
 events['d0_disposal'] = events['d0_disposal'].astype(bool)
 events['d1_disposal'] = events['d1_disposal'].astype(bool)
+if 'has_intraday' not in events.columns:
+    events['has_intraday'] = False
+events['has_intraday'] = events['has_intraday'].astype(bool)
 events['年份'] = events['d0'].dt.year.astype(str)
 
 # ── 篩選器 ──────────────────────────────────────────────
@@ -362,6 +378,8 @@ show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
                  '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
                  '最大不利波動%', '成功']
+show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
+intraday_coverage = view['has_intraday'].mean() * 100 if len(view) else 0.0
 
 
 def color_success(val):
@@ -394,11 +412,17 @@ st.dataframe(
                  '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
+    column_config={
+        'D1走勢': st.column_config.LineChartColumn(
+            'D1走勢（分K收盤）', width='medium',
+            help='D1當天每分鐘收盤價走勢（真實Shioaji歷史分K，2026-08-11回填）；沒有抓到分K資料的事件留空。',
+        ),
+    },
 )
-st.caption('開盤/最高/最低/收盤為D1當天日線價。')
+st.caption(f'開盤/最高/最低/收盤為D1當天日線價。「D1走勢」為D1當天逐分鐘收盤價，涵蓋率約{intraday_coverage:.2f}%（真實歷史分K，非模擬；缺資料事件留空，非100%覆蓋）。')
 st.download_button(
     '📥 下載此表 CSV',
-    show.to_csv(index=False, encoding='utf-8-sig'),
+    show.drop(columns=['D1走勢']).to_csv(index=False, encoding='utf-8-sig'),
     'fubon_branch_events_filtered.csv', 'text/csv', key='dl_events_full',
 )
 
