@@ -168,14 +168,56 @@ view = events[mask].copy()
 
 st.divider()
 
-# ── KPI ──────────────────────────────────────────────────
+# ── 停損/停利設定（套用到下方KPI與所有統計）──────────────────
+st.markdown('#### 🎚️ 停損／停利設定')
+st.caption(
+    '設定「D1股價比D0收盤漲多少%停損」「D1股價比D0收盤跌多少%停利」（標準的漲跌幅%報價方式），用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
+    '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
+    '**下方KPI已套用這裡的設定**（預設0%/0%時，等同單純持有到收盤，跟不設停損/停利時完全一致）。'
+    '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
+)
+col_s1, col_s2 = st.columns(2)
+with col_s1:
+    stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
+with col_s2:
+    tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
+
+entry = view['d1_open'].to_numpy(dtype=float)
+d0_close_arr = view['d0_close'].to_numpy(dtype=float)
+close_arr = view['d1_close'].to_numpy(dtype=float)
+high_arr = view['d1_high'].to_numpy(dtype=float)
+low_arr = view['d1_low'].to_numpy(dtype=float)
+frozen_arr = view['d1_frozen'].to_numpy(dtype=bool)
+censored_arr = view['censored'].to_numpy(dtype=bool)
+base_ret_arr = view['short_ret_open_to_close_pct'].to_numpy(dtype=float)
+
+with np.errstate(invalid='ignore'):
+    stop_price = d0_close_arr * (1 + stop_pct / 100)
+    tp_price = d0_close_arr * (1 - tp_pct / 100)
+    hit_stop = (stop_pct > 0) & (high_arr >= stop_price)
+    hit_tp = (tp_pct > 0) & (low_arr <= tp_price)
+
+    exit_price = close_arr.copy()
+    exit_price = np.where(hit_tp, tp_price, exit_price)
+    exit_price = np.where(hit_stop, stop_price, exit_price)  # 停損優先，覆蓋停利
+
+    sim_ret = (entry - exit_price) / entry * 100
+    sim_ret = np.where(frozen_arr, base_ret_arr, sim_ret)
+    sim_ret = np.where(censored_arr | np.isnan(entry), np.nan, sim_ret)
+
+view['sim_ret'] = sim_ret
+
+st.divider()
+
+# ── KPI（套用上方停損/停利設定；預設0/0時等同持有到收盤）──────
 settled = view[~view['censored']]
 if len(settled) == 0:
     st.warning('目前篩選條件下無已結算資料')
 else:
-    wr = settled['success'].mean() * 100
-    avg_r = settled['short_ret_open_to_close_pct'].mean()
-    sharpe, pf = sharpe_pf(settled['short_ret_open_to_close_pct'])
+    sim_settled_ret = settled['sim_ret'].dropna()
+    wr = (sim_settled_ret > 0).mean() * 100
+    avg_r = sim_settled_ret.mean()
+    sharpe, pf = sharpe_pf(sim_settled_ret)
     frozen_rate = view['d1_frozen'].mean() * 100
 
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -184,6 +226,8 @@ else:
     c3.metric('平均放空報酬', f'{avg_r:+.2f}%')
     c4.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
     c5.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
+    if stop_pct > 0 or tp_pct > 0:
+        st.caption(f'⚙️ 以上KPI已套用停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%（非單純持有到收盤）。下方各分組表/逐筆明細/累積報酬走勢仍為未套用停損停利的原始持有到收盤數字，僅KPI區塊即時反映上方設定。')
 
 st.divider()
 
@@ -225,46 +269,9 @@ with st.expander('📊 依「開盤跳空區間」分組（目前篩選條件下
         )
         st.caption('⭐ 9.5%以上是關鍵懸崖：D1鎖死率從9%以下的個位數暴增，最慘單筆也急遽惡化。這是目前找到最有效的防嘎漲停規則。跳空1~9%整體是甜蜜點，細分後可看到區間內部仍有差異；負跳空（開低）樣本數較少，僅供參考。')
 
-# ── 停損/停利模擬器 ──────────────────────────────────────
-with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價估算）'):
-    st.caption(
-        '設定「D1股價比D0收盤漲多少%停損」「D1股價比D0收盤跌多少%停利」（標準的漲跌幅%報價方式），用D1當天的最高價/最低價估算是否會被觸及（並非逐筆tick，未計入手續費/滑價）。'
-        '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
-        '⚠️ 完整逐筆K線版本的嚴謹測試已在研究報告中做過：2%-8%間任何停損/停利組合都沒有贏過持有到收盤，這裡的簡化版本讓你自行互動驗證同樣的結論。'
-    )
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
-    with col_s2:
-        tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
-
-    sim = view.copy()
-    entry = sim['d1_open'].to_numpy(dtype=float)
-    d0_close_arr = sim['d0_close'].to_numpy(dtype=float)
-    close = sim['d1_close'].to_numpy(dtype=float)
-    high = sim['d1_high'].to_numpy(dtype=float)
-    low = sim['d1_low'].to_numpy(dtype=float)
-    frozen = sim['d1_frozen'].to_numpy(dtype=bool)
-    censored_arr = sim['censored'].to_numpy(dtype=bool)
-    base_ret = sim['short_ret_open_to_close_pct'].to_numpy(dtype=float)
-
-    with np.errstate(invalid='ignore'):
-        stop_price = d0_close_arr * (1 + stop_pct / 100)
-        tp_price = d0_close_arr * (1 - tp_pct / 100)
-        hit_stop = (stop_pct > 0) & (high >= stop_price)
-        hit_tp = (tp_pct > 0) & (low <= tp_price)
-
-        exit_price = close.copy()
-        exit_price = np.where(hit_tp, tp_price, exit_price)
-        exit_price = np.where(hit_stop, stop_price, exit_price)  # 停損優先，覆蓋停利
-
-        sim_ret = (entry - exit_price) / entry * 100
-        sim_ret = np.where(frozen, base_ret, sim_ret)
-        sim_ret = np.where(censored_arr | np.isnan(entry), np.nan, sim_ret)
-
-    sim['sim_ret'] = sim_ret
-    sim_settled = sim[~sim['censored']]
-
+# ── 停損/停利效果對照（沿用上方同一組滑桿，不重複設定）──────
+with st.expander(f'🎚️ 停損／停利效果對照（目前設定：停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%，與上方KPI區塊同一組設定）'):
+    sim_settled = view[~view['censored']]
     if len(sim_settled) == 0:
         st.warning('目前篩選條件下無已結算資料')
     else:
@@ -273,19 +280,21 @@ with st.expander('🎚️ 停損／停利模擬器（用D1當日最高/最低價
         base_sh, _ = sharpe_pf(sim_settled['short_ret_open_to_close_pct'])
         base_worst = sim_settled['short_ret_open_to_close_pct'].min()
 
-        sim_wr = (sim_settled['sim_ret'] > 0).mean() * 100
-        sim_avg = sim_settled['sim_ret'].mean()
-        sim_sh, _ = sharpe_pf(sim_settled['sim_ret'])
-        sim_worst = sim_settled['sim_ret'].min()
+        sim_rets_here = sim_settled['sim_ret'].dropna()
+        sim_wr = (sim_rets_here > 0).mean() * 100
+        sim_avg = sim_rets_here.mean()
+        sim_sh, _ = sharpe_pf(sim_rets_here)
+        sim_worst = sim_rets_here.min() if len(sim_rets_here) else np.nan
 
         cmp_df = pd.DataFrame({
             '原本（持有到收盤）': [f'{base_wr:.2f}%', f'{base_avg:+.2f}%',
                                     f'{base_sh:.2f}' if pd.notna(base_sh) else '-', f'{base_worst:+.2f}%'],
-            '套用停損/停利後': [f'{sim_wr:.2f}%', f'{sim_avg:+.2f}%',
-                          f'{sim_sh:.2f}' if pd.notna(sim_sh) else '-', f'{sim_worst:+.2f}%'],
+            '套用停損/停利後（=上方KPI）': [f'{sim_wr:.2f}%', f'{sim_avg:+.2f}%',
+                          f'{sim_sh:.2f}' if pd.notna(sim_sh) else '-',
+                          f'{sim_worst:+.2f}%' if pd.notna(sim_worst) else '-'],
         }, index=['勝率', '平均報酬', 'Sharpe(近似)', '最慘單筆'])
         st.dataframe(cmp_df, use_container_width=True)
-        st.caption(f'已結算 {len(sim_settled)} 筆（D1整日無成交的censored事件已排除）。')
+        st.caption(f'已結算 {len(sim_settled)} 筆（D1整日無成交的censored事件已排除）。要調整停損/停利數值，請拖動上方「停損／停利設定」的滑桿——這裡跟頂部KPI共用同一組設定，不是獨立的模擬。')
 
 # ── lock_streak 分組表 ──────────────────────────────────
 with st.expander('📊 依「連續鎖漲停天數」分組（跟FlipBranch規律相反）'):
