@@ -11,6 +11,11 @@ st.set_page_config(page_title='城中GA研究總覽', page_icon='🏙️', layou
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 ADDON_DATA_FILE = os.path.join(DATA_DIR, 'citycenter_ga_0915_addon_events.csv')
 ADDON_TOGGLE_KEY = 'city_0915_addon_enabled'
+CITY_GAP_EXECUTABLE_MAX = 9.5
+CITY_GAP_VALIDATED_MIN = 5.024636961142823
+GAP_MODE_ALL_EXECUTABLE = 'All executable gaps (<9.5%)'
+GAP_MODE_VALIDATED = 'Validated gap: 5.02% to <9.5%'
+GAP_MODE_HELP = '2026-08-12 City-GA study: IS-selected D1 gap >=5.02% and <9.5%; untouched holdout n=78, mean +2.34%, +1.31pp vs fixed remaining groups, Welch p=0.047. Gaps >=9.5% are mechanically excluded as frequently locked/unfillable.'
 
 
 def sharpe_pf(returns):
@@ -112,6 +117,8 @@ if ADDON_TOGGLE_KEY not in st.session_state:
     st.session_state[ADDON_TOGGLE_KEY] = False
 if 'mktcap_8' not in st.session_state:
     st.session_state['mktcap_8'] = 600
+if 'gap_mode_8' not in st.session_state:
+    st.session_state['gap_mode_8'] = GAP_MODE_ALL_EXECUTABLE
 if 'taiex_mode_8' not in st.session_state:
     st.session_state['taiex_mode_8'] = '排除過熱天(建議)'
 
@@ -128,6 +135,14 @@ with col_f3:
 with col_f4:
     sel_streak = st.multiselect('連續鎖漲停天數', [1, 2, 3, 4], default=[1, 2, 3, 4])
 
+gap_mode = st.radio(
+    'D1 gap research filter',
+    [GAP_MODE_ALL_EXECUTABLE, GAP_MODE_VALIDATED],
+    key='gap_mode_8',
+    horizontal=True,
+    help=GAP_MODE_HELP,
+)
+
 st.caption(
     '⚠️ D1落在處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，'
     '現行盤中監控/09:15加碼/停損邏輯在這段期間不成立，等於無法照這個策略的方式實際執行，'
@@ -143,6 +158,7 @@ if st.button('🎯 套用目前研究建議的最佳參數', key='apply_recommen
     st.session_state['tp_8_slider'] = 0.0
     st.session_state['tp_8_num'] = 0.0
     st.session_state[ADDON_TOGGLE_KEY] = False
+    st.session_state['gap_mode_8'] = GAP_MODE_VALIDATED
     st.rerun()
 st.caption('研究建議依據：`exit_grid_scan_with_risk_20260810.md`、`CODEX_0915加碼規則正式驗證_REPORT.md`，並以本頁現行事件資料重跑 2025 樣本內／2026 保留樣本。')
 
@@ -199,6 +215,10 @@ mask = (
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
 )
+# >=9.5% is an executability gate, not a return-picked weak bucket.
+mask &= events['gap_pct'] < CITY_GAP_EXECUTABLE_MAX
+if gap_mode == GAP_MODE_VALIDATED:
+    mask &= events['gap_pct'] >= CITY_GAP_VALIDATED_MIN
 mask &= ~events['d1_disposal']
 mask &= events['mktcap_billion'] <= mktcap_max
 if taiex_mode == '排除過熱天(建議)':
