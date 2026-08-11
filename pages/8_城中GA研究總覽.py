@@ -58,7 +58,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-12-mktcap-percentile-v1'):
+def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -97,10 +97,11 @@ def load_events(_cache_bust: str = '2026-08-12-mktcap-percentile-v1'):
     # 沒有這三欄的舊CSV，也用安全預設值補上，讓頁面不會直接crash。
     for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
                           ('mktcap_billion', float('nan')), ('mktcap_pct_rank', float('nan')),
-                          ('taiex_2day_mom_pct', float('nan'))]:
+                          ('taiex_2day_mom_pct', float('nan')), ('day_trade_short_suspended_d1', False)]:
         if col not in df.columns:
             df[col] = default
     df['mktcap_pct_rank'] = pd.to_numeric(df['mktcap_pct_rank'], errors='coerce')
+    df['day_trade_short_suspended_d1'] = df['day_trade_short_suspended_d1'].fillna(False).astype(bool)
     return df
 
 
@@ -152,6 +153,13 @@ st.caption(
     '現行盤中監控/09:15加碼/停損邏輯在這段期間不成立，等於無法照這個策略的方式實際執行，'
     '不是單純「表現比較差」的統計選擇。2026-08-07驗證(CODEX_處置期間污染評估_REPORT.md)：'
     '這類事件近期regime平均報酬-1.53%，明顯劣於正常組+0.85%(Welch p<0.01)，方向也支持排除。'
+)
+st.caption(
+    '⚠️ D1當天若命中本地已知的「停止先賣後買」(day-trade-short)限制，一律排除，同樣不提供切換選項：'
+    '這代表當沖放空這個動作本身在該日可能無法合法執行，屬於能不能做這筆交易的問題，不是報酬好壞的統計選擇。'
+    '2026-08-12稽核(`borrow_availability_risk_20260812.md`)：符合此旗標的事件佔全樣本3.25%(50/1,540)。'
+    '**注意**：完整的「借券/融券額度是否足夠」尚無法驗證——本機資料庫目前沒有可借券賣出股數、借券限額、'
+    '借券費率等即時額度資料，只有這個已知的當沖限制旗標可用，不代表其餘事件借券一定沒問題，只是本頁能排除的部分。'
 )
 
 def apply_recommended_parameters():
@@ -237,6 +245,7 @@ mask &= events['gap_pct'] < CITY_GAP_EXECUTABLE_MAX
 if gap_mode == GAP_MODE_VALIDATED:
     mask &= events['gap_pct'] >= CITY_GAP_VALIDATED_MIN
 mask &= ~events['d1_disposal']
+mask &= ~events['day_trade_short_suspended_d1']
 mask &= events['mktcap_quintile'].isin(sel_mktcap_quintiles)
 if taiex_mode == '排除過熱天(建議)':
     mask &= events['taiex_2day_mom_pct'] <= 2.6

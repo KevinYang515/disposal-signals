@@ -55,7 +55,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
+def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -70,9 +70,11 @@ def load_events(_cache_bust: str = '2026-08-11-intraday-v1'):
         df['d1_intraday_close'] = ''
     df['d1_intraday_spark'] = df['d1_intraday_close'].apply(_parse_spark)
     for col, default in [('d0_disposal', False), ('d1_disposal', False), ('d1_disposal_type', ''),
-                          ('mktcap_billion', float('nan')), ('taiex_2day_mom_pct', float('nan'))]:
+                          ('mktcap_billion', float('nan')), ('taiex_2day_mom_pct', float('nan')),
+                          ('day_trade_short_suspended_d1', False)]:
         if col not in df.columns:
             df[col] = default
+    df['day_trade_short_suspended_d1'] = df['day_trade_short_suspended_d1'].fillna(False).astype(bool)
     return df
 
 
@@ -122,6 +124,13 @@ st.caption(
     '⚠️ D1落在處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，'
     '等於無法照這個策略的方式實際執行，不是單純「表現比較差」的統計選擇（沿用城中GA頁已驗證的'
     '同一機制性理由；富邦分點策略本身尚未針對處置期間污染單獨驗證，此為保守預設）。'
+)
+st.caption(
+    '⚠️ D1當天若命中本地已知的「停止先賣後買」(day-trade-short)限制，一律排除，同樣不提供切換選項：'
+    '當沖放空這個動作本身在該日可能無法合法執行，屬於能不能做這筆交易的問題，不是報酬好壞的統計選擇。'
+    '2026-08-12稽核(`borrow_availability_risk_20260812.md`)：符合此旗標的事件佔全樣本3.66%(155/4,233)。'
+    '**注意**：完整的「借券/融券額度是否足夠」尚無法驗證——本機資料庫目前沒有可借券賣出股數、借券限額、'
+    '借券費率等即時額度資料，只有這個已知的當沖限制旗標可用，不代表其餘事件借券一定沒問題，只是本頁能排除的部分。'
 )
 
 col_f7, col_f8 = st.columns(2)
@@ -176,6 +185,7 @@ mask = (
 )
 mask &= events['年份'].isin(sel_years)
 mask &= ~events['d1_disposal']
+mask &= ~events['day_trade_short_suspended_d1']
 mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
 if taiex_mode == '排除過熱天(≥2.6%)':
     mask &= events['taiex_2day_mom_pct'].isna() | (events['taiex_2day_mom_pct'] <= 2.6)
