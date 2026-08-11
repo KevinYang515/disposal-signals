@@ -39,12 +39,12 @@ def load_events(_cache_bust: str = '2026-08-10-v1'):
 
 st.title('🔗 分點組合訊號｜逐筆歷史紀錄')
 st.warning(
-    '⚠️ **誠實揭露，先讀這段**：這三組配對訊號的樣本內(2018~2026-05-05)證據都很扎實(t值4~6，'
-    'p<0.0001)，樣本外(2026-05-06之後)方向也一致為正、且都贏過兩邊分點各自單獨表現，但**樣本外的'
+    '⚠️ **誠實揭露，先讀這段**：這三組配對訊號在2018~2026-05-05期間的證據都很扎實(t值4~6，'
+    'p<0.0001)，2026-05-06起(近期)方向也一致為正、且都贏過兩邊分點各自單獨表現，但**近期資料的'
     '正式統計顯著性，會隨著「跟多少組配對一起做多重比較校正」而變動**——同一組配對，在較窄的比較'
     '族群下能通過p<0.05，換成較寬的比較族群(例如跟19.8萬組全配對一起校正)就通不過。這不是訊號忽強'
-    '忽弱，是樣本外資料量(目前僅約3個月)本身還不夠大，任何嚴格校正都撐不住小樣本。**這些是「有希望、'
-    '方向一致，但還沒正式證實」的觀察名單，不是已驗證可上線的訊號**，需要更多時間累積樣本外資料才能'
+    '忽弱，是近期資料量(目前僅約3個月)本身還不夠大，任何嚴格校正都撐不住小樣本。**這些是「有希望、'
+    '方向一致，但還沒正式證實」的觀察名單，不是已驗證可上線的訊號**，需要更多時間累積近期資料才能'
     '真正確認。完整方法論與四種比較族群校正結果見 `E:\\stock\\reports\\branch_pair_*_20260810.md`'
     '（本機研究報告，不在此網站上）。'
 )
@@ -68,7 +68,7 @@ with col_f1:
 with col_f2:
     sel_period = st.multiselect('期間', ['in_sample', 'out_of_sample'],
                                  default=['in_sample', 'out_of_sample'],
-                                 format_func=lambda x: '樣本內(2018~2026-05-05)' if x == 'in_sample' else '樣本外(2026-05-06起)')
+                                 format_func=lambda x: '2018~2026-05-05期間' if x == 'in_sample' else '2026-05-06起(近期)')
 
 col_f3, col_f4 = st.columns(2)
 with col_f3:
@@ -107,8 +107,8 @@ else:
 
 st.divider()
 
-# ── 樣本內 vs 樣本外對照 ──────────────────────────────────
-with st.expander('📊 樣本內 vs 樣本外對照（此組合，未套用上方篩選器的期間限制）', expanded=True):
+# ── 各期間績效對照 ──────────────────────────────────
+with st.expander('📊 各期間績效對照（此組合，未套用上方篩選器的期間限制）', expanded=True):
     rows = []
     for p in ['in_sample', 'out_of_sample']:
         sub = events[(events['pair'] == sel_pair) & (events['period'] == p)]
@@ -120,7 +120,7 @@ with st.expander('📊 樣本內 vs 樣本外對照（此組合，未套用上�
             continue
         sh, _ = sharpe_pf(sub['short_ret_pct'])
         rows.append({
-            '期間': '樣本內(2018~2026-05-05)' if p == 'in_sample' else '樣本外(2026-05-06起)',
+            '期間': '2018~2026-05-05期間' if p == 'in_sample' else '2026-05-06起(近期)',
             '筆數': len(sub),
             '勝率(%)': round(sub['success'].mean() * 100, 2),
             '平均報酬(%)': round(sub['short_ret_pct'].mean(), 2),
@@ -130,7 +130,7 @@ with st.expander('📊 樣本內 vs 樣本外對照（此組合，未套用上�
     if rows:
         st.dataframe(pd.DataFrame(rows).set_index('期間').style.format(
             {'平均報酬(%)': '{:+.2f}', '中位數報酬(%)': '{:+.2f}'}), use_container_width=True)
-    st.caption('樣本外筆數天生較少（統計力較弱），這是為何正式顯著性對校正方式敏感的直接原因，不代表訊號變弱。')
+    st.caption('近期資料筆數天生較少（統計力較弱），這是為何正式顯著性對校正方式敏感的直接原因，不代表訊號變弱。')
 
 # ── 完整逐筆歷史紀錄 ──────────────────────────────────────
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，{sel_pair}）')
@@ -141,7 +141,7 @@ show_cols = ['d0', 'code', 'name', 'd1', 'period', 'i_net_amt_wan', 'i_influence
 show = view[show_cols].sort_values('d0', ascending=False).copy()
 show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
 show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
-show['period'] = show['period'].map({'in_sample': '樣本內', 'out_of_sample': '樣本外'})
+show['period'] = show['period'].map({'in_sample': '2018~2026-05-05', 'out_of_sample': '2026-05-06起'})
 branch_i_label = view['branch_i'].iloc[0] if len(view) else 'i'
 branch_j_label = view['branch_j'].iloc[0] if len(view) else 'j'
 show.columns = ['D0訊號日', '代號', '名稱', 'D1進場日', '期間', f'{branch_i_label}買超(萬)',
@@ -197,7 +197,7 @@ else:
     st.caption('目前篩選條件下筆數不足，無法繪製累積報酬走勢。')
 
 st.markdown('---')
-st.subheader('🔎 三組配對橫向比較（樣本內+樣本外合併，未篩選frozen/極端值）')
+st.subheader('🔎 三組配對橫向比較（全期間合併，未篩選frozen/極端值）')
 compare_rows = []
 for p in events['pair'].unique():
     sub = events[events['pair'] == p]
@@ -211,7 +211,7 @@ st.dataframe(pd.DataFrame(compare_rows).set_index('組合').style.format(
     {'平均報酬(%)': '{:+.2f}'}), use_container_width=True)
 
 st.caption(
-    '此頁與 `pages/14_城中富邦組合訊號研究_20260810.py`（同日較早建立的摘要頁）互為補充：14號頁是'
-    '文字摘要+多重比較校正結果對照表，本頁提供可篩選、可下載的逐筆事件明細。方法論、程式碼與四種'
-    '比較族群(369/2,514/2,517/4,278組)的完整校正結果只存在本機研究報告，未上傳此網站。'
+    '本頁是三組配對訊號的可篩選、可下載逐筆事件明細；富邦證券(裸名稱)獨立分點的單獨規則（非配對）'
+    '請見 **pages/16「富邦證券獨立分點研究」**，兩頁互為補充、不重複。方法論、程式碼與四種比較族群'
+    '(369/2,514/2,517/4,278組)的完整校正結果只存在本機研究報告，未上傳此網站。'
 )
