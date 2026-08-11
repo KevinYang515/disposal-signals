@@ -509,8 +509,10 @@ def _color_return(val):
         return ""
     return f"color: {UP_COLOR if val >= 0 else DOWN_COLOR}; font-weight: 600"
 
+format_cols = [c for c in numeric_cols if c in show.columns]
+
 st.dataframe(
-    show.style.map(_color_return, subset=return_cols),
+    show.style.map(_color_return, subset=return_cols).format("{:.2f}", subset=format_cols),
     width="stretch",
     hide_index=True,
     height=520,
