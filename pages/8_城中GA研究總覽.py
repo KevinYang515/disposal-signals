@@ -178,9 +178,9 @@ st.caption(
 )
 col_s1, col_s2 = st.columns(2)
 with col_s1:
-    stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 15.0, 0.0, 0.5)
+    stop_pct = st.slider('停損：D1股價比D0收盤漲多少% 出場（0=不停損）', 0.0, 10.0, 0.0, 0.5)
 with col_s2:
-    tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 15.0, 0.0, 0.5)
+    tp_pct = st.slider('停利：D1股價比D0收盤跌多少% 出場（0=不停利）', 0.0, 10.0, 0.0, 0.5)
 
 entry = view['d1_open'].to_numpy(dtype=float)
 d0_close_arr = view['d0_close'].to_numpy(dtype=float)
