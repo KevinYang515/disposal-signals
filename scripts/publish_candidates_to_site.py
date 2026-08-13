@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 SOURCE_DIR = Path(r"E:\stock\live_stage1_data")
-REPOSITORY = Path(__file__).resolve().parents[1]
+REPOSITORY = Path(r"E:\stock_recovery\github_repos\disposal-signals")
 DESTINATION_DIR = REPOSITORY / "data" / "live_candidates"
 FILENAMES = (
     "citycenter_candidates_today.json",
