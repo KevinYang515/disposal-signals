@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Publish today's four Stage1 candidate snapshots into disposal-signals.
+"""Publish today's five Stage1 candidate snapshots into disposal-signals.
 
 This deliberately makes a local Git commit only.  The coordinator remains
 responsible for pushing that commit to GitHub / Streamlit Community Cloud.
@@ -22,6 +22,7 @@ FILENAMES = (
     "unicenter_candidates_today.json",
     "strategyh_candidates_today.json",
     "flipbranch_candidates_today.json",
+    "fubon_candidates_today.json",
 )
 TAIPEI_TZ = timezone(timedelta(hours=8))
 

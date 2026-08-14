@@ -13,7 +13,7 @@ import streamlit as st
 st.set_page_config(page_title="今日候選", page_icon="📋", layout="wide")
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "live_candidates"
-DATA_SCHEMA_VERSION = "2026-08-14-live-candidates-v1"
+DATA_SCHEMA_VERSION = "2026-08-14-live-candidates-v2"
 
 STRATEGIES = (
     {
@@ -56,6 +56,17 @@ STRATEGIES = (
             ("ranking_value", "排名值"),
             ("ranking_field", "排名欄位"),
             ("dominant_broker", "主導分點"),
+        ),
+    },
+    {
+        "label": "富邦（bare-parent）",
+        "caption": "僅供研究資訊參考；富邦不是實盤／模擬交易機器人，候選出現不代表任何 bot 會下單。",
+        "filename": "fubon_candidates_today.json",
+        "columns": (
+            ("code", "股票代號"),
+            ("prev_close", "前一日收盤"),
+            ("net_amt_wan", "淨買超（萬元）"),
+            ("influence_pct", "富邦影響度（%）"),
         ),
     },
 )
@@ -109,11 +120,22 @@ def candidate_table(payload: dict[str, Any], columns: tuple[tuple[str, str], ...
     return frame.rename(columns=labels)
 
 
+def float_column_formats(table: pd.DataFrame) -> dict[str, str]:
+    """Match the event-detail tables' two-decimal display convention."""
+    return {
+        column: "{:.2f}"
+        for column in table.columns
+        if pd.api.types.is_float_dtype(table[column])
+    }
+
+
 st.title("📋 今日候選")
-st.caption("四個 Stage1 策略為下一個交易日產生的候選清單。")
+st.caption("四個 live Stage1 策略與一個研究資訊快照的下一個交易日候選清單。")
 
 for strategy in STRATEGIES:
     st.subheader(strategy["label"])
+    if caption := strategy.get("caption"):
+        st.caption(caption)
     try:
         payload = load_candidate_payload(strategy["filename"])
     except FileNotFoundError:
@@ -133,7 +155,11 @@ for strategy in STRATEGIES:
     if table.empty:
         st.info("今日無候選")
     else:
-        st.dataframe(table, width="stretch", hide_index=True)
+        st.dataframe(
+            table.style.format(float_column_formats(table), na_rep="-"),
+            width="stretch",
+            hide_index=True,
+        )
     st.divider()
 
 st.caption("此頁反映 Stage1 產生當下的候選清單；候選股仍可能因 live engine 的進場反彈或借券可用性檢查而不實際進場。")
