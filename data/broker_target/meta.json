@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-08-12T00:46:38",
+  "generated_at": "2026-08-14T14:27:12+08:00",
   "source": "D:\\stock\\tw-quant-research\\work\\optimization_2025\\enriched\\enriched_ticker_day.csv",
-  "n_rows": 5289,
+  "n_rows": 5343,
   "date_min": "2024-11-01",
-  "date_max": "2026-08-11",
-  "n_v1_candidates": 274,
-  "n_pending": 8,
+  "date_max": "2026-08-14",
+  "n_v1_candidates": 276,
+  "n_pending": 26,
   "status": "testing",
   "max_horizon_days": 8,
-  "notes": "研究/紙上模擬資料，非即時交易訊號。OCR raw whole-row QA 293/301=97.34%，低於專案自訂99%品質門檻；ticker/company撞號bug已修復並經使用者逐筆確認。2025年部分來自獨立的擴充enrichment pipeline(work/optimization_2025)，跟主要2026資料集共用同一份已修正的原始事件檔，但市場面板與enrichment是分開跑的，不覆寫主要2026輸出。D1-D8持有期報酬為獨立計算，非原始pipeline輸出（方法已與pipeline之D0/D1/D3/D5對照驗證誤差為0）。v1候選條件與回測結果詳見 D:\\stock\\tw-quant-research\\HANDOFF_2026-07-18_CODEX_UPDATE.md Merged 64 new events (2026-08-07~08-11, OCR'd from screenshots + finlab-completed) today. V1_PRESET corrected (prior20_max 0->1, pre5_max 5->12); 2 rows' v1_candidate flags corrected accordingly."
+  "notes": "研究/紙上模擬資料，非即時交易訊號。OCR raw whole-row QA 293/301=97.34%，低於專案自訂99%品質門檻；ticker/company撞號bug已修復並經使用者逐筆確認。2025年部分來自獨立的擴充enrichment pipeline(work/optimization_2025)，跟主要2026資料集共用同一份已修正的原始事件檔，但市場面板與enrichment是分開跑的，不覆寫主要2026輸出。D1-D8持有期報酬為獨立計算，非原始pipeline輸出（方法已與pipeline之D0/D1/D3/D5對照驗證誤差為0）。v1候選條件與回測結果詳見 D:\\stock\\tw-quant-research\\HANDOFF_2026-07-18_CODEX_UPDATE.md Merged 64 new events (2026-08-07~08-11, OCR'd from screenshots + finlab-completed) today. V1_PRESET corrected (prior20_max 0->1, pre5_max 5->12); 2 rows' v1_candidate flags corrected accordingly. Merged 54 new events (2026-08-12~08-14, OCR'd from five screenshots + FinLab refresh) on 2026-08-14."
 }
