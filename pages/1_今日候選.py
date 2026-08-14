@@ -132,34 +132,70 @@ def float_column_formats(table: pd.DataFrame) -> dict[str, str]:
 st.title("📋 今日候選")
 st.caption("四個 live Stage1 策略與一個研究資訊快照的下一個交易日候選清單。")
 
+payloads: dict[str, dict[str, Any]] = {}
+load_errors: dict[str, tuple[str, str]] = {}
 for strategy in STRATEGIES:
-    st.subheader(strategy["label"])
-    if caption := strategy.get("caption"):
-        st.caption(caption)
+    filename = strategy["filename"]
     try:
-        payload = load_candidate_payload(strategy["filename"])
+        payloads[filename] = load_candidate_payload(filename)
     except FileNotFoundError:
-        st.warning("尚未發布今日候選資料。")
-        continue
+        load_errors[filename] = ("warning", "尚未發布今日候選資料。")
     except (json.JSONDecodeError, ValueError) as error:
-        st.error(f"候選資料格式無法讀取：{error}")
-        continue
+        load_errors[filename] = ("error", f"候選資料格式無法讀取：{error}")
 
-    active, state = status_text(payload)
-    trade_date = payload.get("trade_date", "-")
-    signal_date = payload.get("signal_date", "-")
-    st.write(f"交易日：{trade_date}　｜　訊號日：{signal_date}　｜　狀態：{'✅' if active else '⏸️'} {state}")
-    st.caption(f"上次更新：{payload.get('generated_at', '-')}")
+active_count = sum(bool(payload.get("active", False)) for payload in payloads.values())
+candidate_count = sum(len(payload.get("candidates", [])) for payload in payloads.values())
+summary_active, summary_candidates = st.columns(2)
+summary_active.metric("今日啟用策略", f"{active_count} / {len(STRATEGIES)}")
+summary_candidates.metric("今日候選總數", f"{candidate_count} 檔")
+if load_errors:
+    st.caption(f"摘要目前僅納入成功讀取的 {len(payloads)} / {len(STRATEGIES)} 份資料快照。")
 
-    table = candidate_table(payload, strategy["columns"])
-    if table.empty:
-        st.info("今日無候選")
-    else:
-        st.dataframe(
-            table.style.format(float_column_formats(table), na_rep="-"),
-            width="stretch",
-            hide_index=True,
-        )
-    st.divider()
+st.divider()
+
+for strategy in STRATEGIES:
+    filename = strategy["filename"]
+    payload = payloads.get(filename)
+    load_error = load_errors.get(filename)
+
+    with st.container(border=True):
+        heading, badge = st.columns([6, 2])
+        with heading:
+            st.subheader(strategy["label"])
+            if caption := strategy.get("caption"):
+                st.caption(caption)
+        with badge:
+            if load_error:
+                if load_error[0] == "warning":
+                    st.warning("資料未發布")
+                else:
+                    st.error("資料格式錯誤")
+            elif bool(payload.get("active", False)):
+                st.success("啟用中")
+            else:
+                st.info("未啟用")
+
+        if load_error:
+            if load_error[0] == "warning":
+                st.warning(load_error[1])
+            else:
+                st.error(load_error[1])
+            continue
+
+        active, state = status_text(payload)
+        trade_date = payload.get("trade_date", "-")
+        signal_date = payload.get("signal_date", "-")
+        st.caption(f"交易日：{trade_date}　｜　訊號日：{signal_date}　｜　狀態說明：{state}")
+        st.caption(f"上次更新：{payload.get('generated_at', '-')}")
+
+        table = candidate_table(payload, strategy["columns"])
+        if table.empty:
+            st.info("今日無候選")
+        else:
+            st.dataframe(
+                table.style.format(float_column_formats(table), na_rep="-"),
+                width="stretch",
+                hide_index=True,
+            )
 
 st.caption("此頁反映 Stage1 產生當下的候選清單；候選股仍可能因 live engine 的進場反彈或借券可用性檢查而不實際進場。")
