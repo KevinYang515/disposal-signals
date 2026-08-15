@@ -1,9 +1,11 @@
-"""Local-only D0 broker context shared by the branch research pages.
+"""Offline-only D0 broker context for branch-event CSV builders.
 
 The FinLab broker cache contains more than one hundred million rows.  This
 module deliberately streams its Arrow record batches and retains only exact
 ``(D0, code)`` rows for the supplied event population.  It never downloads
-data or performs per-row lookups.
+data or performs per-row lookups.  Streamlit pages must only consume the CSV
+columns written by ``scripts/build_branch_event_context.py``; they must never
+import this module.
 """
 
 from __future__ import annotations

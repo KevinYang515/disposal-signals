@@ -2,7 +2,7 @@
 r"""台新-台北 strict-lock/liquid 隔日沖放空事件監看頁。
 
 狀態：研究／個人監看（testing），非驗證完成的正式交易訊號。
-資料與結論來源：E:\stock\reports\new_branch_discovery_20260813.md。
+資料與結論來源：new_branch_discovery_20260813.md。
 """
 
 import json
@@ -11,8 +11,6 @@ import os
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-from branch_event_context import add_other_branch_activity_count, enrich_branch_events
 
 
 st.set_page_config(page_title="台新-台北獨立分點研究", page_icon="🔬", layout="wide")
@@ -57,7 +55,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = "2026-08-15-cross-branch-and-target-v1"):
+def load_events(_cache_bust: str = "2026-08-15-offline-branch-context-v1"):
     df = pd.read_csv(EVENTS_FILE, parse_dates=["d0", "d1"], dtype={"code": str})
     df["code"] = df["code"].str.zfill(4)
     names_fp = os.path.join(DATA_DIR, "stock_names.csv")
@@ -88,9 +86,22 @@ def load_events(_cache_bust: str = "2026-08-15-cross-branch-and-target-v1"):
                    "entry_disposal", "day_trade_short_suspended_entry"]:
         df[column] = as_bool(df[column])
     df["d1_intraday_spark"] = df["d1_intraday_close"].apply(_parse_spark)
-    # D0 cross-branch context and D1-exact V1 overlap are both precomputed once
-    # for the whole 250-event source population inside this cached loader.
-    return add_other_branch_activity_count(enrich_branch_events(df), "taishin_taipei")
+    branch_context_defaults = {
+        "city_ga_net_amt_wan": 0.0, "city_ga_influence_pct": 0.0,
+        "unicenter_city_net_amt_wan": 0.0, "unicenter_city_influence_pct": 0.0,
+        "fubon_net_amt_wan": 0.0, "fubon_influence_pct": 0.0,
+        "taishin_taipei_net_amt_wan": 0.0, "taishin_taipei_influence_pct": 0.0,
+        "d0_top3_net_buy_branches": "", "top3_available": False,
+        "v1_candidate_d1": False, "other_branch_active_count": 0,
+    }
+    for column, default in branch_context_defaults.items():
+        if column not in df:
+            df[column] = default
+    df["d0_top3_net_buy_branches"] = df["d0_top3_net_buy_branches"].fillna("")
+    for column in ["top3_available", "v1_candidate_d1"]:
+        df[column] = as_bool(df[column])
+    df["other_branch_active_count"] = df["other_branch_active_count"].fillna(0).astype(int)
+    return df
 
 
 def gap_bucket(gap):
@@ -255,21 +266,12 @@ if rets.empty:
     st.warning("目前篩選條件下無已結算資料")
 else:
     period_return, sharpe, mdd, daily = portfolio_metrics(settled, "sim_ret")
-    wins = rets[rets > 0]
-    losses = rets[rets <= 0]
-    expected_value = (
-        (len(wins) / len(rets)) * (wins.mean() if len(wins) else 0.0)
-        + (len(losses) / len(rets)) * (losses.mean() if len(losses) else 0.0)
-    )
-    if not np.isclose(expected_value, rets.mean(), rtol=0.0, atol=1e-12):
-        raise RuntimeError("期望值分解計算未與平均放空報酬一致。")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("已結算筆數", f"{len(rets)} 筆", delta=f"{len(view)} 筆通過篩選", delta_color="off")
     c2.metric("期間報酬", f"{period_return:+.2f}%")
     c3.metric("勝率", f"{(rets > 0).mean() * 100:.2f}%")
-    c4.metric("期望值", f"{expected_value:+.2f}%", help="期望值＝勝率×平均獲利＋敗率×平均虧損（虧損為負值）。")
-    c5.metric("日組合 Sharpe", f"{sharpe:.2f}" if pd.notna(sharpe) else "-")
-    c6.metric("最大回撤", f"{mdd:.2f}%" if pd.notna(mdd) else "-")
+    c4.metric("日組合 Sharpe", f"{sharpe:.2f}" if pd.notna(sharpe) else "-")
+    c5.metric("最大回撤", f"{mdd:.2f}%" if pd.notna(mdd) else "-")
     st.caption(
         "期間報酬／Sharpe／最大回撤：同一實際進場日的多筆事件先等權，再依實際進場日複利；"
         "不含交易成本、滑價或實際借券額度。這些是目前短歷史的描述數字，不是推薦依據。"
@@ -380,7 +382,7 @@ show_cols = [
     "d0", "code", "name", "market", "d1", "entry_day", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
     "city_ga_net_amt_wan", "city_ga_influence_pct", "unicenter_city_net_amt_wan", "unicenter_city_influence_pct",
     "fubon_net_amt_wan", "fubon_influence_pct", "d0_top3_net_buy_branches", "v1_candidate_d1",
-    "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "entry_gap_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct",
+    "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "entry_gap_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct", "sim_ret",
     "short_mae_pct",
 ]
 show = view[show_cols].sort_values(["d0", "code"], ascending=False).copy()
@@ -391,7 +393,7 @@ show.columns = [
     "D0訊號日", "代號", "名稱", "市場", "D1原始日", "實際進場日", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
     "城中GA淨買超(萬)", "城中GA影響力%", "統一城中淨買超(萬)", "統一城中影響力%",
     "富邦證券淨買超(萬)", "富邦證券影響力%", "D0前三大買超分點", "D1同時為V1候選",
-    "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "進場開盤漲幅%", "D1鎖死", "截尾", "放空報酬%", "最大不利波動%",
+    "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "進場開盤漲幅%", "D1鎖死", "截尾", "原始放空報酬%", "情境放空報酬%", "最大不利波動%",
 ]
 
 # Only show real cached minute bars.  If none are available, omit the column rather than fabricate a D1 path.
@@ -425,13 +427,13 @@ if has_sparkline:
         "D1走勢（分K收盤）", width="medium", help="真實歷史分鐘 K 收盤價；缺資料事件留空，非模擬。"
     )
 st.dataframe(
-    show.style.map(color_return, subset=["放空報酬%"]).format(
+    show.style.map(color_return, subset=["情境放空報酬%"]).format(
         {"買超金額(萬)": "{:,.2f}", "影響力%": "{:.2f}", "跳空%": "{:+.2f}",
          "城中GA淨買超(萬)": "{:,.2f}", "城中GA影響力%": "{:+.2f}",
          "統一城中淨買超(萬)": "{:,.2f}", "統一城中影響力%": "{:+.2f}",
          "富邦證券淨買超(萬)": "{:,.2f}", "富邦證券影響力%": "{:+.2f}",
          "D1開盤": "{:.2f}", "D1最高": "{:.2f}", "D1最低": "{:.2f}", "D1收盤": "{:.2f}",
-         "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "進場開盤漲幅%": "{:+.2f}", "放空報酬%": "{:+.2f}",
+         "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "進場開盤漲幅%": "{:+.2f}", "原始放空報酬%": "{:+.2f}", "情境放空報酬%": "{:+.2f}",
          "最大不利波動%": "{:.2f}"}, na_rep="-"),
     use_container_width=True, height=520, column_config=column_config,
 )

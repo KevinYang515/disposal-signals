@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from branch_event_context import add_other_branch_activity_count, enrich_branch_events
-
 st.set_page_config(page_title='富邦證券獨立分點研究', page_icon='🧭', layout='wide')
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -57,7 +55,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-15-cross-branch-and-target-v1'):
+def load_events(_cache_bust: str = '2026-08-15-offline-branch-context-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str).str.zfill(4)
@@ -78,9 +76,22 @@ def load_events(_cache_bust: str = '2026-08-15-cross-branch-and-target-v1'):
         if col not in df.columns:
             df[col] = default
     df['day_trade_short_suspended_d1'] = df['day_trade_short_suspended_d1'].fillna(False).astype(bool)
-    # D0 cross-branch context and D1-exact V1 overlap are both precomputed once
-    # for the entire event population inside this cached loader.
-    return add_other_branch_activity_count(enrich_branch_events(df), 'fubon')
+    branch_context_defaults = {
+        'city_ga_net_amt_wan': 0.0, 'city_ga_influence_pct': 0.0,
+        'unicenter_city_net_amt_wan': 0.0, 'unicenter_city_influence_pct': 0.0,
+        'fubon_net_amt_wan': 0.0, 'fubon_influence_pct': 0.0,
+        'taishin_taipei_net_amt_wan': 0.0, 'taishin_taipei_influence_pct': 0.0,
+        'd0_top3_net_buy_branches': '', 'top3_available': False,
+        'v1_candidate_d1': False, 'other_branch_active_count': 0,
+    }
+    for col, default in branch_context_defaults.items():
+        if col not in df.columns:
+            df[col] = default
+    df['d0_top3_net_buy_branches'] = df['d0_top3_net_buy_branches'].fillna('')
+    for col in ['top3_available', 'v1_candidate_d1']:
+        df[col] = df[col].fillna(False).astype(bool)
+    df['other_branch_active_count'] = df['other_branch_active_count'].fillna(0).astype(int)
+    return df
 
 
 st.title('🧭 富邦證券(裸名稱)獨立分點｜隔日沖放空策略歷史回測')
@@ -227,7 +238,7 @@ st.caption(
     '若同一天停損價與停利價都被觸及，保守假設停損先發生。D1當天整日無成交（開盤=最高=最低=收盤，實際上無法回補）的事件視為censored，直接排除於統計之外，不做延伸到解鎖日開盤的回補假設。'
     '**下方KPI已套用這裡的設定**。'
     '⚠️ 本專案先前針對城中GA/統一城中/富邦三個已驗證策略做過42組（7種停損%×6種停利%）網格掃描，'
-    '樣本內選出最佳組合後在完全沒碰過的樣本外資料驗證（見`E:\\stock\\reports\\exit_grid_scan_with_risk_20260810.md`）：'
+    '樣本內選出最佳組合後在完全沒碰過的樣本外資料驗證（見`exit_grid_scan_with_risk_20260810.md`）：'
     '**拿掉停損（漲多少%就回補）這件事，三個策略樣本外都確定是對的**——加停損不只犧牲平均報酬，連風險'
     '(最大回撤)都一起變差，所以下面預設停損=0%。**停利（跌多少%提早回補）則因策略而異**：富邦是唯一一個'
     '停利=7%在樣本外真的贏過單純持有到收盤的（樣本外平均+0.92% vs +0.79%，回撤也更小），所以這裡預設幫你'
@@ -283,21 +294,14 @@ else:
     sharpe, pf = sharpe_pf(rets)
     wins = rets[rets > 0]
     losses = rets[rets <= 0]
-    expected_value = (
-        (len(wins) / len(rets)) * (wins.mean() if len(wins) else 0.0)
-        + (len(losses) / len(rets)) * (losses.mean() if len(losses) else 0.0)
-    )
-    if not np.isclose(expected_value, rets.mean(), rtol=0.0, atol=1e-12):
-        raise RuntimeError('期望值分解計算未與期望報酬一致。')
     frozen_rate = view['d1_frozen'].mean() * 100
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric('總筆數', f'{len(view)} 筆', delta=f'{len(rets)} 已結算', delta_color='off')
     c2.metric('勝率', f'{(rets > 0).mean() * 100:.2f}%')
     c3.metric('期望報酬', f'{rets.mean():+.2f}%')
-    c4.metric('期望值', f'{expected_value:+.2f}%', help='期望值＝勝率×平均獲利＋敗率×平均虧損（虧損為負值）。')
-    c5.metric('夏普值', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
-    c6.metric('賺賠比', f'{pf:.2f}' if pd.notna(pf) else '-')
+    c4.metric('夏普值', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
+    c5.metric('賺賠比', f'{pf:.2f}' if pd.notna(pf) else '-')
 
     d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric('獲利筆', len(wins))
@@ -307,7 +311,7 @@ else:
     d5.metric('最大虧損', f'{rets.min():+.2f}%' if len(rets) else '-')
     st.caption(f'D1鎖死率：{frozen_rate:.2f}%（D1當天直接鎖漲停、實際上無法建倉的比例，已排除在上述統計外）')
     if stop_pct > 0 or tp_pct > 0:
-        st.caption(f'⚙️ 以上KPI已套用停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%（非單純持有到收盤）。下方各分組表/逐筆明細/累積報酬走勢仍為未套用停損停利的原始持有到收盤數字，僅KPI區塊即時反映上方設定。')
+        st.caption(f'⚙️ 以上KPI已套用停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%（非單純持有到收盤）；逐筆明細另列相同情境的放空報酬，原始報酬也一併保留供對照。')
 
 st.divider()
 
@@ -439,14 +443,14 @@ show_cols = ['d0', 'code', 'name', 'market', 'd1', 'gap_pct', 'lock_streak', 'ne
              'taishin_taipei_net_amt_wan', 'taishin_taipei_influence_pct',
              'd0_top3_net_buy_branches', 'v1_candidate_d1',
              'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen',
-             'censored', 'short_ret_open_to_close_pct', 'short_mae_pct', 'success']
+             'censored', 'short_ret_open_to_close_pct', 'sim_ret', 'short_mae_pct', 'success']
 show = view[show_cols].sort_values('d0', ascending=False).copy()
 show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
 show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
                   '影響力%', '城中GA淨買超(萬)', '城中GA影響力%', '統一城中淨買超(萬)', '統一城中影響力%',
                   '台新台北淨買超(萬)', '台新台北影響力%', 'D0前三大買超分點', 'D1同時為V1候選',
-                  '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
+                  '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '原始放空報酬%', '情境放空報酬%',
                   '最大不利波動%', '成功']
 show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
 intraday_coverage = view['has_intraday'].mean() * 100 if len(view) else 0.0
@@ -477,13 +481,14 @@ def color_ret(val):
 st.dataframe(
     show.style
         .map(color_success, subset=['成功'])
-        .map(color_ret, subset=['放空報酬%'])
+        .map(color_ret, subset=['情境放空報酬%'])
         .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.2f}', '影響力%': '{:.2f}',
                  '城中GA淨買超(萬)': '{:,.2f}', '城中GA影響力%': '{:+.2f}',
                  '統一城中淨買超(萬)': '{:,.2f}', '統一城中影響力%': '{:+.2f}',
                  '台新台北淨買超(萬)': '{:,.2f}', '台新台北影響力%': '{:+.2f}',
                   '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
-                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
+                  '原始放空報酬%': '{:+.2f}', '情境放空報酬%': '{:+.2f}',
+                  '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
     column_config={
         'D1走勢': st.column_config.LineChartColumn(
