@@ -54,6 +54,27 @@ def synced_pct_input(label, default, key):
     return st.session_state[slider_key]
 
 
+def synced_bounded_pct_input(label, default, key, lo=-10.0, hi=10.0):
+    """Same slider+number_input sync pattern as synced_pct_input, but allows a
+    caller-supplied [lo, hi] range so it can express a negative lower bound
+    (needed for a gap-down lower bound, not just an upper-bound buffer)."""
+    slider_key, num_key = f"{key}_slider", f"{key}_num"
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = default
+
+    def _from_slider():
+        st.session_state[num_key] = st.session_state[slider_key]
+
+    def _from_num():
+        st.session_state[slider_key] = st.session_state[num_key]
+
+    st.slider(label, lo, hi, step=0.5, key=slider_key, on_change=_from_slider)
+    if num_key not in st.session_state:
+        st.session_state[num_key] = st.session_state[slider_key]
+    st.number_input("或直接輸入數字（%，適合手機操作）", lo, hi, step=0.5, key=num_key, on_change=_from_num)
+    return st.session_state[slider_key]
+
+
 @st.cache_data(ttl=3600)
 def load_events(_cache_bust: str = "2026-08-15-offline-branch-context-v1"):
     df = pd.read_csv(EVENTS_FILE, parse_dates=["d0", "d1"], dtype={"code": str})
@@ -188,16 +209,36 @@ with st.expander("📖 硬性排除規則說明", expanded=False):
     )
 
 st.markdown("#### 🎚️ 進場緩衝設定")
-entry_buffer_pct = synced_pct_input(
-    "進場緩衝：實際進場當天開盤漲幅（相對 D0 收盤）需低於多少%才進場（10=不啟用，因單日漲停就是10%，不會有更高的）",
-    10.0,
-    "entry_gap_buffer_17",
+st.caption("設定實際進場當天開盤漲幅（相對 D0 收盤）的下限與上限，只有落在區間內才進場。")
+col_buf1, col_buf2 = st.columns(2)
+with col_buf1:
+    entry_buffer_lo = synced_bounded_pct_input(
+        "下限%（-10=最寬鬆，單日跌停極限）",
+        -10.0,
+        "entry_gap_buffer_lo_17",
+        lo=-10.0,
+        hi=10.0,
+    )
+with col_buf2:
+    entry_buffer_hi = synced_bounded_pct_input(
+        "上限%（10=最寬鬆，單日漲停極限）",
+        10.0,
+        "entry_gap_buffer_hi_17",
+        lo=-10.0,
+        hi=10.0,
+    )
+if entry_buffer_lo > entry_buffer_hi:
+    st.error("下限不能大於上限，請重新設定；目前暫時視為不啟用篩選。")
+    entry_buffer_lo, entry_buffer_hi = -10.0, 10.0
+events["entry_buffer_excluded"] = (
+    (events["entry_gap_pct"] < entry_buffer_lo) | (events["entry_gap_pct"] >= entry_buffer_hi)
 )
-events["entry_buffer_excluded"] = events["entry_gap_pct"] >= entry_buffer_pct
 buffer_excluded_count = int(events["entry_buffer_excluded"].sum())
 st.caption(
-    f"目前設定下排除 {buffer_excluded_count}/{len(events)} 筆事件"
-    f"（{buffer_excluded_count / len(events):.1%}）；用修正後實際進場當天的開盤價相對 D0 收盤的漲幅%計算，"
+    f"目前設定（{entry_buffer_lo:+.1f}% ~ {entry_buffer_hi:+.1f}%）下排除 {buffer_excluded_count}/{len(events)} 筆事件"
+    f"（{buffer_excluded_count / len(events):.1%}）；用修正後實際進場當天的開盤價相對 D0 收盤的漲幅%計算。"
+    "**即使兩端都設到最寬鬆，仍可能排除少數事件**：若因漲停天花板延後進場超過一天，實際進場日開盤價相對"
+    "D0收盤的漲跌幅可能累積超過單日±10%的範圍。"
     "不符合者只排除、不再尋找下一個進場日。"
 )
 
@@ -280,8 +321,8 @@ else:
     )
     if stop_pct > 0 or tp_pct > 0:
         st.caption(f"⚙️ 以上 KPI 已套用停損 {stop_pct:.1f}%／停利 {tp_pct:.1f}% 的情境設定。")
-    if entry_buffer_pct < 10.0:
-        st.caption(f"⚙️ 以上 KPI 已套用進場緩衝：開盤漲幅≥{entry_buffer_pct:.1f}%者已完全排除。")
+    if entry_buffer_lo > -10.0 or entry_buffer_hi < 10.0:
+        st.caption(f"⚙️ 以上 KPI 已套用進場緩衝：開盤漲幅需落在 {entry_buffer_lo:+.1f}%～{entry_buffer_hi:+.1f}% 之間，否則已完全排除。")
 
 st.divider()
 gap_bins = ["<-5%", "-5~-2%", "-2~0%", "0~1%", "1~3%", "3~5%", "5~7%", "7~9%", "9~9.5%", "≥9.5%"]
