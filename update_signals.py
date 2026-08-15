@@ -214,6 +214,7 @@ def merge_upcoming(df, price):
     type_map = {2.0: '2分鐘', 5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
                 30.0: '30分鐘', 45.0: '45分鐘', 60.0: '60分鐘'}
     d['處置類型'] = d['分時交易'].map(type_map)
+    d['處置次別'] = d['處置措施'].apply(lambda v: '第一次' if '第一次' in str(v) else '第二次+')
     today = tw_today()
     d = d[d['start_date'] >= today - pd.Timedelta(days=20)]
     d = d.drop_duplicates(subset=['stock_id', 'start_date'])
@@ -250,6 +251,7 @@ def merge_upcoming(df, price):
             '股票代號':   sid,
             '股票名稱':   r.get('證券名稱', ''),
             '處置類型':   r['處置類型'],
+            '處置次別':   r['處置次別'],
             '處置原因':   '跌深處置' if pd.notna(pr) and pr < 0 else '漲多處置',
             '處置起始日': r['start_date'],
         })
@@ -613,6 +615,7 @@ def build_signals(df, price, open_p, whale_dfs):
             '名稱':   row['股票名稱'],
             '規模':   '大' if '大型' in row['市值規模'] else ('中' if '中型' in row['市值規模'] else '小'),
             '處置原因': row.get('處置原因', ''),
+            '處置次別': row.get('處置次別', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
             '起始日':  sd.strftime('%m/%d'),
@@ -626,7 +629,12 @@ def build_signals(df, price, open_p, whale_dfs):
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
         if is_new_regime:
-            d['評級'] = '🆕 新制觀察中'
+            # 收款門檻文字逐字比對，第一次=舊制5分鐘同款、第二次+=舊制20分鐘同款（僅撮合頻率變快），
+            # 標示對照組方便之後比較，但仍不套用舊制信心度。
+            if row.get('處置次別') == '第一次':
+                d['評級'] = '🆕 新制觀察中(第一次,對照舊5分)'
+            else:
+                d['評級'] = '🆕 新制觀察中(第二次+,對照舊20分)'
         else:
             d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
                                **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})

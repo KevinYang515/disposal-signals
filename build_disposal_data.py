@@ -74,6 +74,11 @@ def build_events(disp):
     type_map = {2.0: '2分鐘', 5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘', 45.0: '45分鐘', 60.0: '60分鐘', 30.0: '30分鐘'}
     df['處置類型'] = df['分時交易'].map(type_map)
 
+    # 處置次別（第一次/第二次+）：2026-08-10新制上路後，第一次與第二次都統一為2分鐘撮合，
+    # 處置類型無法再間接代表次別，資金收款門檻（單筆10/累積30張 vs 所有投資人全額收款）
+    # 仍照次別區分且文字與舊制逐字相同，故另存此欄供新舊制對照用。
+    df['處置次別'] = df['處置措施'].apply(lambda v: '第一次' if '第一次' in str(v) else '第二次+')
+
     df = df.drop_duplicates(subset=['stock_id', 'start_date'])
     df = df.reset_index(drop=True)
     print(f"\n✅ 篩選後事件數: {len(df)}")
@@ -259,6 +264,7 @@ def compute_row(r, close, open_p, inst_f, inst_t, volume, basic_shares_map):
         '股票代號':           sid,
         '股票名稱':           r.get('證券名稱', ''),
         '處置類型':           r['處置類型'],
+        '處置次別':           r['處置次別'],
         '處置原因':           reason,
         '處置起始日':         sd.strftime('%Y-%m-%d'),
         '大戶持股變動(%)':    whale_delta,
