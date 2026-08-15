@@ -6,7 +6,7 @@ mkdir -p $HOME/disposal/logs
   echo "=== $(date) 開始每日更新 ==="
   cd $REPO
   echo "=== git pull ==="
-  git pull --rebase origin master
+  git pull --no-edit origin master
   echo "=== 更新訊號資料 ==="
   $HOME/disposal/venv/bin/python update_signals.py
   echo "=== git commit & push ==="
