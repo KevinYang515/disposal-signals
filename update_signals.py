@@ -211,7 +211,7 @@ def merge_upcoming(df, price):
     d = d[d['stock_id'].str.match(r'^\d{4}$')]
     d = d[d['處置措施'].str.contains('第一次|第二次', na=False)]
     d = d[d['分時交易'].notna()]
-    type_map = {5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
+    type_map = {2.0: '2分鐘', 5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
                 30.0: '30分鐘', 45.0: '45分鐘', 60.0: '60分鐘'}
     d['處置類型'] = d['分時交易'].map(type_map)
     today = tw_today()
@@ -586,15 +586,21 @@ def build_signals(df, price, open_p, whale_dfs):
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
+    # 2026-08-10 處置新制上路：撮合統一改2分鐘、期間縮為5(或7)個營業日，
+    # 舊制20分鐘的樣本沒有新制對應數據，機制本身也變了（見PLAYBOOK）。
+    # 新制事件先照樣顯示在今日訊號，但評級改標「新制觀察中」，不套用舊制已驗證的信心度。
     active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
-                (df['處置類型'] == '20分鐘') &
+                (df['處置類型'].isin(['20分鐘', '2分鐘'])) &
                 (df['處置起始日'] >= cutoff)].copy()
 
     rows = []
     for _, row in active.iterrows():
         sid = row['股票代號']
         sd  = row['處置起始日']
-        ex  = exit_date(idx, sd)
+        is_new_regime = row['處置類型'] == '2分鐘'
+        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
+        # 先用5天近似（多數案例），僅影響「今D幾」/「出關日」等顯示，不影響評級本身。
+        ex  = exit_date(idx, sd, t1_offset=5) if is_new_regime else exit_date(idx, sd)
 
         # 已出關（今天超過 T+1）就跳過
         if pd.notna(ex) and today > ex:
@@ -619,8 +625,11 @@ def build_signals(df, price, open_p, whale_dfs):
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
-        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
-                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+        if is_new_regime:
+            d['評級'] = '🆕 新制觀察中'
+        else:
+            d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
+                               **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
 
         is_changduo = row.get('處置原因') == '漲多處置'
 
