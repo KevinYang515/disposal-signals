@@ -7,7 +7,6 @@ r"""台新-台北 strict-lock/liquid 隔日沖放空事件監看頁。
 
 import json
 import os
-import sys
 
 import numpy as np
 import pandas as pd
@@ -18,12 +17,6 @@ st.set_page_config(page_title="台新-台北獨立分點研究", page_icon="🔬
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 EVENTS_FILE = os.path.join(DATA_DIR, "taishin_taipei_events.csv")
-STOCK_ROOT = r"E:\stock"
-
-if STOCK_ROOT not in sys.path:
-    sys.path.insert(0, STOCK_ROOT)
-
-from lib.broker_flow_arrow import tick_rounded_limit_up
 
 
 def as_bool(series: pd.Series) -> pd.Series:
@@ -146,10 +139,10 @@ events = load_events()
 events["年份"] = events["d0"].dt.year.astype(str)
 events["gap_bucket"] = events["gap_pct"].apply(gap_bucket)
 events["streak_capped"] = events["lock_streak"].clip(upper=4)
-ceiling = tick_rounded_limit_up(events["d0_close"].to_numpy(dtype=float))
 with np.errstate(divide="ignore", invalid="ignore"):
-    events["distance_to_ceiling_pct"] = (
-        (ceiling - events["entry_open"].to_numpy(dtype=float)) / ceiling * 100.0
+    events["entry_gap_pct"] = (
+        (events["entry_open"].to_numpy(dtype=float) - events["d0_close"].to_numpy(dtype=float))
+        / events["d0_close"].to_numpy(dtype=float) * 100.0
     )
 ceiling_entries = int(events["entry_is_ceiling"].sum())
 if ceiling_entries:
@@ -179,17 +172,15 @@ st.caption(
 
 st.markdown("#### 🎚️ 進場緩衝設定")
 entry_buffer_pct = synced_pct_input(
-    "進場緩衝：距離當日漲停天花板至少要有多少%空間才進場（0=不啟用，仍保留現行天花板精確相等排除規則）",
-    0.0,
-    "entry_ceiling_buffer_17",
+    "進場緩衝：實際進場當天開盤漲幅（相對 D0 收盤）需低於多少%才進場（10=不啟用，因單日漲停就是10%，不會有更高的）",
+    10.0,
+    "entry_gap_buffer_17",
 )
-events["entry_buffer_excluded"] = False
-if entry_buffer_pct > 0:
-    events["entry_buffer_excluded"] = events["distance_to_ceiling_pct"] < entry_buffer_pct
+events["entry_buffer_excluded"] = events["entry_gap_pct"] >= entry_buffer_pct
 buffer_excluded_count = int(events["entry_buffer_excluded"].sum())
 st.caption(
     f"目前設定下排除 {buffer_excluded_count}/{len(events)} 筆事件"
-    f"（{buffer_excluded_count / len(events):.1%}）；距離以修正後實際進場開盤相對 D0 收盤推得的漲停天花板計算，"
+    f"（{buffer_excluded_count / len(events):.1%}）；用修正後實際進場當天的開盤價相對 D0 收盤的漲幅%計算，"
     "不符合者只排除、不再尋找下一個進場日。"
 )
 
@@ -263,8 +254,8 @@ else:
     )
     if stop_pct > 0 or tp_pct > 0:
         st.caption(f"⚙️ 以上 KPI 已套用停損 {stop_pct:.1f}%／停利 {tp_pct:.1f}% 的情境設定。")
-    if entry_buffer_pct > 0:
-        st.caption(f"⚙️ 以上 KPI 已套用進場緩衝 {entry_buffer_pct:.1f}%：未達天花板距離者已完全排除。")
+    if entry_buffer_pct < 10.0:
+        st.caption(f"⚙️ 以上 KPI 已套用進場緩衝：開盤漲幅≥{entry_buffer_pct:.1f}%者已完全排除。")
 
 st.divider()
 gap_bins = ["<-5%", "-5~-2%", "-2~0%", "0~1%", "1~3%", "3~5%", "5~7%", "7~9%", "9~9.5%", "≥9.5%"]
@@ -298,31 +289,23 @@ with st.expander("📅 可用期間的月份分布（僅約 4 個月，請勿過
 
 st.subheader(f"📋 完整逐筆歷史紀錄（{len(view)} 筆，已套用硬排除、年份與進場緩衝篩選）")
 show_cols = [
-    "d0", "code", "name", "market", "d1", "entry_day", "entry_is_ceiling", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
-    "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "distance_to_ceiling_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct",
-    "short_mae_pct", "success",
+    "d0", "code", "name", "market", "d1", "entry_day", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
+    "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "entry_gap_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct",
+    "short_mae_pct",
 ]
 show = view[show_cols].sort_values(["d0", "code"], ascending=False).copy()
 show["d0"] = show["d0"].dt.strftime("%Y-%m-%d")
 show["d1"] = show["d1"].dt.strftime("%Y-%m-%d")
 show["entry_day"] = show["entry_day"].dt.strftime("%Y-%m-%d")
 show.columns = [
-    "D0訊號日", "代號", "名稱", "市場", "D1原始日", "實際進場日", "天花板修正", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
-    "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "距D0漲停天花板%", "D1鎖死", "截尾", "放空報酬%", "最大不利波動%", "成功",
+    "D0訊號日", "代號", "名稱", "市場", "D1原始日", "實際進場日", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
+    "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "進場開盤漲幅%", "D1鎖死", "截尾", "放空報酬%", "最大不利波動%",
 ]
 
 # Only show real cached minute bars.  If none are available, omit the column rather than fabricate a D1 path.
 has_sparkline = bool(view["has_intraday"].any())
 if has_sparkline:
     show["D1走勢"] = view.loc[show.index, "d1_intraday_spark"].tolist()
-
-
-def color_success(value):
-    if value is True:
-        return "color: #26c281; font-weight: 700"
-    if value is False:
-        return "color: #e74c3c; font-weight: 700"
-    return ""
 
 
 def color_return(value):
@@ -340,18 +323,15 @@ def color_return(value):
 
 
 column_config = {}
-column_config["天花板修正"] = st.column_config.CheckboxColumn(
-    "天花板修正", help="D1 開盤等於漲停天花板，已延後到第一個可交易的脫離漲停日。"
-)
 if has_sparkline:
     column_config["D1走勢"] = st.column_config.LineChartColumn(
         "D1走勢（分K收盤）", width="medium", help="真實歷史分鐘 K 收盤價；缺資料事件留空，非模擬。"
     )
 st.dataframe(
-    show.style.map(color_success, subset=["成功"]).map(color_return, subset=["放空報酬%"]).format(
+    show.style.map(color_return, subset=["放空報酬%"]).format(
         {"買超金額(萬)": "{:,.2f}", "影響力%": "{:.2f}", "跳空%": "{:+.2f}",
          "D1開盤": "{:.2f}", "D1最高": "{:.2f}", "D1最低": "{:.2f}", "D1收盤": "{:.2f}",
-         "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "距D0漲停天花板%": "{:+.2f}", "放空報酬%": "{:+.2f}",
+         "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "進場開盤漲幅%": "{:+.2f}", "放空報酬%": "{:+.2f}",
          "最大不利波動%": "{:.2f}"}, na_rep="-"),
     use_container_width=True, height=520, column_config=column_config,
 )
