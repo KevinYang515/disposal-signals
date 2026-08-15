@@ -34,15 +34,20 @@ OUT_CSV = REPO / "data" / "taishin_taipei_events.csv"
 MINUTE_KBAR_CSV = STOCK_ROOT / "data" / "minute_kbars" / "kbars_raw.csv"
 BRANCH = "台新-台北"
 
-# This is exactly the branch-level schema used by fubon_branch_events.csv.
+# This extends the branch-level schema used by fubon_branch_events.csv with the
+# actual entry-day fields needed to correct unexecutable limit-up opens.
 FIELDS = [
     "d0", "code", "market", "d1", "net_amt_wan", "influence_pct", "lock_streak",
     "d0_locked", "d1_frozen", "censored", "short_ret_open_to_close_pct", "short_mae_pct",
     "success", "gap_pct", "d0_close", "d1_open", "d1_high", "d1_low", "d1_close",
+    "entry_is_ceiling", "entry_day", "entry_open", "entry_high", "entry_low", "entry_close",
+    "entry_frozen", "entry_disposal", "entry_disposal_type",
     "exit_price", "exit_date", "exit_kind", "year", "d1_intraday_close", "has_intraday",
     "d0_disposal", "d1_disposal", "d1_disposal_type", "mktcap_billion",
-    "taiex_2day_mom_pct", "day_trade_short_suspended_d1",
+    "taiex_2day_mom_pct", "day_trade_short_suspended_d1", "day_trade_short_suspended_entry",
 ]
+
+PRICE_ATOL = 0.0001
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -58,6 +63,45 @@ def load_module(name: str, path: Path) -> ModuleType:
 
 def as_true(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower().eq("true")
+
+
+def is_frozen_ohlc(open_price: float, high: float, low: float, close: float) -> bool:
+    """True when daily OHLC provides no executable intraday price path."""
+    return bool(
+        np.isclose(open_price, high, rtol=0.0, atol=PRICE_ATOL)
+        and np.isclose(high, low, rtol=0.0, atol=PRICE_ATOL)
+        and np.isclose(low, close, rtol=0.0, atol=PRICE_ATOL)
+    )
+
+
+def first_off_ceiling_entry_day(
+    prices, start_day: int, stock_col: int, tick_rounded_limit_up
+) -> int | None:
+    """Find the first later tradable open below that day's tick limit-up price.
+
+    This is the convention used by the corrected 9600 study: an opening short
+    posted at the limit-up ceiling is not credited as a fill.  Subsequent
+    all-price limit days are skipped too; entry waits for the first genuinely
+    tradable open that is off its own tick-rounded ceiling.
+    """
+    for day in range(start_day + 1, prices.close.shape[0]):
+        previous_close = float(prices.close[day - 1, stock_col])
+        open_price = float(prices.open[day, stock_col])
+        high = float(prices.high[day, stock_col])
+        low = float(prices.low[day, stock_col])
+        close = float(prices.close[day, stock_col])
+        if not (
+            np.isfinite(previous_close) and np.isfinite(open_price) and np.isfinite(high)
+            and np.isfinite(low) and np.isfinite(close) and previous_close > 0 and open_price > 0
+        ):
+            continue
+        limit_up = float(tick_rounded_limit_up(np.asarray([previous_close], dtype=float))[0])
+        if (
+            not np.isclose(open_price, limit_up, rtol=0.0, atol=PRICE_ATOL)
+            and not is_frozen_ohlc(open_price, high, low, close)
+        ):
+            return day
+    return None
 
 
 def source_events() -> pd.DataFrame:
@@ -86,7 +130,12 @@ def source_events() -> pd.DataFrame:
 def main() -> None:
     if str(STOCK_ROOT) not in sys.path:
         sys.path.insert(0, str(STOCK_ROOT))
-    from lib.broker_flow_arrow import date_text, load_minute_kbar_index, strict_tick_limit_up_mask
+    from lib.broker_flow_arrow import (
+        date_text,
+        load_minute_kbar_index,
+        strict_tick_limit_up_mask,
+        tick_rounded_limit_up,
+    )
 
     city_builder = load_module(
         "citycenter_ga_events_builder",
@@ -151,12 +200,34 @@ def main() -> None:
         d1_disp, d1_minutes = city_builder.disposal_lookup(disposal_intervals, code, d1_date)
         d1_text = date_text(d1_date)
         minute_closes = kbar_index.get((code, d1_text))
-        frozen = (
-            np.isclose(d1_open, d1_high, atol=0.0001)
-            and np.isclose(d1_high, d1_low, atol=0.0001)
-            and np.isclose(d1_low, d1_close, atol=0.0001)
+        frozen = is_frozen_ohlc(d1_open, d1_high, d1_low, d1_close)
+        d1_limit_up = float(tick_rounded_limit_up(np.asarray([d0_close], dtype=float))[0])
+        entry_is_ceiling = bool(
+            np.isclose(d1_open, d1_limit_up, rtol=0.0, atol=PRICE_ATOL)
         )
-        short_ret = (d1_open - d1_close) / d1_open * 100.0
+
+        entry_day = day1
+        if entry_is_ceiling:
+            entry_day = first_off_ceiling_entry_day(
+                prices, day1, stock_col, tick_rounded_limit_up
+            )
+            if entry_day is None:
+                raise RuntimeError(
+                    f"No later tradable off-ceiling entry was found for {event.d0_date} {code}."
+                )
+        entry_date = int(prices.dates[entry_day])
+        entry_text = date_text(entry_date)
+        entry_open = float(prices.open[entry_day, stock_col])
+        entry_high = float(prices.high[entry_day, stock_col])
+        entry_low = float(prices.low[entry_day, stock_col])
+        entry_close = float(prices.close[entry_day, stock_col])
+        entry_frozen = is_frozen_ohlc(entry_open, entry_high, entry_low, entry_close)
+        if entry_frozen:
+            raise RuntimeError(f"Selected a frozen entry day for {event.d0_date} {code}.")
+        entry_disp, entry_minutes = city_builder.disposal_lookup(
+            disposal_intervals, code, entry_date
+        )
+        short_ret = (entry_open - entry_close) / entry_open * 100.0
         rows.append({
             "d0": date_text(d0_date),
             "code": code,
@@ -167,7 +238,7 @@ def main() -> None:
             "lock_streak": int(streak[day0, stock_col]),
             "d0_locked": True,
             "d1_frozen": bool(frozen),
-            "censored": bool(frozen),
+            "censored": bool(entry_frozen),
             "short_ret_open_to_close_pct": short_ret,
             "short_mae_pct": (d1_high - d1_open) / d1_open * 100.0,
             "success": bool(short_ret > 0),
@@ -177,9 +248,22 @@ def main() -> None:
             "d1_high": d1_high,
             "d1_low": d1_low,
             "d1_close": d1_close,
-            "exit_price": d1_close,
-            "exit_date": d1_text,
-            "exit_kind": "d1_close",
+            "entry_is_ceiling": entry_is_ceiling,
+            "entry_day": entry_text,
+            "entry_open": entry_open,
+            "entry_high": entry_high,
+            "entry_low": entry_low,
+            "entry_close": entry_close,
+            "entry_frozen": entry_frozen,
+            "entry_disposal": bool(entry_disp),
+            "entry_disposal_type": (
+                f"{int(entry_minutes)}分鐘"
+                if entry_disp and entry_minutes is not None and np.isfinite(entry_minutes)
+                else ""
+            ),
+            "exit_price": entry_close,
+            "exit_date": entry_text,
+            "exit_kind": "first_off_ceiling_close" if entry_is_ceiling else "d1_close",
             "year": int(pd.Timestamp(str(date_text(d0_date))).year),
             "d1_intraday_close": json.dumps(minute_closes) if minute_closes else "",
             "has_intraday": bool(minute_closes),
@@ -201,21 +285,32 @@ def main() -> None:
         raise RuntimeError("The output must be a one-to-one rebuild of the 250 D0 events.")
     events["d0"] = pd.to_datetime(events["d0"])
     events["d1"] = pd.to_datetime(events["d1"])
-    # Reuse the audited D1 interval matching; only the schema's D1 flag is emitted.
+    events["entry_day"] = pd.to_datetime(events["entry_day"])
+    # Reuse the audited interval matching on both the original D1 and the
+    # actual entry day, because a delayed ceiling entry must be executable too.
     borrow_audit.suspension_flags(events, CACHE_DIR / "day_trade_short_suspension.feather")
     events["day_trade_short_suspended_d1"] = events["day_trade_short_suspended_d1"].fillna(False).astype(bool)
+    entry_flags = events[["code", "d0", "entry_day"]].rename(columns={"entry_day": "d1"})
+    borrow_audit.suspension_flags(entry_flags, CACHE_DIR / "day_trade_short_suspension.feather")
+    events["day_trade_short_suspended_entry"] = (
+        entry_flags["day_trade_short_suspended_d1"].fillna(False).astype(bool)
+    )
 
-    # These are informational flags in the CSV.  Page 17 applies both D1 flags as hard, non-toggleable gates.
+    # These are informational flags in the CSV.  Page 17 applies the actual
+    # entry-day flags as hard, non-toggleable gates.
     before = len(events)
-    after_disposal = int((~events["d1_disposal"]).sum())
-    after_both = int((~events["d1_disposal"] & ~events["day_trade_short_suspended_d1"]).sum())
+    after_disposal = int((~events["entry_disposal"]).sum())
+    after_both = int((~events["entry_disposal"] & ~events["day_trade_short_suspended_entry"]).sum())
     settled_before = int((~events["censored"]).sum())
-    settled_after_both = int((~events["censored"] & ~events["d1_disposal"] & ~events["day_trade_short_suspended_d1"]).sum())
-    print(f"Hard-exclusion audit (all rows): {before} -> {after_disposal} after D1 disposal -> {after_both} after D1 suspension")
+    settled_after_both = int((~events["censored"] & ~events["entry_disposal"] & ~events["day_trade_short_suspended_entry"]).sum())
+    ceiling_count = int(events["entry_is_ceiling"].sum())
+    print(f"Ceiling-entry correction: {ceiling_count}/{len(events)} rows delayed to a first off-ceiling entry day")
+    print(f"Hard-exclusion audit (all rows): {before} -> {after_disposal} after entry-day disposal -> {after_both} after entry-day suspension")
     print(f"Hard-exclusion audit (settled rows): {settled_before} -> {settled_after_both}")
 
     events["d0"] = events["d0"].dt.strftime("%Y-%m-%d")
     events["d1"] = events["d1"].dt.strftime("%Y-%m-%d")
+    events["entry_day"] = events["entry_day"].dt.strftime("%Y-%m-%d")
     events = events.sort_values(["d0", "code"])
     if list(events.columns.intersection(FIELDS)) != FIELDS:
         raise RuntimeError("Output schema drifted from the branch event schema.")

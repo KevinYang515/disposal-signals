@@ -259,14 +259,21 @@ else:
     sharpe, pf = sharpe_pf(rets)
     wins = rets[rets > 0]
     losses = rets[rets <= 0]
+    expected_value = (
+        (len(wins) / len(rets)) * (wins.mean() if len(wins) else 0.0)
+        + (len(losses) / len(rets)) * (losses.mean() if len(losses) else 0.0)
+    )
+    if not np.isclose(expected_value, rets.mean(), rtol=0.0, atol=1e-12):
+        raise RuntimeError('期望值分解計算未與期望報酬一致。')
     frozen_rate = view['d1_frozen'].mean() * 100
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric('總筆數', f'{len(view)} 筆', delta=f'{len(rets)} 已結算', delta_color='off')
     c2.metric('勝率', f'{(rets > 0).mean() * 100:.2f}%')
     c3.metric('期望報酬', f'{rets.mean():+.2f}%')
-    c4.metric('夏普值', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
-    c5.metric('賺賠比', f'{pf:.2f}' if pd.notna(pf) else '-')
+    c4.metric('期望值', f'{expected_value:+.2f}%', help='期望值＝勝率×平均獲利＋敗率×平均虧損（虧損為負值）。')
+    c5.metric('夏普值', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
+    c6.metric('賺賠比', f'{pf:.2f}' if pd.notna(pf) else '-')
 
     d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric('獲利筆', len(wins))

@@ -320,15 +320,24 @@ else:
     sim_settled_ret = settled[kpi_ret_col].dropna()
     wr = (sim_settled_ret > 0).mean() * 100
     avg_r = sim_settled_ret.mean()
+    wins = sim_settled_ret[sim_settled_ret > 0]
+    losses = sim_settled_ret[sim_settled_ret <= 0]
+    expected_value = (
+        (len(wins) / len(sim_settled_ret)) * (wins.mean() if len(wins) else 0.0)
+        + (len(losses) / len(sim_settled_ret)) * (losses.mean() if len(losses) else 0.0)
+    )
+    if not np.isclose(expected_value, avg_r, rtol=0.0, atol=1e-12):
+        raise RuntimeError('期望值分解計算未與平均放空報酬一致。')
     sharpe, pf = sharpe_pf(sim_settled_ret)
     frozen_rate = view['d1_frozen'].mean() * 100
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric('已結算筆數', f'{len(settled)} 筆', delta=f'{len(view)} 篩選出', delta_color='off')
     c2.metric('勝率', f'{wr:.2f}%')
     c3.metric('平均放空報酬', f'{avg_r:+.2f}%')
-    c4.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
-    c5.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
+    c4.metric('期望值', f'{expected_value:+.2f}%', help='期望值＝勝率×平均獲利＋敗率×平均虧損（虧損為負值）。')
+    c5.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
+    c6.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
     if stop_pct > 0 or tp_pct > 0 or addon_enabled:
         kpi_note = f'停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%'
         if addon_enabled:
