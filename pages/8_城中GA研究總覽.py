@@ -58,7 +58,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
+def load_events(_cache_bust: str = '2026-08-15-offline-branch-context-v1'):
     fp = os.path.join(DATA_DIR, 'citycenter_ga_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
     df['code'] = df['code'].astype(str)
@@ -102,6 +102,23 @@ def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
             df[col] = default
     df['mktcap_pct_rank'] = pd.to_numeric(df['mktcap_pct_rank'], errors='coerce')
     df['day_trade_short_suspended_d1'] = df['day_trade_short_suspended_d1'].fillna(False).astype(bool)
+    # This context is built offline into the committed CSV.  Older snapshots
+    # remain deployable with inert defaults instead of triggering local reads.
+    branch_context_defaults = {
+        'city_ga_net_amt_wan': 0.0, 'city_ga_influence_pct': 0.0,
+        'unicenter_city_net_amt_wan': 0.0, 'unicenter_city_influence_pct': 0.0,
+        'fubon_net_amt_wan': 0.0, 'fubon_influence_pct': 0.0,
+        'taishin_taipei_net_amt_wan': 0.0, 'taishin_taipei_influence_pct': 0.0,
+        'd0_top3_net_buy_branches': '', 'top3_available': False,
+        'v1_candidate_d1': False, 'other_branch_active_count': 0,
+    }
+    for col, default in branch_context_defaults.items():
+        if col not in df.columns:
+            df[col] = default
+    df['d0_top3_net_buy_branches'] = df['d0_top3_net_buy_branches'].fillna('')
+    for col in ['top3_available', 'v1_candidate_d1']:
+        df[col] = df[col].fillna(False).astype(bool)
+    df['other_branch_active_count'] = df['other_branch_active_count'].fillna(0).astype(int)
     return df
 
 
@@ -200,6 +217,16 @@ with col_f8:
              '之間。現行live候選腳本已用同一門檻直接停發當天全部候選。'
     )
 
+exclude_target_v1 = st.checkbox(
+    '排除當日同時符合法人目標價V1候選的事件',
+    value=False,
+    key='exclude_target_v1_8',
+)
+st.caption(
+    '探索性工具：法人目標價 V1 候選重疊沒有 holdout-confirmed 的驗證效果；'
+    '此切換僅供查閱，使用 D1-exact 對齊。'
+)
+
 
 def gap_bucket(g):
     if g < -5:
@@ -234,23 +261,30 @@ events['gap_bucket'] = events['gap_pct'].apply(gap_bucket)
 events['streak_capped'] = events['lock_streak'].clip(upper=4)
 events['mktcap_quintile'] = events['mktcap_pct_rank'].apply(mktcap_quintile)
 
-mask = (
+base_mask = (
     events['年份'].isin(sel_years)
     & events['market'].isin(sel_market)
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
 )
 # >=9.5% is an executability gate, not a return-picked weak bucket.
-mask &= events['gap_pct'] < CITY_GAP_EXECUTABLE_MAX
+base_mask &= events['gap_pct'] < CITY_GAP_EXECUTABLE_MAX
 if gap_mode == GAP_MODE_VALIDATED:
-    mask &= events['gap_pct'] >= CITY_GAP_VALIDATED_MIN
-mask &= ~events['d1_disposal']
-mask &= ~events['day_trade_short_suspended_d1']
-mask &= events['mktcap_quintile'].isin(sel_mktcap_quintiles)
+    base_mask &= events['gap_pct'] >= CITY_GAP_VALIDATED_MIN
+base_mask &= ~events['d1_disposal']
+base_mask &= ~events['day_trade_short_suspended_d1']
+base_mask &= events['mktcap_quintile'].isin(sel_mktcap_quintiles)
 if taiex_mode == '排除過熱天(建議)':
-    mask &= events['taiex_2day_mom_pct'] <= 2.6
+    base_mask &= events['taiex_2day_mom_pct'] <= 2.6
 elif taiex_mode == '只看過熱天':
-    mask &= events['taiex_2day_mom_pct'] > 2.6
+    base_mask &= events['taiex_2day_mom_pct'] > 2.6
+
+if exclude_target_v1:
+    mask = base_mask & ~events['v1_candidate_d1']
+else:
+    mask = base_mask
+    if not events.index[mask].equals(events.index[base_mask]):
+        raise RuntimeError('V1 排除切換預設關閉時改變了城中GA事件母體。')
 
 view = events[mask].copy()
 
@@ -308,6 +342,7 @@ with np.errstate(invalid='ignore'):
         sim_ret,
     )
 addon_enabled = st.session_state[ADDON_TOGGLE_KEY]
+view['detail_ret'] = view['sim_ret_with_0915_addon'] if addon_enabled else view['sim_ret']
 
 st.divider()
 
@@ -320,30 +355,21 @@ else:
     sim_settled_ret = settled[kpi_ret_col].dropna()
     wr = (sim_settled_ret > 0).mean() * 100
     avg_r = sim_settled_ret.mean()
-    wins = sim_settled_ret[sim_settled_ret > 0]
-    losses = sim_settled_ret[sim_settled_ret <= 0]
-    expected_value = (
-        (len(wins) / len(sim_settled_ret)) * (wins.mean() if len(wins) else 0.0)
-        + (len(losses) / len(sim_settled_ret)) * (losses.mean() if len(losses) else 0.0)
-    )
-    if not np.isclose(expected_value, avg_r, rtol=0.0, atol=1e-12):
-        raise RuntimeError('期望值分解計算未與平均放空報酬一致。')
     sharpe, pf = sharpe_pf(sim_settled_ret)
     frozen_rate = view['d1_frozen'].mean() * 100
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric('已結算筆數', f'{len(settled)} 筆', delta=f'{len(view)} 篩選出', delta_color='off')
     c2.metric('勝率', f'{wr:.2f}%')
     c3.metric('平均放空報酬', f'{avg_r:+.2f}%')
-    c4.metric('期望值', f'{expected_value:+.2f}%', help='期望值＝勝率×平均獲利＋敗率×平均虧損（虧損為負值）。')
-    c5.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
-    c6.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
+    c4.metric('日組合Sharpe(近似)', f'{sharpe:.2f}' if pd.notna(sharpe) else '-')
+    c5.metric('D1鎖死率', f'{frozen_rate:.2f}%', help='D1當天直接鎖漲停開不了倉的比例；≥9.5%跳空區間佔了81.4%的鎖死案例')
     if stop_pct > 0 or tp_pct > 0 or addon_enabled:
         kpi_note = f'停損{stop_pct:.1f}% / 停利{tp_pct:.1f}%'
         if addon_enabled:
             add_count = int((settled['addon_eligible'] & settled[kpi_ret_col].notna()).sum())
             kpi_note += f'；09:15加碼 {add_count} 筆（原始部位與加碼部位各半資金）'
-        st.caption(f'⚙️ 以上KPI已套用{kpi_note}。下方各分組表/逐筆明細/累積報酬走勢仍為未套用停損停利或09:15加碼的原始持有到收盤數字，僅KPI區塊即時反映上方設定。')
+        st.caption(f'⚙️ 以上KPI已套用{kpi_note}；逐筆明細另列相同情境的放空報酬，原始報酬也一併保留供對照。')
 
 st.divider()
 
@@ -459,13 +485,18 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
 
 show_cols = ['d0', 'code', 'name', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
-             'cz_influence_pct', 'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen',
-             'censored', 'short_ret_open_to_close_pct', 'short_mae_pct', 'success']
+             'cz_influence_pct', 'unicenter_city_net_amt_wan', 'unicenter_city_influence_pct',
+             'fubon_net_amt_wan', 'fubon_influence_pct', 'taishin_taipei_net_amt_wan',
+             'taishin_taipei_influence_pct', 'd0_top3_net_buy_branches', 'v1_candidate_d1',
+             'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen', 'censored',
+             'short_ret_open_to_close_pct', 'detail_ret', 'short_mae_pct', 'success']
 show = view[show_cols].sort_values('d0', ascending=False).copy()
 show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
 show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
-                 '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
+                 '影響力%', '統一城中淨買超(萬)', '統一城中影響力%', '富邦證券淨買超(萬)', '富邦證券影響力%',
+                 '台新台北淨買超(萬)', '台新台北影響力%', 'D0前三大買超分點', 'D1同時為V1候選',
+                 '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '原始放空報酬%', '情境放空報酬%',
                  '最大不利波動%', '成功']
 show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
 intraday_coverage = view['has_intraday'].mean() * 100 if len(view) else 0.0
@@ -496,15 +527,23 @@ def color_ret(val):
 st.dataframe(
     show.style
         .map(color_success, subset=['成功'])
-        .map(color_ret, subset=['放空報酬%'])
+        .map(color_ret, subset=['情境放空報酬%'])
         .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.2f}', '影響力%': '{:.2f}',
+                 '統一城中淨買超(萬)': '{:,.2f}', '統一城中影響力%': '{:+.2f}',
+                 '富邦證券淨買超(萬)': '{:,.2f}', '富邦證券影響力%': '{:+.2f}',
+                 '台新台北淨買超(萬)': '{:,.2f}', '台新台北影響力%': '{:+.2f}',
                  '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
-                 '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
+                 '原始放空報酬%': '{:+.2f}', '情境放空報酬%': '{:+.2f}',
+                 '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
     column_config={
         'D1走勢': st.column_config.LineChartColumn(
             'D1走勢（分K收盤）', width='medium',
             help='D1當天每分鐘收盤價走勢（真實Shioaji歷史分K，2026-08-11回填）；沒有抓到分K資料的事件留空。',
+        ),
+        'D0前三大買超分點': st.column_config.TextColumn(
+            'D0前三大買超分點', width='large',
+            help='同一 D0／同一股票的全部正淨買分點，依淨買金額排序；不是只限已知訊號分點。',
         ),
     },
 )
@@ -517,7 +556,7 @@ st.download_button(
 
 st.divider()
 st.markdown('**累積報酬走勢**（假設每筆等權重，依D0訊號日排序）')
-cum_src = view[~view['censored']].sort_values('d0')['short_ret_open_to_close_pct'].dropna()
+cum_src = view[~view['censored']].sort_values('d0')['detail_ret'].dropna()
 if len(cum_src) >= 2:
     cum = (cum_src / 100 + 1).cumprod() - 1
     cum.index = range(len(cum))
