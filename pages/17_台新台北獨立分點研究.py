@@ -76,7 +76,7 @@ def synced_bounded_pct_input(label, default, key, lo=-10.0, hi=10.0):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = "2026-08-15-offline-branch-context-v1"):
+def load_events(_cache_bust: str = "2026-08-15-ceiling-censored-v2"):
     df = pd.read_csv(EVENTS_FILE, parse_dates=["d0", "d1"], dtype={"code": str})
     df["code"] = df["code"].str.zfill(4)
     names_fp = os.path.join(DATA_DIR, "stock_names.csv")
@@ -90,21 +90,11 @@ def load_events(_cache_bust: str = "2026-08-15-offline-branch-context-v1"):
     for column, default in [
         ("d0_disposal", False), ("d1_disposal", False), ("d1_disposal_type", ""),
         ("day_trade_short_suspended_d1", False), ("d1_intraday_close", ""), ("has_intraday", False),
-        ("entry_is_ceiling", False), ("entry_frozen", False), ("entry_disposal", False),
-        ("entry_disposal_type", ""), ("day_trade_short_suspended_entry", False),
     ]:
         if column not in df:
             df[column] = default
-    for column, fallback in [
-        ("entry_day", "d1"), ("entry_open", "d1_open"), ("entry_high", "d1_high"),
-        ("entry_low", "d1_low"), ("entry_close", "d1_close"),
-    ]:
-        if column not in df:
-            df[column] = df[fallback]
-    df["entry_day"] = pd.to_datetime(df["entry_day"], errors="coerce").fillna(df["d1"])
     for column in ["d0_locked", "d1_frozen", "censored", "success", "d0_disposal", "d1_disposal",
-                   "day_trade_short_suspended_d1", "has_intraday", "entry_is_ceiling", "entry_frozen",
-                   "entry_disposal", "day_trade_short_suspended_entry"]:
+                   "day_trade_short_suspended_d1", "has_intraday"]:
         df[column] = as_bool(df[column])
     df["d1_intraday_spark"] = df["d1_intraday_close"].apply(_parse_spark)
     branch_context_defaults = {
@@ -148,8 +138,8 @@ def gap_bucket(gap):
 
 
 def portfolio_metrics(frame: pd.DataFrame, return_column: str):
-    """Equal-weight same actual-entry positions, then compound entry dates."""
-    daily = frame.dropna(subset=[return_column]).groupby("entry_day")[return_column].mean().sort_index()
+    """Equal-weight same-D1 positions, then compound D1 dates."""
+    daily = frame.dropna(subset=[return_column]).groupby("d1")[return_column].mean().sort_index()
     if daily.empty:
         return np.nan, np.nan, np.nan, daily
     wealth = (1.0 + daily / 100.0).cumprod()
@@ -175,19 +165,15 @@ events = load_events()
 events["年份"] = events["d0"].dt.year.astype(str)
 events["gap_bucket"] = events["gap_pct"].apply(gap_bucket)
 events["streak_capped"] = events["lock_streak"].clip(upper=4)
-with np.errstate(divide="ignore", invalid="ignore"):
-    events["entry_gap_pct"] = (
-        (events["entry_open"].to_numpy(dtype=float) - events["d0_close"].to_numpy(dtype=float))
-        / events["d0_close"].to_numpy(dtype=float) * 100.0
-    )
-ceiling_entries = int(events["entry_is_ceiling"].sum())
-if ceiling_entries:
+censored_events = int(events["censored"].sum())
+if censored_events:
     st.caption(
-        f"⚠️ 進場天花板價修正：{ceiling_entries}/{len(events)} 筆 D1 開盤等於依 D0 收盤計算的漲停價，"
-        "已改在第一個開盤脫離當日漲停、可交易的日期進場；下方 KPI 與報酬均已使用修正後的實際進場日。"
+        f"⚠️ D1 無法成交的事件：{censored_events}/{len(events)} 筆已標記為 `censored`，"
+        "包含 D1 開盤等於依 D0 收盤計算之跳動單位漲停價的事件；保留原始 D1 OHLC，"
+        "但不延後進場，亦不納入已結算 KPI。"
     )
 st.caption(
-    "D0 母體：只取精確分點名稱「台新-台北」的 strict-lock/liquid 事件，250 筆；"
+    f"D0 母體：只取精確分點名稱「台新-台北」的 strict-lock/liquid 事件，{len(events)} 筆；"
     "不包含裸名稱「台新」或「台新證券」。本 CSV 的 strict-lock/liquid D0 日期為 "
     f"{events['d0'].min().date()}～{events['d0'].max().date()}；分點原始可用歷史到 2026-08-07。"
 )
@@ -200,46 +186,44 @@ sel_years = st.multiselect(
 st.caption("⚠️ 處置分盤期間、當沖限制的事件一律硬性排除（無法切換）——理由見下方展開。")
 with st.expander("📖 硬性排除規則說明", expanded=False):
     st.caption(
-        "⚠️ 實際進場日處於處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，"
+        "⚠️ D1 處於處置分盤集合競價期間的事件一律排除，不提供切換選項：分盤集合競價沒有連續撮合，"
         "無法按本頁的開盤放空／收盤回補方式執行。"
     )
     st.caption(
-        "⚠️ 實際進場日命中本地已知「停止先賣後買」限制的事件一律排除，不提供切換選項：這是當沖放空可能無法合法執行的問題，"
+        "⚠️ D1 命中本地已知「停止先賣後買」限制的事件一律排除，不提供切換選項：這是當沖放空可能無法合法執行的問題，"
         "不是依報酬好壞挑選。其餘借券／融券額度與費率資料仍不足，未被視為可交易保證。"
     )
 
-st.markdown("#### 🎚️ 進場緩衝設定")
-st.caption("設定實際進場當天開盤漲幅（相對 D0 收盤）的下限與上限，只有落在區間內才進場。")
+st.markdown("#### 🎚️ D1 開盤跳空篩選")
+st.caption("設定 D1 開盤相對 D0 收盤漲幅的下限與上限，只有落在區間內才保留。")
 col_buf1, col_buf2 = st.columns(2)
 with col_buf1:
-    entry_buffer_lo = synced_bounded_pct_input(
+    gap_buffer_lo = synced_bounded_pct_input(
         "下限%（-10=最寬鬆，單日跌停極限）",
         -10.0,
-        "entry_gap_buffer_lo_17",
+        "gap_buffer_lo_17",
         lo=-10.0,
         hi=10.0,
     )
 with col_buf2:
-    entry_buffer_hi = synced_bounded_pct_input(
+    gap_buffer_hi = synced_bounded_pct_input(
         "上限%（10=最寬鬆，單日漲停極限）",
         10.0,
-        "entry_gap_buffer_hi_17",
+        "gap_buffer_hi_17",
         lo=-10.0,
         hi=10.0,
     )
-if entry_buffer_lo > entry_buffer_hi:
+if gap_buffer_lo > gap_buffer_hi:
     st.error("下限不能大於上限，請重新設定；目前暫時視為不啟用篩選。")
-    entry_buffer_lo, entry_buffer_hi = -10.0, 10.0
-events["entry_buffer_excluded"] = (
-    (events["entry_gap_pct"] < entry_buffer_lo) | (events["entry_gap_pct"] >= entry_buffer_hi)
+    gap_buffer_lo, gap_buffer_hi = -10.0, 10.0
+events["gap_buffer_excluded"] = (
+    (events["gap_pct"] < gap_buffer_lo) | (events["gap_pct"] >= gap_buffer_hi)
 )
-buffer_excluded_count = int(events["entry_buffer_excluded"].sum())
+buffer_excluded_count = int(events["gap_buffer_excluded"].sum())
 st.caption(
-    f"目前設定（{entry_buffer_lo:+.1f}% ~ {entry_buffer_hi:+.1f}%）下排除 {buffer_excluded_count}/{len(events)} 筆事件"
-    f"（{buffer_excluded_count / len(events):.1%}）；用修正後實際進場當天的開盤價相對 D0 收盤的漲幅%計算。"
-    "**即使兩端都設到最寬鬆，仍可能排除少數事件**：若因漲停天花板延後進場超過一天，實際進場日開盤價相對"
-    "D0收盤的漲跌幅可能累積超過單日±10%的範圍。"
-    "不符合者只排除、不再尋找下一個進場日。"
+    f"目前設定（{gap_buffer_lo:+.1f}% ~ {gap_buffer_hi:+.1f}%）下排除 {buffer_excluded_count}/{len(events)} 筆事件"
+    f"（{buffer_excluded_count / len(events):.1%}）；以既有 `gap_pct`（D1 開盤相對 D0 收盤）計算。"
+    "不符合者只排除，不會改用其他日期。"
 )
 
 exclude_target_v1 = st.checkbox(
@@ -255,9 +239,9 @@ st.caption(
 
 base_mask = (
     events["年份"].isin(sel_years)
-    & ~events["entry_disposal"]
-    & ~events["day_trade_short_suspended_entry"]
-    & ~events["entry_buffer_excluded"]
+    & ~events["d1_disposal"]
+    & ~events["day_trade_short_suspended_d1"]
+    & ~events["gap_buffer_excluded"]
 )
 if exclude_target_v1:
     mask = base_mask & ~events["v1_candidate_d1"]
@@ -267,39 +251,36 @@ else:
     if not events.index[mask].equals(events.index[base_mask]):
         raise RuntimeError("V1 排除切換預設關閉時改變了台新-台北事件母體。")
 view = events.loc[mask].copy()
-show_ceiling_only = st.checkbox("只看曾因漲停天花板而延後進場的事件", value=False)
-if show_ceiling_only:
-    view = view.loc[view["entry_is_ceiling"]].copy()
 
 st.divider()
 st.markdown("#### 🎚️ 停損／停利情境設定")
 st.caption(
-    "設定「實際進場日股價比 D0 收盤漲多少%停損」「實際進場日股價比 D0 收盤跌多少%停利」，以實際進場日最高／最低價估算是否觸及；"
-    "同日兩者都觸及時保守採停損優先。實際進場日整日無成交、無法回補的事件視為截尾，不納入 KPI。"
+    "設定「D1 股價比 D0 收盤漲多少%停損」「D1 股價比 D0 收盤跌多少%停利」，以 D1 最高／最低價估算是否觸及；"
+    "同日兩者都觸及時保守採停損優先。D1 無法成交的事件視為截尾，不納入 KPI。"
     "**這裡只提供情境查閱，台新-台北沒有任何已驗證的停損／停利建議；預設 0%／0% 是單純持有到收盤。**"
 )
 col_s1, col_s2 = st.columns(2)
 with col_s1:
-    stop_pct = synced_pct_input("停損：實際進場日股價比 D0 收盤漲多少% 出場（0=不停損）", 0.0, "stop_17")
+    stop_pct = synced_pct_input("停損：D1 股價比 D0 收盤漲多少% 出場（0=不停損）", 0.0, "stop_17")
 with col_s2:
-    tp_pct = synced_pct_input("停利：實際進場日股價比 D0 收盤跌多少% 出場（0=不停利）", 0.0, "tp_17")
+    tp_pct = synced_pct_input("停利：D1 股價比 D0 收盤跌多少% 出場（0=不停利）", 0.0, "tp_17")
 
-entry = view["entry_open"].to_numpy(dtype=float)
+d1_open = view["d1_open"].to_numpy(dtype=float)
 d0_close = view["d0_close"].to_numpy(dtype=float)
-entry_high = view["entry_high"].to_numpy(dtype=float)
-entry_low = view["entry_low"].to_numpy(dtype=float)
-entry_close = view["entry_close"].to_numpy(dtype=float)
+d1_high = view["d1_high"].to_numpy(dtype=float)
+d1_low = view["d1_low"].to_numpy(dtype=float)
+d1_close = view["d1_close"].to_numpy(dtype=float)
 base_ret = view["short_ret_open_to_close_pct"].to_numpy(dtype=float)
 with np.errstate(invalid="ignore"):
     stop_price = d0_close * (1.0 + stop_pct / 100.0)
     tp_price = d0_close * (1.0 - tp_pct / 100.0)
-    hit_stop = (stop_pct > 0) & (entry_high >= stop_price)
-    hit_tp = (tp_pct > 0) & (entry_low <= tp_price)
-    exit_price = np.where(hit_tp, tp_price, entry_close)
+    hit_stop = (stop_pct > 0) & (d1_high >= stop_price)
+    hit_tp = (tp_pct > 0) & (d1_low <= tp_price)
+    exit_price = np.where(hit_tp, tp_price, d1_close)
     exit_price = np.where(hit_stop, stop_price, exit_price)
-    sim_ret = (entry - exit_price) / entry * 100.0
-    sim_ret = np.where(view["entry_frozen"].to_numpy(dtype=bool), base_ret, sim_ret)
-    sim_ret = np.where(view["censored"].to_numpy(dtype=bool) | ~np.isfinite(entry), np.nan, sim_ret)
+    sim_ret = (d1_open - exit_price) / d1_open * 100.0
+    sim_ret = np.where(view["d1_frozen"].to_numpy(dtype=bool), base_ret, sim_ret)
+    sim_ret = np.where(view["censored"].to_numpy(dtype=bool) | ~np.isfinite(d1_open), np.nan, sim_ret)
 view["sim_ret"] = sim_ret
 
 st.divider()
@@ -316,13 +297,13 @@ else:
     c4.metric("日組合 Sharpe", f"{sharpe:.2f}" if pd.notna(sharpe) else "-")
     c5.metric("最大回撤", f"{mdd:.2f}%" if pd.notna(mdd) else "-")
     st.caption(
-        "期間報酬／Sharpe／最大回撤：同一實際進場日的多筆事件先等權，再依實際進場日複利；"
+        "期間報酬／Sharpe／最大回撤：同一 D1 的多筆事件先等權，再依 D1 複利；"
         "不含交易成本、滑價或實際借券額度。這些是目前短歷史的描述數字，不是推薦依據。"
     )
     if stop_pct > 0 or tp_pct > 0:
         st.caption(f"⚙️ 以上 KPI 已套用停損 {stop_pct:.1f}%／停利 {tp_pct:.1f}% 的情境設定。")
-    if entry_buffer_lo > -10.0 or entry_buffer_hi < 10.0:
-        st.caption(f"⚙️ 以上 KPI 已套用進場緩衝：開盤漲幅需落在 {entry_buffer_lo:+.1f}%～{entry_buffer_hi:+.1f}% 之間，否則已完全排除。")
+    if gap_buffer_lo > -10.0 or gap_buffer_hi < 10.0:
+        st.caption(f"⚙️ 以上 KPI 已套用 D1 開盤跳空篩選：漲幅需落在 {gap_buffer_lo:+.1f}%～{gap_buffer_hi:+.1f}% 之間，否則已完全排除。")
 
 st.divider()
 gap_bins = ["<-5%", "-5~-2%", "-2~0%", "0~1%", "1~3%", "3~5%", "5~7%", "7~9%", "9~9.5%", "≥9.5%"]
@@ -363,7 +344,7 @@ with st.expander(
         scenario_period, scenario_sharpe, scenario_mdd, _ = portfolio_metrics(sim_settled, "sim_ret")
         comparison = pd.DataFrame(
             {
-                "原本（持有到實際進場日收盤）": [
+                "原本（D1 開盤放空、D1 收盤回補）": [
                     f"{base_period:+.2f}%",
                     f"{(base_rets > 0).mean() * 100:.2f}%",
                     f"{base_rets.mean():+.2f}%",
@@ -422,21 +403,20 @@ st.caption(
     "淨買超為萬元、影響力依 D0 成交金額計算。沒有該分點活動時顯示 0。"
 )
 show_cols = [
-    "d0", "code", "name", "market", "d1", "entry_day", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
+    "d0", "code", "name", "market", "d1", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
     "city_ga_net_amt_wan", "city_ga_influence_pct", "unicenter_city_net_amt_wan", "unicenter_city_influence_pct",
     "fubon_net_amt_wan", "fubon_influence_pct", "d0_top3_net_buy_branches", "v1_candidate_d1",
-    "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "entry_gap_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct", "sim_ret",
+    "d1_open", "d1_high", "d1_low", "d1_close", "d1_frozen", "censored", "short_ret_open_to_close_pct", "sim_ret",
     "short_mae_pct",
 ]
 show = view[show_cols].sort_values(["d0", "code"], ascending=False).copy()
 show["d0"] = show["d0"].dt.strftime("%Y-%m-%d")
 show["d1"] = show["d1"].dt.strftime("%Y-%m-%d")
-show["entry_day"] = show["entry_day"].dt.strftime("%Y-%m-%d")
 show.columns = [
-    "D0訊號日", "代號", "名稱", "市場", "D1原始日", "實際進場日", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
+    "D0訊號日", "代號", "名稱", "市場", "D1", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
     "城中GA淨買超(萬)", "城中GA影響力%", "統一城中淨買超(萬)", "統一城中影響力%",
     "富邦證券淨買超(萬)", "富邦證券影響力%", "D0前三大買超分點", "D1同時為V1候選",
-    "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "進場開盤漲幅%", "D1鎖死", "截尾", "原始放空報酬%", "情境放空報酬%", "最大不利波動%",
+    "D1開盤", "D1最高", "D1最低", "D1收盤", "D1鎖死", "截尾", "原始放空報酬%", "情境放空報酬%", "最大不利波動%",
 ]
 
 # Only show real cached minute bars.  If none are available, omit the column rather than fabricate a D1 path.
@@ -476,7 +456,7 @@ st.dataframe(
          "統一城中淨買超(萬)": "{:,.2f}", "統一城中影響力%": "{:+.2f}",
          "富邦證券淨買超(萬)": "{:,.2f}", "富邦證券影響力%": "{:+.2f}",
          "D1開盤": "{:.2f}", "D1最高": "{:.2f}", "D1最低": "{:.2f}", "D1收盤": "{:.2f}",
-         "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "進場開盤漲幅%": "{:+.2f}", "原始放空報酬%": "{:+.2f}", "情境放空報酬%": "{:+.2f}",
+         "原始放空報酬%": "{:+.2f}", "情境放空報酬%": "{:+.2f}",
          "最大不利波動%": "{:.2f}"}, na_rep="-"),
     use_container_width=True, height=520, column_config=column_config,
 )
@@ -493,7 +473,7 @@ st.download_button(
 )
 
 st.divider()
-st.markdown("**累積報酬走勢**（同一實際進場日多筆等權、依實際進場日排序；套用目前停損／停利情境）")
+st.markdown("**累積報酬走勢**（同一 D1 多筆等權、依 D1 排序；套用目前停損／停利情境）")
 if not rets.empty:
     _, _, _, daily = portfolio_metrics(settled, "sim_ret")
     if len(daily) >= 2:
