@@ -122,8 +122,16 @@ def source_events() -> pd.DataFrame:
     event_keys = set(zip(events["d0_date"], events["stock"]))
     if not event_keys.issubset(strict_keys):
         raise RuntimeError("A strict-lock/liquid event is absent from the strict-lock source audit.")
-    if len(events) != 250:
-        raise RuntimeError(f"Expected the discovery run's ~250 strict-lock/liquid events; got {len(events)}.")
+    # 2026-08-15: the discovery source used to be frozen at exactly 250 rows
+    # because run_new_branch_discovery_20260813.py hardcoded the Taishin-Taipei
+    # window's end date to 2026-08-07. That cutoff has been extended to the
+    # latest available price date, so this population grows as new qualifying
+    # D0 events appear -- it must never SHRINK below the originally-found 250
+    # (2026-04-07 start is unchanged, so old events can't disappear), but a
+    # frozen exact-count assertion would silently break every future refresh.
+    if len(events) < 250:
+        raise RuntimeError(f"Strict-lock/liquid event count dropped below the known floor of 250; got {len(events)}.")
+    print(f"Taishin-Taipei strict-lock/liquid source events: {len(events)} (>= 250 floor)")
     return events.sort_values(["d0_date", "stock"]).reset_index(drop=True)
 
 
