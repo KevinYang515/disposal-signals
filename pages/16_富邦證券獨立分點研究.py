@@ -54,6 +54,25 @@ def synced_pct_input(label, default, key):
     return st.session_state[slider_key]
 
 
+def synced_bounded_pct_input(label, default, key, lo=0.0, hi=100.0):
+    """Same sync pattern as synced_pct_input, with a caller-supplied [lo, hi] range."""
+    slider_key, num_key = f'{key}_slider', f'{key}_num'
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = default
+
+    def _from_slider():
+        st.session_state[num_key] = st.session_state[slider_key]
+
+    def _from_num():
+        st.session_state[slider_key] = st.session_state[num_key]
+
+    st.slider(label, lo, hi, step=1.0, key=slider_key, on_change=_from_slider)
+    if num_key not in st.session_state:
+        st.session_state[num_key] = st.session_state[slider_key]
+    st.number_input('或直接輸入數字（%，適合手機操作）', lo, hi, step=1.0, key=num_key, on_change=_from_num)
+    return st.session_state[slider_key]
+
+
 @st.cache_data(ttl=3600)
 def load_events(_cache_bust: str = '2026-08-15-offline-branch-context-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
@@ -181,6 +200,18 @@ st.caption(
     '此切換是依 Kevin 要求提供查閱，不是已證實的篩選條件。D1-exact 對齊。'
 )
 
+st.markdown('#### 🎚️ 分點影響力篩選（探索性）')
+col_inf1, col_inf2 = st.columns(2)
+with col_inf1:
+    influence_lo = synced_bounded_pct_input('下限%（0=不啟用）', 0.0, 'influence_lo_16', lo=0.0, hi=100.0)
+with col_inf2:
+    influence_hi = synced_bounded_pct_input('上限%（100=不啟用）', 100.0, 'influence_hi_16', lo=0.0, hi=100.0)
+st.caption(
+    '影響力 = 分點D0淨買超金額 ÷ D0成交金額。**2026-08-15正式因子篩選(`factor_selection_20260815.md`)結果：'
+    '富邦在holdout明顯**不是**單調關係——優勢在Q2就見頂，Q4反而回落(Spearman .061, p=.152)，'
+    '沒有驗證通過的門檻。這裡只是提供你自行篩選查閱，不是推薦門檻。**'
+)
+
 
 def gap_bucket(g):
     if g < -5:
@@ -216,6 +247,7 @@ base_mask &= events['年份'].isin(sel_years)
 base_mask &= ~events['d1_disposal']
 base_mask &= ~events['day_trade_short_suspended_d1']
 base_mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
+base_mask &= events['influence_pct'].between(influence_lo, influence_hi)
 if taiex_mode == '排除過熱天(≥2.6%)':
     base_mask &= events['taiex_2day_mom_pct'].isna() | (events['taiex_2day_mom_pct'] <= 2.6)
 elif taiex_mode == '只看過熱天(≥2.6%)':
