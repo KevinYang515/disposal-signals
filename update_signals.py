@@ -341,10 +341,15 @@ def classify_clause(row):
         base = '其他'
     return base + ('+當沖' if daytrade else '')
 
+SIG5_COLS = ['代號', '名稱', '規模', '訊號', '條款', '前日漲幅(%)', 'D1跳空(%)',
+             '起始日', '今D幾', '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']
+HIST5_COLS = ['代號', '名稱', '規模', '年份', '起始日', '出關日', '條款', '前日漲幅(%)',
+              'D1跳空(%)', '符合因子', '加強訊號', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']
+
 def build_5min(df, price, open_p):
     disp = load_disposal_raw()
     if disp is None:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(columns=SIG5_COLS), pd.DataFrame(columns=HIST5_COLS)
 
     d5 = disp[(disp['分時交易'] == 5.0) & (disp['start'] >= '2022-01-01')].copy()
     d5 = d5.drop_duplicates(subset=['stock_id', 'start'])
@@ -468,20 +473,25 @@ def build_5min(df, price, open_p):
                  '🚫 當沖條款，不買': 3, '❌ D1開高，不買': 4, '—': 5}
         sig['_o'] = sig['訊號'].map(order)
         sig = sig.sort_values(['_o', '起始日'], ascending=[True, False]).drop(columns=['_o'])
-        sig = sig[['代號', '名稱', '規模', '訊號', '條款', '前日漲幅(%)', 'D1跳空(%)',
-                   '起始日', '今D幾', '出關日', '進場價(D1收)', '目前損益(%)', '今日漲跌']]
+    # reindex（而非只在 len(sig) 時挑欄位）：0筆時也要保留正確欄位標頭，
+    # 否則 to_csv 會寫出完全空白的檔案，Streamlit 端 pd.read_csv 會拋 EmptyDataError 讓整個 app 掛掉。
+    sig = sig.reindex(columns=SIG5_COLS)
     if len(hist):
-        hist = hist[['代號', '名稱', '規模', '年份', '起始日', '出關日', '條款', '前日漲幅(%)',
-                     'D1跳空(%)', '符合因子', '加強訊號', 'D1%', 'D3%', 'D5%', 'D8%', '策略報酬(%)']]
         hist = hist.sort_values('起始日', ascending=False)
+    hist = hist.reindex(columns=HIST5_COLS)
     return sig, hist
+
+SIG_T20_COLS = ['代號', '名稱', '規模', '訊號', '買進日', '賣出日(出關)', '深跌單',
+                '進場價', '目前損益(%)', '今日漲跌']
+HIST_T20_COLS = ['代號', '名稱', '規模', '年份', '起始日', '買進日', '出關日', '深跌單',
+                 '訊號', '進場價', '出場價', '策略報酬(%)']
 
 def build_tail20(df, price, hist20):
     """20分盤出關動能：出關前第3個交易日收盤買 → 出關當天(恢復正常交易首日)收盤賣
     回測 2022+ n=485 +3.94%/筆 t=7.81；OOS 2016-2021 +2.87% 6/6年正"""
     disp = load_disposal_raw()
     if disp is None:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(columns=SIG_T20_COLS), pd.DataFrame(columns=HIST_T20_COLS)
     d20 = disp[(disp['分時交易'] >= 20.0) & (disp['start'] >= '2022-01-01')].copy()
     d20 = d20.drop_duplicates(subset=['stock_id', 'start']).dropna(subset=['start', 'end'])
 
@@ -578,8 +588,11 @@ def build_tail20(df, price, hist20):
                  '🔒 買進日漲停買不到': 3}
         sig['_o'] = sig['訊號'].map(lambda v: order.get(v, 4))
         sig = sig.sort_values(['_o', '賣出日(出關)']).drop(columns=['_o'])
+    # 0筆時也保留欄位標頭，避免 to_csv 寫出完全空白檔案讓 Streamlit 端 pd.read_csv 掛掉
+    sig = sig.reindex(columns=SIG_T20_COLS)
     if len(hist):
         hist = hist.sort_values('起始日', ascending=False)
+    hist = hist.reindex(columns=HIST_T20_COLS)
     return sig, hist
 
 # ── 產生訊號表 ───────────────────────────────────────────────────────────

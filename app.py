@@ -36,26 +36,27 @@ thead tr th   { background: #1e2530 !important; }
 """, unsafe_allow_html=True)
 
 # ── 讀資料 ───────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def load_signals():
-    p = f'{DATA_DIR}/signals.csv'
+def safe_read_csv(p, **kwargs):
+    """0筆/完全空白的CSV（producer端當天沒有任何候選時可能發生）不該讓整個app掛掉，
+    讀不到內容就回傳空表，讓頁面自然顯示「無資料」而不是 EmptyDataError 崩潰。"""
     if not os.path.exists(p):
         return pd.DataFrame()
-    return pd.read_csv(p)
+    try:
+        return pd.read_csv(p, **kwargs)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def load_signals():
+    return safe_read_csv(f'{DATA_DIR}/signals.csv')
 
 @st.cache_data(ttl=300)
 def load_history():
-    p = f'{DATA_DIR}/history.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p)
+    return safe_read_csv(f'{DATA_DIR}/history.csv')
 
 @st.cache_data(ttl=3600)
 def load_grid():
-    p = f'{DATA_DIR}/backtest_grid.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p)
+    return safe_read_csv(f'{DATA_DIR}/backtest_grid.csv')
 
 @st.cache_data(ttl=300)
 def load_meta():
@@ -67,39 +68,24 @@ def load_meta():
 
 @st.cache_data(ttl=300)
 def load_signals_5min():
-    p = f'{DATA_DIR}/signals_5min.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p, dtype={'代號': str})
+    return safe_read_csv(f'{DATA_DIR}/signals_5min.csv', dtype={'代號': str})
 
 @st.cache_data(ttl=300)
 def load_history_5min():
-    p = f'{DATA_DIR}/history_5min.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p, dtype={'代號': str})
+    return safe_read_csv(f'{DATA_DIR}/history_5min.csv', dtype={'代號': str})
 
 @st.cache_data(ttl=300)
 def load_signals_tail20():
-    p = f'{DATA_DIR}/signals_tail20.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p, dtype={'代號': str})
+    return safe_read_csv(f'{DATA_DIR}/signals_tail20.csv', dtype={'代號': str})
 
 @st.cache_data(ttl=300)
 def load_history_tail20():
-    p = f'{DATA_DIR}/history_tail20.csv'
-    if not os.path.exists(p):
-        return pd.DataFrame()
-    return pd.read_csv(p, dtype={'代號': str})
+    return safe_read_csv(f'{DATA_DIR}/history_tail20.csv', dtype={'代號': str})
 
 @st.cache_data(ttl=3600)
 def load_exit_timing():
-    s = f'{DATA_DIR}/exit_timing_summary.csv'
-    d = f'{DATA_DIR}/exit_timing_d1strat.csv'
-    if not os.path.exists(s) or not os.path.exists(d):
-        return pd.DataFrame(), pd.DataFrame()
-    return pd.read_csv(s), pd.read_csv(d)
+    return (safe_read_csv(f'{DATA_DIR}/exit_timing_summary.csv'),
+            safe_read_csv(f'{DATA_DIR}/exit_timing_d1strat.csv'))
 
 # ── Header ──────────────────────────────────────────────────────────────
 meta = load_meta()
