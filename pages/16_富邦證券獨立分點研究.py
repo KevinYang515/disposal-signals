@@ -212,6 +212,27 @@ st.caption(
     '沒有驗證通過的門檻。這裡只是提供你自行篩選查閱，不是推薦門檻。**'
 )
 
+_infl_quartile_bounds_16 = events['influence_pct'].quantile([0.0, 0.25, 0.5, 0.75, 1.0]).values
+
+
+def _apply_influence_quartile_16(q_idx):
+    if q_idx is None:
+        lo, hi = 0.0, 100.0
+    else:
+        lo, hi = float(_infl_quartile_bounds_16[q_idx]), float(_infl_quartile_bounds_16[q_idx + 1])
+    for k, v in (('influence_lo_16_slider', lo), ('influence_lo_16_num', lo),
+                 ('influence_hi_16_slider', hi), ('influence_hi_16_num', hi)):
+        st.session_state[k] = v
+
+
+q_cols_16 = st.columns(5)
+for _i, _label in enumerate(['Q1(最低)', 'Q2', 'Q3', 'Q4(最高)']):
+    with q_cols_16[_i]:
+        st.button(_label, key=f'infl_q{_i+1}_btn_16', on_click=_apply_influence_quartile_16, args=(_i,))
+with q_cols_16[4]:
+    st.button('全部(不篩選)', key='infl_qall_btn_16', on_click=_apply_influence_quartile_16, args=(None,))
+st.caption(f'快速套用四分位邊界（依目前資料重算）：Q1<{_infl_quartile_bounds_16[1]:.2f}% | Q2<{_infl_quartile_bounds_16[2]:.2f}% | Q3<{_infl_quartile_bounds_16[3]:.2f}% | Q4≤{_infl_quartile_bounds_16[4]:.2f}%。')
+
 
 def gap_bucket(g):
     if g < -5:
