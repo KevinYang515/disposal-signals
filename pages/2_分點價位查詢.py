@@ -25,9 +25,12 @@ ROW_PAT = re.compile(
 
 KNOWN_BRANCHES = {
     "9227": "凱基-城中（City-GA 訊號分點）",
-    "9600": "富邦（母公司，非任何分店）",
-    "9268": "凱基-台北（廣泛型造市分點，量體大屬正常）",
+    "5854": "統一-城中（UniCenter 訊號分點）",
+    "9600": "富邦（母公司，非任何分店；富邦策略訊號分點）",
+    "9B20": "台新-台北（研究監看，未驗證通過）",
+    "9268": "凱基-台北（廣泛型造市分點，量體大屬正常，非訊號分點）",
 }
+SIGNAL_BRANCH_CODES = ["9227", "5854", "9600", "9B20"]
 
 
 def _extract(html: str, field_id: str) -> str:
@@ -126,6 +129,36 @@ if error:
     st.stop()
 
 st.caption(f"資料日期：{date}")
+
+st.subheader("📌 已知隔日沖訊號分點今日買賣比例")
+signal_rows = []
+for code in SIGNAL_BRANCH_CODES:
+    sub = df[df["code"] == code]
+    buy = int(sub["buy"].sum())
+    sell = int(sub["sell"].sum())
+    net = buy - sell
+    ratio = buy / sell if sell > 0 else float("inf") if buy > 0 else float("nan")
+    signal_rows.append(
+        {
+            "分點代號": code,
+            "分點名稱": KNOWN_BRANCHES.get(code, ""),
+            "買進": buy,
+            "賣出": sell,
+            "淨額": net,
+            "買賣比（買/賣）": ratio,
+        }
+    )
+signal_df = pd.DataFrame(signal_rows)
+st.dataframe(
+    signal_df.style.format(
+        {"買進": "{:,.0f}", "賣出": "{:,.0f}", "淨額": "{:,.0f}", "買賣比（買/賣）": "{:.2f}"}
+    ),
+    width="stretch",
+    hide_index=True,
+)
+st.caption("買賣比 > 1 代表買多於賣；今日若某分點完全沒有成交紀錄，買進／賣出／淨額會顯示為 0。")
+
+st.divider()
 
 branch_codes = [b.strip() for b in branch_input.split(",") if b.strip()]
 if branch_codes:
