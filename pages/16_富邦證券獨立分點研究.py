@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from branch_event_context import add_other_branch_activity_count, enrich_branch_events
+
 st.set_page_config(page_title='富邦證券獨立分點研究', page_icon='🧭', layout='wide')
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -55,13 +57,14 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
+def load_events(_cache_bust: str = '2026-08-15-cross-branch-and-target-v1'):
     fp = os.path.join(DATA_DIR, 'fubon_branch_events.csv')
     df = pd.read_csv(fp, parse_dates=['d0', 'd1'])
-    df['code'] = df['code'].astype(str)
+    df['code'] = df['code'].astype(str).str.zfill(4)
     names_fp = os.path.join(DATA_DIR, 'stock_names.csv')
     if os.path.exists(names_fp):
         names = pd.read_csv(names_fp, dtype={'code': str})
+        names['code'] = names['code'].str.zfill(4)
         df = df.merge(names, on='code', how='left')
         df['name'] = df['name'].fillna('')
     else:
@@ -75,7 +78,9 @@ def load_events(_cache_bust: str = '2026-08-12-borrow-suspension-v1'):
         if col not in df.columns:
             df[col] = default
     df['day_trade_short_suspended_d1'] = df['day_trade_short_suspended_d1'].fillna(False).astype(bool)
-    return df
+    # D0 cross-branch context and D1-exact V1 overlap are both precomputed once
+    # for the entire event population inside this cached loader.
+    return add_other_branch_activity_count(enrich_branch_events(df), 'fubon')
 
 
 st.title('🧭 富邦證券(裸名稱)獨立分點｜隔日沖放空策略歷史回測')
@@ -152,6 +157,17 @@ with col_f8:
              '僅供互動探索。'
     )
 
+exclude_target_v1 = st.checkbox(
+    '排除當日同時符合法人目標價V1候選的事件',
+    value=False,
+    key='exclude_target_v1_16',
+)
+st.caption(
+    '探索性工具：前一輪全母體測試（`target_price_interaction_20260813.md`）發現，'
+    '法人目標價 V1 候選重疊對城中GA或富邦的放空報酬都**沒有** holdout-confirmed 的驗證效果；'
+    '此切換是依 Kevin 要求提供查閱，不是已證實的篩選條件。D1-exact 對齊。'
+)
+
 
 def gap_bucket(g):
     if g < -5:
@@ -178,19 +194,27 @@ def gap_bucket(g):
 events['gap_bucket'] = events['gap_pct'].apply(gap_bucket)
 events['streak_capped'] = events['lock_streak'].clip(upper=4)
 
-mask = (
+base_mask = (
     events['market'].isin(sel_market)
     & events['gap_bucket'].isin(sel_gap)
     & events['streak_capped'].isin(sel_streak)
 )
-mask &= events['年份'].isin(sel_years)
-mask &= ~events['d1_disposal']
-mask &= ~events['day_trade_short_suspended_d1']
-mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
+base_mask &= events['年份'].isin(sel_years)
+base_mask &= ~events['d1_disposal']
+base_mask &= ~events['day_trade_short_suspended_d1']
+base_mask &= events['mktcap_billion'].isna() | (events['mktcap_billion'] <= mktcap_max)
 if taiex_mode == '排除過熱天(≥2.6%)':
-    mask &= events['taiex_2day_mom_pct'].isna() | (events['taiex_2day_mom_pct'] <= 2.6)
+    base_mask &= events['taiex_2day_mom_pct'].isna() | (events['taiex_2day_mom_pct'] <= 2.6)
 elif taiex_mode == '只看過熱天(≥2.6%)':
-    mask &= events['taiex_2day_mom_pct'] > 2.6
+    base_mask &= events['taiex_2day_mom_pct'] > 2.6
+
+if exclude_target_v1:
+    mask = base_mask & ~events['v1_candidate_d1']
+else:
+    mask = base_mask
+    # Default-off must retain the exact pre-toggle population.
+    if not events.index[mask].equals(events.index[base_mask]):
+        raise RuntimeError('V1 排除切換預設關閉時改變了富邦事件母體。')
 
 view = events[mask].copy()
 
@@ -404,16 +428,26 @@ with st.expander('📅 逐年穩定性（目前篩選條件下）'):
 
 # ── 完整逐筆明細（主表）──────────────────────────────────
 st.subheader(f'📋 完整逐筆歷史紀錄（{len(view)} 筆，依目前篩選條件）')
+st.caption(
+    '「其他已發現分點」均為同一個 D0、同一檔股票的本機分點成交快取批次計算；'
+    '淨買超為萬元、影響力依 D0 成交金額計算。沒有該分點活動時顯示 0。'
+)
 
 show_cols = ['d0', 'code', 'name', 'market', 'd1', 'gap_pct', 'lock_streak', 'net_amt_wan',
-             'influence_pct', 'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen',
+             'influence_pct', 'city_ga_net_amt_wan', 'city_ga_influence_pct',
+             'unicenter_city_net_amt_wan', 'unicenter_city_influence_pct',
+             'taishin_taipei_net_amt_wan', 'taishin_taipei_influence_pct',
+             'd0_top3_net_buy_branches', 'v1_candidate_d1',
+             'd1_open', 'd1_high', 'd1_low', 'd1_close', 'd1_frozen',
              'censored', 'short_ret_open_to_close_pct', 'short_mae_pct', 'success']
 show = view[show_cols].sort_values('d0', ascending=False).copy()
 show['d0'] = show['d0'].dt.strftime('%Y-%m-%d')
 show['d1'] = show['d1'].dt.strftime('%Y-%m-%d')
 show.columns = ['D0訊號日', '代號', '名稱', '市場', 'D1進場日', '跳空%', '連鎖天數', '買超金額(萬)',
-                 '影響力%', '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
-                 '最大不利波動%', '成功']
+                  '影響力%', '城中GA淨買超(萬)', '城中GA影響力%', '統一城中淨買超(萬)', '統一城中影響力%',
+                  '台新台北淨買超(萬)', '台新台北影響力%', 'D0前三大買超分點', 'D1同時為V1候選',
+                  '開盤', '最高', '最低', '收盤', 'D1鎖死', '截尾', '放空報酬%',
+                  '最大不利波動%', '成功']
 show['D1走勢'] = view.loc[show.index, 'd1_intraday_spark'].tolist()
 intraday_coverage = view['has_intraday'].mean() * 100 if len(view) else 0.0
 
@@ -445,13 +479,20 @@ st.dataframe(
         .map(color_success, subset=['成功'])
         .map(color_ret, subset=['放空報酬%'])
         .format({'跳空%': '{:+.2f}', '買超金額(萬)': '{:,.2f}', '影響力%': '{:.2f}',
-                 '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
-                 '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
+                 '城中GA淨買超(萬)': '{:,.2f}', '城中GA影響力%': '{:+.2f}',
+                 '統一城中淨買超(萬)': '{:,.2f}', '統一城中影響力%': '{:+.2f}',
+                 '台新台北淨買超(萬)': '{:,.2f}', '台新台北影響力%': '{:+.2f}',
+                  '開盤': '{:.2f}', '最高': '{:.2f}', '最低': '{:.2f}', '收盤': '{:.2f}',
+                  '放空報酬%': '{:+.2f}', '最大不利波動%': '{:.2f}'}, na_rep='-'),
     use_container_width=True, height=520,
     column_config={
         'D1走勢': st.column_config.LineChartColumn(
             'D1走勢（分K收盤）', width='medium',
             help='D1當天每分鐘收盤價走勢（真實Shioaji歷史分K，2026-08-11回填）；沒有抓到分K資料的事件留空。',
+        ),
+        'D0前三大買超分點': st.column_config.TextColumn(
+            'D0前三大買超分點', width='large',
+            help='同一 D0／同一股票的全部正淨買分點，依淨買金額排序；不是只限本頁四個訊號分點。',
         ),
     },
 )

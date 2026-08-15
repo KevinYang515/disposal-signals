@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from branch_event_context import add_other_branch_activity_count, enrich_branch_events
+
 
 st.set_page_config(page_title="台新-台北獨立分點研究", page_icon="🔬", layout="wide")
 
@@ -55,7 +57,7 @@ def synced_pct_input(label, default, key):
 
 
 @st.cache_data(ttl=3600)
-def load_events(_cache_bust: str = "2026-08-15-taishin-taipei-ceiling-correction-v2"):
+def load_events(_cache_bust: str = "2026-08-15-cross-branch-and-target-v1"):
     df = pd.read_csv(EVENTS_FILE, parse_dates=["d0", "d1"], dtype={"code": str})
     df["code"] = df["code"].str.zfill(4)
     names_fp = os.path.join(DATA_DIR, "stock_names.csv")
@@ -86,7 +88,9 @@ def load_events(_cache_bust: str = "2026-08-15-taishin-taipei-ceiling-correction
                    "entry_disposal", "day_trade_short_suspended_entry"]:
         df[column] = as_bool(df[column])
     df["d1_intraday_spark"] = df["d1_intraday_close"].apply(_parse_spark)
-    return df
+    # D0 cross-branch context and D1-exact V1 overlap are both precomputed once
+    # for the whole 250-event source population inside this cached loader.
+    return add_other_branch_activity_count(enrich_branch_events(df), "taishin_taipei")
 
 
 def gap_bucket(gap):
@@ -184,12 +188,30 @@ st.caption(
     "不符合者只排除、不再尋找下一個進場日。"
 )
 
-mask = (
+exclude_target_v1 = st.checkbox(
+    "排除當日同時符合法人目標價V1候選的事件",
+    value=False,
+    key="exclude_target_v1_17",
+)
+st.caption(
+    "探索性工具：前一輪全母體測試（`target_price_interaction_20260813.md`）發現，"
+    "法人目標價 V1 候選重疊對城中GA或富邦的放空報酬都**沒有** holdout-confirmed 的驗證效果；"
+    "此切換是依 Kevin 要求提供查閱，不是已證實的篩選條件。D1-exact 對齊。"
+)
+
+base_mask = (
     events["年份"].isin(sel_years)
     & ~events["entry_disposal"]
     & ~events["day_trade_short_suspended_entry"]
     & ~events["entry_buffer_excluded"]
 )
+if exclude_target_v1:
+    mask = base_mask & ~events["v1_candidate_d1"]
+else:
+    mask = base_mask
+    # Default-off must retain the exact pre-toggle population.
+    if not events.index[mask].equals(events.index[base_mask]):
+        raise RuntimeError("V1 排除切換預設關閉時改變了台新-台北事件母體。")
 view = events.loc[mask].copy()
 show_ceiling_only = st.checkbox("只看曾因漲停天花板而延後進場的事件", value=False)
 if show_ceiling_only:
@@ -281,6 +303,68 @@ with st.expander("📊 依 D1 開盤跳空區間的描述性統計", expanded=Tr
         )
     st.caption("僅供描述性查閱；沒有將任何跳空區間設為預設濾網或推薦條件。")
 
+with st.expander(
+    f"🎚️ 停損／停利效果對照（目前設定：停損{stop_pct:.1f}%／停利{tp_pct:.1f}%，與上方KPI同一組設定）"
+):
+    sim_settled = view.loc[~view["censored"]].copy()
+    base_rets = sim_settled["short_ret_open_to_close_pct"].dropna()
+    scenario_rets = sim_settled["sim_ret"].dropna()
+    if base_rets.empty or scenario_rets.empty:
+        st.warning("目前篩選條件下無足夠已結算資料可比較。")
+    else:
+        base_period, base_sharpe, base_mdd, _ = portfolio_metrics(
+            sim_settled.assign(_scenario=sim_settled["short_ret_open_to_close_pct"]), "_scenario"
+        )
+        scenario_period, scenario_sharpe, scenario_mdd, _ = portfolio_metrics(sim_settled, "sim_ret")
+        comparison = pd.DataFrame(
+            {
+                "原本（持有到實際進場日收盤）": [
+                    f"{base_period:+.2f}%",
+                    f"{(base_rets > 0).mean() * 100:.2f}%",
+                    f"{base_rets.mean():+.2f}%",
+                    f"{base_sharpe:.2f}" if pd.notna(base_sharpe) else "-",
+                    f"{base_mdd:.2f}%" if pd.notna(base_mdd) else "-",
+                    f"{base_rets.min():+.2f}%",
+                ],
+                "套用停損／停利後（=上方KPI）": [
+                    f"{scenario_period:+.2f}%",
+                    f"{(scenario_rets > 0).mean() * 100:.2f}%",
+                    f"{scenario_rets.mean():+.2f}%",
+                    f"{scenario_sharpe:.2f}" if pd.notna(scenario_sharpe) else "-",
+                    f"{scenario_mdd:.2f}%" if pd.notna(scenario_mdd) else "-",
+                    f"{scenario_rets.min():+.2f}%",
+                ],
+            },
+            index=["期間報酬", "勝率", "平均放空報酬", "日組合Sharpe", "最大回撤", "最慘單筆"],
+        )
+        st.dataframe(comparison, use_container_width=True)
+        st.caption(
+            f"已結算 {len(sim_settled)} 筆；此表只比較目前滑桿的情境，不代表台新-台北已有可驗證的停損／停利規則。"
+        )
+
+with st.expander("📊 依連續鎖漲停天數的描述性統計（短歷史，請勿視為濾網）"):
+    rows = []
+    for streak in [1, 2, 3, 4]:
+        sub = view.loc[(view["streak_capped"] == streak) & ~view["censored"]]
+        if sub.empty:
+            continue
+        rows.append({
+            "連鎖天數": f"{streak}{'+' if streak == 4 else ''}",
+            "筆數": len(sub),
+            "勝率(%)": (sub["short_ret_open_to_close_pct"] > 0).mean() * 100.0,
+            "平均放空報酬(%)": sub["short_ret_open_to_close_pct"].mean(),
+            "最慘單筆(%)": sub["short_ret_open_to_close_pct"].min(),
+        })
+    if rows:
+        st.dataframe(
+            pd.DataFrame(rows).set_index("連鎖天數").style.format(
+                {"勝率(%)": "{:.2f}", "平均放空報酬(%)": "{:+.2f}", "最慘單筆(%)": "{:+.2f}"},
+                na_rep="-",
+            ),
+            use_container_width=True,
+        )
+    st.caption("僅呈現目前約四個月資料的分布；沒有從中推導預設排除條件，也不移植其他分點的連鎖規則。")
+
 with st.expander("📅 可用期間的月份分布（僅約 4 個月，請勿過度解讀）"):
     monthly = settled.assign(月份=settled["d0"].dt.strftime("%Y-%m")).groupby("月份")["short_ret_open_to_close_pct"].agg(
         筆數="size", 勝率=lambda x: (x > 0).mean() * 100.0, 平均放空報酬="mean"
@@ -288,8 +372,14 @@ with st.expander("📅 可用期間的月份分布（僅約 4 個月，請勿過
     st.dataframe(monthly.style.format({"勝率": "{:.2f}", "平均放空報酬": "{:+.2f}"}, na_rep="-"), use_container_width=True)
 
 st.subheader(f"📋 完整逐筆歷史紀錄（{len(view)} 筆，已套用硬排除、年份與進場緩衝篩選）")
+st.caption(
+    "「其他已發現分點」均為同一個 D0、同一檔股票的本機分點成交快取批次計算；"
+    "淨買超為萬元、影響力依 D0 成交金額計算。沒有該分點活動時顯示 0。"
+)
 show_cols = [
     "d0", "code", "name", "market", "d1", "entry_day", "net_amt_wan", "influence_pct", "gap_pct", "lock_streak",
+    "city_ga_net_amt_wan", "city_ga_influence_pct", "unicenter_city_net_amt_wan", "unicenter_city_influence_pct",
+    "fubon_net_amt_wan", "fubon_influence_pct", "d0_top3_net_buy_branches", "v1_candidate_d1",
     "d1_open", "d1_high", "d1_low", "d1_close", "entry_open", "entry_close", "entry_gap_pct", "d1_frozen", "censored", "short_ret_open_to_close_pct",
     "short_mae_pct",
 ]
@@ -299,6 +389,8 @@ show["d1"] = show["d1"].dt.strftime("%Y-%m-%d")
 show["entry_day"] = show["entry_day"].dt.strftime("%Y-%m-%d")
 show.columns = [
     "D0訊號日", "代號", "名稱", "市場", "D1原始日", "實際進場日", "買超金額(萬)", "影響力%", "跳空%", "連鎖天數",
+    "城中GA淨買超(萬)", "城中GA影響力%", "統一城中淨買超(萬)", "統一城中影響力%",
+    "富邦證券淨買超(萬)", "富邦證券影響力%", "D0前三大買超分點", "D1同時為V1候選",
     "D1開盤", "D1最高", "D1最低", "D1收盤", "實際開盤", "實際收盤", "進場開盤漲幅%", "D1鎖死", "截尾", "放空報酬%", "最大不利波動%",
 ]
 
@@ -322,7 +414,12 @@ def color_return(value):
     return "color: #e74c3c; font-weight: 700"
 
 
-column_config = {}
+column_config = {
+    "D0前三大買超分點": st.column_config.TextColumn(
+        "D0前三大買超分點", width="large",
+        help="同一 D0／同一股票的全部正淨買分點，依淨買金額排序；不是只限本頁四個訊號分點。",
+    ),
+}
 if has_sparkline:
     column_config["D1走勢"] = st.column_config.LineChartColumn(
         "D1走勢（分K收盤）", width="medium", help="真實歷史分鐘 K 收盤價；缺資料事件留空，非模擬。"
@@ -330,6 +427,9 @@ if has_sparkline:
 st.dataframe(
     show.style.map(color_return, subset=["放空報酬%"]).format(
         {"買超金額(萬)": "{:,.2f}", "影響力%": "{:.2f}", "跳空%": "{:+.2f}",
+         "城中GA淨買超(萬)": "{:,.2f}", "城中GA影響力%": "{:+.2f}",
+         "統一城中淨買超(萬)": "{:,.2f}", "統一城中影響力%": "{:+.2f}",
+         "富邦證券淨買超(萬)": "{:,.2f}", "富邦證券影響力%": "{:+.2f}",
          "D1開盤": "{:.2f}", "D1最高": "{:.2f}", "D1最低": "{:.2f}", "D1收盤": "{:.2f}",
          "實際開盤": "{:.2f}", "實際收盤": "{:.2f}", "進場開盤漲幅%": "{:+.2f}", "放空報酬%": "{:+.2f}",
          "最大不利波動%": "{:.2f}"}, na_rep="-"),
