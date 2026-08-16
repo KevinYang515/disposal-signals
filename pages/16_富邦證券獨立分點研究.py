@@ -259,16 +259,21 @@ st.caption(
     '此切換是依 Kevin 要求提供查閱，不是已證實的篩選條件。D1-exact 對齊。'
 )
 
-st.markdown('#### 🎚️ 分點影響力篩選（探索性）')
+st.markdown('#### 🎚️ 分點影響力篩選（2026-08-16更新：門檻已驗證通過，但holdout單獨看不顯著）')
 col_inf1, col_inf2 = st.columns(2)
 with col_inf1:
     influence_lo = synced_bounded_pct_input('下限%（0=不啟用）', 0.0, 'influence_lo_16', lo=0.0, hi=100.0)
 with col_inf2:
     influence_hi = synced_bounded_pct_input('上限%（100=不啟用）', 100.0, 'influence_hi_16', lo=0.0, hi=100.0)
 st.caption(
-    '影響力 = 分點D0淨買超金額 ÷ D0成交金額。**2026-08-15正式因子篩選(`factor_selection_20260815.md`)結果：'
-    '富邦在holdout明顯**不是**單調關係——優勢在Q2就見頂，Q4反而回落(Spearman .061, p=.152)，'
-    '沒有驗證通過的門檻。這裡只是提供你自行篩選查閱，不是推薦門檻。**'
+    '影響力 = 分點D0淨買超金額 ÷ D0成交金額。**2026-08-15的初版因子篩選(`factor_selection_20260815.md`)'
+    '「沒有驗證通過的門檻」結論用的GA搜尋目標函數有系統性偏誤（傾向選到接近全母體的門檻，掩蓋真正效果）。'
+    '2026-08-16修正後重跑(`factor_selection_ga_reaudit_20260816.md`)：**influence_pct >= 11.998% 這次驗證通過**——'
+    '樣本內門檻以上平均+1.46%（n=1071）vs 門檻以下+0.54%（n=2133），差距+0.92個百分點，p值扎實(<0.001)，'
+    '市值5分位中4個方向一致（僅最大市值那組反轉，樣本小）。holdout方向也一致但單獨看不顯著（樣本本來就少）。'
+    '另外同一天(2026-08-16)一個獨立的甜蜜點區間分析(`fubon_influence_sweetspot_v2_20260816.md`)也得到同方向'
+    '結論，但門檻抓在更高的17.78%（前20%）——兩邊搜尋範圍不同，方向一致，數字上不用糾結誰對，都指向'
+    '「影響力越高越好，尤其超過約12-18%」。這裡讓你自行套用查閱，仍不是正式部署建議。**'
 )
 
 _infl_quartile_bounds_16 = events['influence_pct'].quantile([0.0, 0.25, 0.5, 0.75, 1.0]).values

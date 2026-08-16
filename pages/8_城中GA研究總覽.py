@@ -307,16 +307,20 @@ st.caption(
     '此切換僅供查閱，使用 D1-exact 對齊。'
 )
 
-st.markdown('#### 🎚️ 分點影響力篩選（探索性）')
+st.markdown('#### 🎚️ 分點影響力篩選（2026-08-16更新：門檻已重新驗證，仍有明顯但書）')
 col_inf1, col_inf2 = st.columns(2)
 with col_inf1:
     influence_lo = synced_bounded_pct_input('下限%（0=不啟用）', 0.0, 'influence_lo_8', lo=0.0, hi=100.0)
 with col_inf2:
     influence_hi = synced_bounded_pct_input('上限%（100=不啟用）', 100.0, 'influence_hi_8', lo=0.0, hi=100.0)
 st.caption(
-    '影響力 = 分點D0淨買超金額 ÷ D0成交金額。**2026-08-15正式因子篩選(`factor_selection_20260815.md`)結果：'
-    '樣本內方向看似單調(Spearman .216, p=.009)，但holdout僅27筆、不顯著(p=.064)——尚未驗證通過，'
-    '這裡只是提供你自行篩選查閱，不是推薦門檻。**'
+    '影響力 = 分點D0淨買超金額 ÷ D0成交金額。**2026-08-15的初版因子篩選(`factor_selection_20260815.md`)'
+    '結論「未驗證通過」用的GA搜尋目標函數有系統性偏誤（傾向選到接近全母體的門檻，掩蓋真正的效果），'
+    '2026-08-16修正後重跑(`factor_selection_ga_reaudit_20260816.md`)：**influence_pct >= 7.38% 這次驗證通過**——'
+    '樣本內門檻以上平均+3.92%（n=68）vs 門檻以下+1.71%（n=77）（差距+2.21個百分點，search-adjusted p=0.026，'
+    '比富邦那頁的p<0.001弱不少、算勉強壓線過關；市值5個分位方向一致）。'
+    '**但有個明顯瑕疵**：holdout期間「門檻以下」那組只有4筆，樣本極薄，方向雖然一致(+3.01pp)但這個holdout'
+    '確認強度很弱，不建議直接當成正式部署依據，這裡只是讓你自行套用查閱。**'
 )
 
 _infl_quartile_bounds_8 = events['cz_influence_pct'].quantile([0.0, 0.25, 0.5, 0.75, 1.0]).values
