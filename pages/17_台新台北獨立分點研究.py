@@ -488,3 +488,39 @@ st.caption(
     "pattern match-rate 15.77%（全股票 2,181 筆）／38.0%（strict-lock-liquid 250 筆），"
     "只表示後續賣超型態的命中比例，不是隔日放空有實際報酬優勢的證明。"
 )
+
+st.markdown("---")
+with st.expander("📋 複製本次篩選條件與結果（JSON，供分享／調查用）", expanded=False):
+    st.caption("點右上角複製圖示即可複製整段 JSON，貼給我或其他人都能照這組參數重現同一份結果。")
+    _export_settled = view.loc[~view["censored"]].copy()
+    _export_ret = _export_settled["sim_ret"].dropna()
+    if not _export_ret.empty:
+        _export_period_return, _export_sharpe, _export_mdd, _ = portfolio_metrics(_export_settled, "sim_ret")
+        _export_results = {
+            "篩選後筆數": int(len(view)),
+            "已結算筆數": int(len(_export_ret)),
+            "期間報酬%": round(float(_export_period_return), 2) if pd.notna(_export_period_return) else None,
+            "勝率%": round(float((_export_ret > 0).mean() * 100), 2),
+            "日組合Sharpe": round(float(_export_sharpe), 2) if pd.notna(_export_sharpe) else None,
+            "最大回撤%": round(float(_export_mdd), 2) if pd.notna(_export_mdd) else None,
+        }
+    else:
+        _export_results = {"篩選後筆數": int(len(view)), "已結算筆數": 0, "備註": "目前篩選條件下無已結算資料"}
+    _export_payload = {
+        "page": "台新-台北獨立分點研究（disposal-signals pages/17，僅供個人監看，非驗證策略）",
+        "exported_at": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+        "data_source": {
+            "file": "taishin_taipei_events.csv",
+            "d0_range": [str(events["d0"].min().date()), str(events["d0"].max().date())],
+        },
+        "filters": {
+            "年份": list(sel_years),
+            "D1開盤跳空下限%": gap_buffer_lo,
+            "D1開盤跳空上限%": gap_buffer_hi,
+            "排除法人目標價V1重疊": bool(exclude_target_v1),
+            "停損%(D1漲多少出場)": stop_pct,
+            "停利%(D1跌多少出場)": tp_pct,
+        },
+        "results": _export_results,
+    }
+    st.code(json.dumps(_export_payload, ensure_ascii=False, indent=2), language="json")

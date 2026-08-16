@@ -612,4 +612,46 @@ with col2:
   `E:\\stock\\reports\\fubon_branch_events_build_20260811.md`。
 """)
 
+st.markdown('---')
+with st.expander('📋 複製本次篩選條件與結果（JSON，供分享／調查用）', expanded=False):
+    st.caption('點右上角複製圖示即可複製整段 JSON，貼給我或其他人都能照這組參數重現同一份結果。')
+    _export_settled = view[~view['censored']]
+    _export_ret = _export_settled['sim_ret'].dropna()
+    if len(_export_ret) > 0:
+        _export_sharpe, _export_pf = sharpe_pf(_export_ret)
+        _export_results = {
+            '篩選後筆數': int(len(view)),
+            '已結算筆數': int(len(_export_settled)),
+            '勝率%': round(float((_export_ret > 0).mean() * 100), 2),
+            '平均放空報酬%': round(float(_export_ret.mean()), 2),
+            '日組合Sharpe(近似)': round(float(_export_sharpe), 2) if pd.notna(_export_sharpe) else None,
+            '賺賠比': round(float(_export_pf), 2) if pd.notna(_export_pf) else None,
+            'D1鎖死率%': round(float(view['d1_frozen'].mean() * 100), 2),
+        }
+    else:
+        _export_results = {'篩選後筆數': int(len(view)), '已結算筆數': 0, '備註': '目前篩選條件下無已結算資料'}
+    _export_payload = {
+        'page': '富邦證券獨立分點研究（disposal-signals pages/16）',
+        'exported_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
+        'data_source': {
+            'file': 'fubon_branch_events.csv',
+            'd0_range': [str(events['d0'].min().date()), str(events['d0'].max().date())],
+        },
+        'filters': {
+            '年份': list(sel_years),
+            '市場別': list(sel_market),
+            '開盤跳空區間': list(sel_gap),
+            '鎖漲停連續天數(封頂4)': list(sel_streak),
+            'D0市值上限(億元)': mktcap_max,
+            '大盤2日動能模式': taiex_mode,
+            '排除法人目標價V1重疊': bool(exclude_target_v1),
+            '分點影響力下限%': influence_lo,
+            '分點影響力上限%': influence_hi,
+            '停損%(D1漲多少出場)': stop_pct,
+            '停利%(D1跌多少出場)': tp_pct,
+        },
+        'results': _export_results,
+    }
+    st.code(json.dumps(_export_payload, ensure_ascii=False, indent=2), language='json')
+
 st.caption('完整方法論見本機 memory 系統 project_隔日沖分點戰術.md，以及 E:\\stock\\reports\\ 下相關報告。')
