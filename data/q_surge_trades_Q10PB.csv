@@ -1,0 +1,2 @@
+date,variant,ticker,entry_ts,entry_price,exit_ts,exit_price,lots,reason,window_high,stop_price,ret_pct
+2026-08-11,Q10PB,2332,09:31:05,22.95,13:25:05,22.6,43,MARKET,23.8,23.85,0.0153
