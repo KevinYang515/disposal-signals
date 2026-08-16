@@ -35,6 +35,65 @@ def _parse_spark(value):
         return None
 
 
+# ── 台股跳動點(tick)工具 ──────────────────────────────────
+# 與 E:\stock\lib\broker_flow_arrow.py 的 twse_tick_size/tick_rounded_limit_up
+# 完全一致；逐檔精確步進邏輯沿用 E:\stock\scripts\run_prelock_tick_stop_20260812.py
+# 的 one_legal_tick_below，避免用「N*單一tick」在跨price band時算錯。
+def twse_tick_size(price):
+    price = np.asarray(price, dtype=float)
+    return np.select(
+        [price < 10.0, price < 50.0, price < 100.0, price < 500.0, price < 1000.0],
+        [0.01, 0.05, 0.1, 0.5, 1.0],
+        default=5.0,
+    )
+
+
+def tick_rounded_limit_up(previous_close):
+    raw_limit = np.asarray(previous_close, dtype=float) * 1.10
+    ticks = twse_tick_size(raw_limit)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.floor(raw_limit / ticks) * ticks
+
+
+def tick_rounded_limit_down(previous_close):
+    raw_limit = np.asarray(previous_close, dtype=float) * 0.90
+    ticks = twse_tick_size(raw_limit)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.floor(raw_limit / ticks) * ticks
+
+
+def _one_legal_tick_below(price):
+    destination_side = float(np.nextafter(price, -np.inf))
+    step = float(twse_tick_size(np.asarray([destination_side]))[0])
+    return round(price - step, 2)
+
+
+def _one_legal_tick_above(price):
+    destination_side = float(np.nextafter(price, np.inf))
+    step = float(twse_tick_size(np.asarray([destination_side]))[0])
+    return round(price + step, 2)
+
+
+def n_legal_ticks_below(limit_price, n):
+    if n <= 0 or not np.isfinite(limit_price):
+        return np.nan
+    current = round(float(limit_price), 2)
+    for _ in range(int(n)):
+        current = _one_legal_tick_below(current)
+        if current <= 0:
+            return np.nan
+    return current
+
+
+def n_legal_ticks_above(limit_price, n):
+    if n <= 0 or not np.isfinite(limit_price):
+        return np.nan
+    current = round(float(limit_price), 2)
+    for _ in range(int(n)):
+        current = _one_legal_tick_above(current)
+    return current
+
+
 def synced_pct_input(label, default, key):
     """Slider + number_input synced via session_state for mobile-friendly entry."""
     slider_key, num_key = f"{key}_slider", f"{key}_num"
@@ -259,11 +318,32 @@ st.caption(
     "同日兩者都觸及時保守採停損優先。D1 無法成交的事件視為截尾，不納入 KPI。"
     "**這裡只提供情境查閱，台新-台北沒有任何已驗證的停損／停利建議；預設 0%／0% 是單純持有到收盤。**"
 )
-col_s1, col_s2 = st.columns(2)
-with col_s1:
-    stop_pct = synced_pct_input("停損：D1 股價比 D0 收盤漲多少% 出場（0=不停損）", 0.0, "stop_17")
-with col_s2:
-    tp_pct = synced_pct_input("停利：D1 股價比 D0 收盤跌多少% 出場（0=不停利）", 0.0, "tp_17")
+stop_tp_mode = st.radio(
+    "停損／停利計算方式", ["百分比(%)", "距漲跌停 Ticks"], key="stop_tp_mode_17", horizontal=True,
+    help="Ticks模式：以D0收盤價推算出的D1理論漲停／跌停價為基準，往回退N個「合法跳動點(tick)」當出場價。"
+         "台股tick級距隨價格區間變動（10元以下0.01、50元以下0.05、100元以下0.1、500元以下0.5、"
+         "1000元以下1、以上5），這裡用逐檔精確步進計算（會正確處理跨price band的情況），不是簡化的N×單一tick。",
+)
+if stop_tp_mode == "百分比(%)":
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        stop_pct = synced_pct_input("停損：D1 股價比 D0 收盤漲多少% 出場（0=不停損）", 0.0, "stop_17")
+    with col_s2:
+        tp_pct = synced_pct_input("停利：D1 股價比 D0 收盤跌多少% 出場（0=不停利）", 0.0, "tp_17")
+    stop_n_ticks, tp_n_ticks = 0, 0
+else:
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        stop_n_ticks = st.number_input("停損：距D1理論漲停幾個tick出場（0=不停損）", min_value=0, max_value=50, value=0, step=1, key="stop_ticks_17")
+    with col_t2:
+        tp_n_ticks = st.number_input("停利：距D1理論跌停幾個tick出場（0=不停利）", min_value=0, max_value=50, value=0, step=1, key="tp_ticks_17")
+    stop_pct, tp_pct = 0.0, 0.0
+    st.caption(
+        "⚠️ 探索性工具，尚未做樣本外驗證。本專案先前的`prelock_tick_stop_20260812.md`研究是分析"
+        "「盤中要退幾個tick，停損才有機會在真的鎖死之前掛得進去」（結論：20 ticks），回答的是"
+        "**可執行性**問題；這裡是用D1當天最高/最低價回測不同tick距離的**歷史報酬**，跟旁邊%版本的"
+        "方法論一致，但目前沒有驗證過的建議值，請自行實驗查閱。"
+    )
 
 d1_open = view["d1_open"].to_numpy(dtype=float)
 d0_close = view["d0_close"].to_numpy(dtype=float)
@@ -272,10 +352,18 @@ d1_low = view["d1_low"].to_numpy(dtype=float)
 d1_close = view["d1_close"].to_numpy(dtype=float)
 base_ret = view["short_ret_open_to_close_pct"].to_numpy(dtype=float)
 with np.errstate(invalid="ignore"):
-    stop_price = d0_close * (1.0 + stop_pct / 100.0)
-    tp_price = d0_close * (1.0 - tp_pct / 100.0)
-    hit_stop = (stop_pct > 0) & (d1_high >= stop_price)
-    hit_tp = (tp_pct > 0) & (d1_low <= tp_price)
+    if stop_tp_mode == "距漲跌停 Ticks":
+        limit_up_arr = tick_rounded_limit_up(d0_close)
+        limit_down_arr = tick_rounded_limit_down(d0_close)
+        stop_price = np.array([n_legal_ticks_below(lu, stop_n_ticks) for lu in limit_up_arr])
+        tp_price = np.array([n_legal_ticks_above(ld, tp_n_ticks) for ld in limit_down_arr])
+        hit_stop = (stop_n_ticks > 0) & np.isfinite(stop_price) & (d1_high >= stop_price)
+        hit_tp = (tp_n_ticks > 0) & np.isfinite(tp_price) & (d1_low <= tp_price)
+    else:
+        stop_price = d0_close * (1.0 + stop_pct / 100.0)
+        tp_price = d0_close * (1.0 - tp_pct / 100.0)
+        hit_stop = (stop_pct > 0) & (d1_high >= stop_price)
+        hit_tp = (tp_pct > 0) & (d1_low <= tp_price)
     exit_price = np.where(hit_tp, tp_price, d1_close)
     exit_price = np.where(hit_stop, stop_price, exit_price)
     sim_ret = (d1_open - exit_price) / d1_open * 100.0
@@ -300,8 +388,10 @@ else:
         "期間報酬／Sharpe／最大回撤：同一 D1 的多筆事件先等權，再依 D1 複利；"
         "不含交易成本、滑價或實際借券額度。這些是目前短歷史的描述數字，不是推薦依據。"
     )
-    if stop_pct > 0 or tp_pct > 0:
-        st.caption(f"⚙️ 以上 KPI 已套用停損 {stop_pct:.1f}%／停利 {tp_pct:.1f}% 的情境設定。")
+    if stop_pct > 0 or tp_pct > 0 or stop_n_ticks > 0 or tp_n_ticks > 0:
+        _kpi_note_17 = (f"停損距漲停{stop_n_ticks}tick／停利距跌停{tp_n_ticks}tick" if stop_tp_mode == "距漲跌停 Ticks"
+                        else f"停損 {stop_pct:.1f}%／停利 {tp_pct:.1f}%")
+        st.caption(f"⚙️ 以上 KPI 已套用{_kpi_note_17} 的情境設定。")
     if gap_buffer_lo > -10.0 or gap_buffer_hi < 10.0:
         st.caption(f"⚙️ 以上 KPI 已套用 D1 開盤跳空篩選：漲幅需落在 {gap_buffer_lo:+.1f}%～{gap_buffer_hi:+.1f}% 之間，否則已完全排除。")
 
@@ -518,8 +608,11 @@ with st.expander("📋 複製本次篩選條件與結果（JSON，供分享／�
             "D1開盤跳空下限%": gap_buffer_lo,
             "D1開盤跳空上限%": gap_buffer_hi,
             "排除法人目標價V1重疊": bool(exclude_target_v1),
+            "停損停利計算方式": stop_tp_mode,
             "停損%(D1漲多少出場)": stop_pct,
             "停利%(D1跌多少出場)": tp_pct,
+            "停損距漲停tick數": stop_n_ticks,
+            "停利距跌停tick數": tp_n_ticks,
         },
         "results": _export_results,
     }
