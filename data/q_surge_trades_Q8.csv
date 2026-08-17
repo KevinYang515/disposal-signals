@@ -1,0 +1,3 @@
+date,variant,ticker,entry_ts,entry_price,exit_ts,exit_price,lots,reason,window_high,stop_price,ret_pct
+2026-07-31,Q8,2332,09:31:06,21.6,13:25:07,21.3,46,MARKET,22.85,22.9,0.0139
+2026-08-11,Q8,2332,09:31:07,22.95,13:25:06,22.6,43,MARKET,23.8,23.85,0.0153
