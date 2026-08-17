@@ -595,27 +595,28 @@ def build_tail20(df, price, hist20):
     hist = hist.reindex(columns=HIST_T20_COLS)
     return sig, hist
 
+SIGNALS_COLS = ['代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)', '起始日', '今D幾',
+                '出關日', 'D1%', 'D2%', 'D3%', 'D4%', 'D5%', 'D6%', 'D7%', 'D8%', '今日漲跌',
+                '評級', '買進訊號', '當前累積(%)', '目前損益(%)', '觸發價', '距觸發(%)']
+
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
 def build_signals(df, price, open_p, whale_dfs):
     idx = price.index
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
-    # 2026-08-10 處置新制上路：撮合統一改2分鐘、期間縮為5(或7)個營業日，
-    # 舊制20分鐘的樣本沒有新制對應數據，機制本身也變了（見PLAYBOOK）。
-    # 新制事件先照樣顯示在今日訊號，但評級改標「新制觀察中」，不套用舊制已驗證的信心度。
+    # 2026-08-10 處置新制上路（撮合統一改2分鐘、期間縮為5或7個營業日）的事件不進今日訊號，
+    # 避免影響這個舊制頁面既有的評級信心度；新制觀察改到獨立的「處置新制觀察」頁面
+    # （build_newregime_signals()，pages/18_處置新制觀察.py），兩邊資料互不影響。
     active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
-                (df['處置類型'].isin(['20分鐘', '2分鐘'])) &
+                (df['處置類型'] == '20分鐘') &
                 (df['處置起始日'] >= cutoff)].copy()
 
     rows = []
     for _, row in active.iterrows():
         sid = row['股票代號']
         sd  = row['處置起始日']
-        is_new_regime = row['處置類型'] == '2分鐘'
-        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
-        # 先用5天近似（多數案例），僅影響「今D幾」/「出關日」等顯示，不影響評級本身。
-        ex  = exit_date(idx, sd, t1_offset=5) if is_new_regime else exit_date(idx, sd)
+        ex  = exit_date(idx, sd)
 
         # 已出關（今天超過 T+1）就跳過
         if pd.notna(ex) and today > ex:
@@ -628,7 +629,6 @@ def build_signals(df, price, open_p, whale_dfs):
             '名稱':   row['股票名稱'],
             '規模':   '大' if '大型' in row['市值規模'] else ('中' if '中型' in row['市值規模'] else '小'),
             '處置原因': row.get('處置原因', ''),
-            '處置次別': row.get('處置次別', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
             '起始日':  sd.strftime('%m/%d'),
@@ -641,16 +641,8 @@ def build_signals(df, price, open_p, whale_dfs):
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
-        if is_new_regime:
-            # 收款門檻文字逐字比對，第一次=舊制5分鐘同款、第二次+=舊制20分鐘同款（僅撮合頻率變快），
-            # 標示對照組方便之後比較，但仍不套用舊制信心度。
-            if row.get('處置次別') == '第一次':
-                d['評級'] = '🆕 新制觀察中(第一次,對照舊5分)'
-            else:
-                d['評級'] = '🆕 新制觀察中(第二次+,對照舊20分)'
-        else:
-            d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
-                               **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
+                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
 
         is_changduo = row.get('處置原因') == '漲多處置'
 
@@ -702,7 +694,115 @@ def build_signals(df, price, open_p, whale_dfs):
 
         rows.append(d)
 
-    return pd.DataFrame(rows).sort_values('起始日', ascending=False)
+    sig = pd.DataFrame(rows)
+    if len(sig):
+        sig = sig.sort_values('起始日', ascending=False)
+    # 0筆時也保留欄位標頭：舊制上路以來已經很常見（新事件全變2分鐘，20分鐘可能連續多天0筆），
+    # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
+    return sig.reindex(columns=SIGNALS_COLS)
+
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '買進訊號', '代號', '名稱', '規模', '處置原因',
+                      '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)',
+                      '今日漲跌', '觸發價', '距觸發(%)',
+                      'D1%', 'D2%', 'D3%', 'D4%', 'D5%', 'D6%', 'D7%', 'D8%']
+
+# ── 2026-08-10 處置新制（2分鐘撮合）今日訊號 ──────────────────────────────
+# 完全獨立於 build_signals()（舊制20分鐘頁），彼此不共用輸出檔，不影響舊制頁面。
+# 撮合改2分鐘、期間縮為5(或7)個營業日，尚無完整出關樣本可驗證，評級沿用grade()
+# 只是描述性分類，頁面本身要清楚標示「未驗證」，不是舊制頁面同等信心度的訊號。
+def build_newregime_signals(df, price, open_p, whale_dfs):
+    idx = price.index
+    today = tw_today()
+    cutoff = today - pd.Timedelta(days=20)
+
+    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+                (df['處置類型'] == '2分鐘') &
+                (df['處置起始日'] >= cutoff)].copy()
+
+    rows = []
+    for _, row in active.iterrows():
+        sid = row['股票代號']
+        sd  = row['處置起始日']
+        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
+        # 先用5天近似（多數案例），只影響「今D幾」/「出關日」等顯示。
+        ex  = exit_date(idx, sd, t1_offset=5)
+
+        if pd.notna(ex) and today > ex:
+            continue
+
+        nd = trading_day_n(idx, sd)
+
+        d = {
+            '處置次別': row.get('處置次別', ''),
+            '代號':   sid,
+            '名稱':   row['股票名稱'],
+            '規模':   '大' if '大型' in row['市值規模'] else ('中' if '中型' in row['市值規模'] else '小'),
+            '處置原因': row.get('處置原因', ''),
+            '近20日漲幅': prerun20(price, idx, sid, sd),
+            '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
+            '起始日':  sd.strftime('%m/%d'),
+            '今D幾':   f'D{nd}' if sd <= today else '未開始',
+            '出關日':  ex.strftime('%m/%d') if pd.notna(ex) else '?',
+        }
+        for n in range(1, 9):
+            v = cumret(price, idx, sid, sd, n)
+            d[f'D{n}%'] = v
+        d['今日漲跌'] = today_change(price, sid)
+        pr = d['近20日漲幅']
+        wh = d['大戶(%)']
+        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
+                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+
+        is_changduo = row.get('處置原因') == '漲多處置'
+
+        entry_n_sig = None
+        if is_changduo:
+            for n in range(3, 6):
+                if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
+                    entry_n_sig = n
+                    break
+        d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
+
+        cur_cum = np.nan
+        for n in range(nd, 0, -1):
+            v = d.get(f'D{n}%')
+            if pd.notna(v):
+                cur_cum = v
+                break
+
+        if entry_n_sig and pd.notna(cur_cum):
+            entry_cum_v = d.get(f'D{entry_n_sig}%', np.nan)
+            if pd.notna(entry_cum_v):
+                entry_factor = 1 + entry_cum_v / 100
+                cur_factor   = 1 + cur_cum / 100
+                d['目前損益(%)'] = round((cur_factor / entry_factor - 1) * 100, 2) if entry_factor > 0 else np.nan
+            else:
+                d['目前損益(%)'] = np.nan
+        else:
+            d['目前損益(%)'] = np.nan
+
+        if is_changduo:
+            pos_v = idx.searchsorted(sd)
+            p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
+            ser_v = price[sid].dropna()
+            cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
+            if pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
+                d['觸發價']    = round(p0_v * 0.95, 2)
+                d['距觸發(%)'] = round((d['觸發價'] / cur_p - 1) * 100, 2)
+            else:
+                d['觸發價']    = np.nan
+                d['距觸發(%)'] = np.nan
+        else:
+            d['觸發價']    = np.nan
+            d['距觸發(%)'] = np.nan
+
+        rows.append(d)
+
+    sig = pd.DataFrame(rows)
+    if len(sig):
+        sig = sig.sort_values(['處置次別', '起始日'], ascending=[True, False])
+    # 0筆時也保留欄位標頭，避免 to_csv 寫出完全空白檔案讓 Streamlit 端 pd.read_csv 掛掉
+    return sig.reindex(columns=NEWREGIME_SIG_COLS)
 
 # ── 產生回測網格 ─────────────────────────────────────────────────────────
 def build_backtest_grid(df, price, open_p):
@@ -904,6 +1004,118 @@ def build_history(df, price, open_p, whale_dfs):
 
     return hist, cmp_stats
 
+NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
+                       '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '最深日',
+                       '期間最深(%)', '出關報酬(%)', '結果']
+
+# ── 2026-08-10 處置新制（2分鐘撮合）歷史回測紀錄 ──────────────────────────
+# 完全獨立於 build_history()（舊制頁），寫入獨立檔案不影響舊制 history.csv。
+# 新舊制期間長度不同（新制5或7個營業日 vs 舊制5分鐘/20分鐘各自的天數），不可合併統計，
+# 兩者的t1_offset/進場窗口是各自獨立近似，見函式內註解。
+def build_newregime_history(df, price, open_p, whale_dfs):
+    idx = price.index
+    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+              (df['處置類型'] == '2分鐘') &
+              (df['處置原因'] == '漲多處置')].copy()
+
+    # 新制第一次/第二次+ 撮合頻率相同(2分鐘)，處置期間都是5(或7)個營業日，
+    # 沒有欄位可精確分辨5或7天，統一用t1_offset=5近似（多數案例），進場窗口統一D3~D8。
+    T1_OFFSET = 5
+    ENTRY_RNG = range(3, T1_OFFSET + 1)  # D3~D5：進場窗口不能超過T1_OFFSET，否則會檢查到出關後的一般交易日
+
+    def compute_row(row):
+        sid = row['股票代號']
+        sd  = row['處置起始日']
+        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan)
+        if sid not in price.columns:
+            return pd.Series(out)
+        pos = idx.searchsorted(sd)
+        if pos < 1 or pos + 2 >= len(idx):
+            return pd.Series(out)
+        p0 = price[sid].iloc[pos - 1]
+        if pd.isna(p0) or p0 <= 0:
+            return pd.Series(out)
+
+        t1_open = (open_p[sid].iloc[pos + T1_OFFSET]
+                   if sid in open_p.columns and pos + T1_OFFSET < len(open_p) else np.nan)
+        has_exit = pd.notna(t1_open) and t1_open > 0
+
+        all_rets = {}
+        for n in range(1, T1_OFFSET + 1):
+            if pos + n - 1 < len(price):
+                pn = price[sid].iloc[pos + n - 1]
+                if pd.notna(pn) and pn > 0:
+                    all_rets[n] = round((pn / p0 - 1) * 100, 2)
+
+        dn_rets = {n: all_rets[n] for n in ENTRY_RNG if n in all_rets}
+        if not dn_rets:
+            return pd.Series(out)
+
+        deepest = min(dn_rets, key=lambda n: dn_rets[n])
+        out['min_dn']    = round(dn_rets[deepest], 2)
+        out['deepest_n'] = deepest
+
+        for n in sorted(ENTRY_RNG):
+            if n in dn_rets and dn_rets[n] < -5:
+                out['entry_n']   = n
+                out['entry_cum'] = round(dn_rets[n], 2)
+                if has_exit:
+                    pn = price[sid].iloc[pos + n - 1]
+                    out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
+                break
+
+        return pd.Series(out)
+
+    if pool.empty:
+        return pd.DataFrame(columns=NEWREGIME_HIST_COLS), []
+
+    stats = pool.apply(compute_row, axis=1)
+    pool  = pd.concat([pool, stats], axis=1)
+
+    def dn_group(v):
+        if pd.isna(v):  return 'Dn無資料'
+        if v < -5:      return 'Dn < -5%'
+        if v < 0:       return 'Dn -5%~0%'
+        return 'Dn ≥ 0%'
+
+    pool['Dn組別'] = pool['min_dn'].apply(dn_group)
+    pool['_exit_date'] = pool.apply(lambda r: exit_date(idx, r['處置起始日'], t1_offset=T1_OFFSET), axis=1)
+
+    out = pd.DataFrame({
+        '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
+        '出關日':        pool['_exit_date'].apply(lambda d: d.strftime('%Y-%m-%d') if pd.notna(d) else '?'),
+        '處置次別':      pool.get('處置次別', ''),
+        '代號':          pool['股票代號'],
+        '名稱':          pool['股票名稱'],
+        '規模':          pool['市值規模'].apply(lambda v: '大' if '大型' in str(v) else ('中' if '中型' in str(v) else '小')),
+        'Dn組別':        pool['Dn組別'],
+        '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
+        '大戶(%)':       pool.apply(lambda r: whale_delta(whale_dfs, r['股票代號'], r['處置起始日'], price), axis=1),
+        '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '買進時累積(%)': pool['entry_cum'],
+        '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '期間最深(%)':   pool['min_dn'],
+        '出關報酬(%)':   pool['actual_ret'],
+        '結果':          pool['actual_ret'].apply(
+            lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
+                      else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
+    })
+    hist = out.sort_values('起始日', ascending=False).reset_index(drop=True)
+
+    def grp_stats(sub, label):
+        s = sub['actual_ret'].dropna()
+        if len(s) == 0: return None
+        return {'label': label, 'n': len(s), 'wr': round((s > 0).mean() * 100, 2), 'ret': round(s.mean(), 2)}
+
+    cmp_stats = []
+    for label_prefix, sub_pool in [('第一次', pool[pool['處置次別'] == '第一次']),
+                                    ('第二次+', pool[pool['處置次別'] == '第二次+'])]:
+        cmp_stats.append(grp_stats(sub_pool[sub_pool['min_dn'] < -5], f'{label_prefix}：Dn最深 < -5%（進場）'))
+        cmp_stats.append(grp_stats(sub_pool, f'{label_prefix}：全部漲多（不篩選Dn）'))
+    cmp_stats = [x for x in cmp_stats if x]
+
+    return hist.reindex(columns=NEWREGIME_HIST_COLS), cmp_stats
+
 # ── main ────────────────────────────────────────────────────────────────
 def main():
     print('刷新 finlab 價格資料...')
@@ -941,11 +1153,19 @@ def main():
     hist_t.to_csv(f'{OUT_DIR}/history_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → signals_tail20.csv ({len(sig_t)} 筆) / history_tail20.csv ({len(hist_t)} 筆)')
 
+    print('產生處置新制(2分鐘撮合)觀察資料...')
+    sig_nr = build_newregime_signals(sig_df, price, open_p, whale_dfs)
+    sig_nr.to_csv(f'{OUT_DIR}/newregime_signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    hist_nr, cmp_stats_nr = build_newregime_history(df, price, open_p, whale_dfs)
+    hist_nr.to_csv(f'{OUT_DIR}/newregime_history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
+    print(f'  → newregime_signals.csv ({len(sig_nr)} 筆) / newregime_history.csv ({len(hist_nr)} 筆)')
+
     # 更新時間
     meta = {
         'updated_at': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M'),
         'data_date': price.index[-1].strftime('%Y-%m-%d'),
         'cmp_stats': cmp_stats,
+        'cmp_stats_newregime': cmp_stats_nr,
     }
     with open(f'{OUT_DIR}/meta.json', 'w') as f:
         json.dump(meta, f)
