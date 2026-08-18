@@ -66,6 +66,9 @@ st.warning(
 
 sig = safe_read_csv(f'{DATA_DIR}/newregime_signals.csv', dtype={'代號': str})
 hist = safe_read_csv(f'{DATA_DIR}/newregime_history.csv', dtype={'代號': str})
+old_hist = safe_read_csv(f'{DATA_DIR}/history.csv', dtype={'代號': str})  # 舊制基準，用來對照新制是否走勢相似
+
+OLD_TYPE_MAP = {'第一次': '5分鐘', '第二次+': '20分鐘'}
 
 st.caption(
     '分組依據：新制下第一次與第二次(含)以上處置的「收款門檻」文字跟舊制5分鐘(第一次)/20分鐘(第二次+)逐字相同，'
@@ -170,6 +173,45 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                         )
 
         st.divider()
+        st.subheader(f'⚖️ 策略對照：新制 vs 舊制基準（{key} vs 舊制{OLD_TYPE_MAP[key]}）')
+        st.caption('用同樣的「D3~D5(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則，比較新舊制表現是否相似——這是驗證橡皮筋機制在新制下是否還成立的核心對照。')
+
+        old_pool = old_hist[old_hist['處置類型'] == OLD_TYPE_MAP[key]] if len(old_hist) else pd.DataFrame()
+        old_triggered = old_pool[old_pool['買進日'] != '-'] if len(old_pool) else pd.DataFrame()
+        new_triggered = sub_hist[(sub_hist['出關報酬(%)'].notna()) & (sub_hist['買進日'] != '-')] if len(sub_hist) else pd.DataFrame()
+
+        comp_rows = []
+        if len(old_triggered):
+            r = old_triggered['出關報酬(%)']
+            comp_rows.append({'版本': f'舊制{OLD_TYPE_MAP[key]}（歷史全樣本）', '已出關且觸發筆數': len(r),
+                               '勝率': f'{(r > 0).mean()*100:.1f}%', '期望報酬': f'{r.mean():+.2f}%'})
+        if len(new_triggered):
+            r = new_triggered['出關報酬(%)']
+            comp_rows.append({'版本': f'新制{key}（累積至今）', '已出關且觸發筆數': len(r),
+                               '勝率': f'{(r > 0).mean()*100:.1f}%', '期望報酬': f'{r.mean():+.2f}%'})
+        else:
+            comp_rows.append({'版本': f'新制{key}（累積至今）', '已出關且觸發筆數': 0,
+                               '勝率': '-', '期望報酬': '尚無已出關且觸發的樣本'})
+        st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+
+        # ── D1~D5 平均走勢對照（用「今日訊號」裡進行中的事件，不用等出關，樣本比完整出關對照多）──
+        new_path_src = sub_sig  # 這個tab目前進行中(尚未出關)的事件，已經是 sig[處置次別==key]
+        if len(new_path_src) and 'D1%' in new_path_src.columns and len(old_pool):
+            path_rows = []
+            for n in range(1, 6):
+                new_v = new_path_src[f'D{n}%'].mean() if f'D{n}%' in new_path_src.columns else np.nan
+                old_v = old_pool[f'D{n}累積(%)'].mean() if f'D{n}累積(%)' in old_pool.columns else np.nan
+                path_rows.append({'天數': f'D{n}', f'新制{key}平均累積(進行中,n={len(new_path_src)})': f'{new_v:+.2f}%' if pd.notna(new_v) else '-',
+                                   f'舊制{OLD_TYPE_MAP[key]}平均累積(歷史全樣本,n={len(old_pool)})': f'{old_v:+.2f}%' if pd.notna(old_v) else '-'})
+            st.dataframe(pd.DataFrame(path_rows), use_container_width=True, hide_index=True)
+            st.caption(
+                '新制那欄只算「今日訊號」裡目前還在進行中(尚未出關)的事件，樣本會隨事件陸續出關而變動，不是固定母體；'
+                '已出關的完整結果請看下面「累積至今結果」。這裡純粹是看早期走勢形狀是否相似，不是嚴謹的統計對照。'
+            )
+        else:
+            st.caption('資料不足，暫時無法比較D1~D5平均走勢。')
+
+        st.divider()
         st.subheader(f'📜 累積至今結果（{key}，已完整出關者）')
         if sub_hist.empty:
             st.info('目前還沒有已完整出關的樣本。')
@@ -202,7 +244,7 @@ st.divider()
 with st.expander('📖 本頁的已知近似與侷限（務必先讀再解讀數字）'):
     st.markdown("""
 - **5天 vs 7天不分**：新制處置期間一般是5個營業日，若同時因當沖比重過高遭加重處置則是7個營業日；本頁資料沒有欄位可以精確分辨，統一用5天近似，可能讓少數7天案例的「今D幾」「出關日」顯示提前。
-- **進場窗口沿用舊制D3~D8**：這是直接套用舊制邏輯的假設，新制期間縮短後這個窗口是否還合理，尚未驗證。
+- **進場窗口改為D3~D5**（不是舊制20分鐘的D3~D8）：因為新制期間本身只有5(或7)天近似，D6~D8多半已經是出關後的一般交易日，不應算進處置期間訊號；這個窗口縮短後是否還合理，尚未驗證。
 - **評級只是描述性分類**：套用跟舊制頁面相同的規則(grade())來標「✅主力訊號/🟡觀察中」等，純粹方便閱讀，**不代表這些評級在新制下已被證實有效**。
 - **樣本數極少**：新制上路才幾天，已完整出關的樣本數只有個位數到十幾筆，任何統計數字都可能只是巧合，需要更長時間累積才能判斷。
 - 完整規則變更細節與研究進度，見 PLAYBOOK.md「研究 Roadmap」章節。
