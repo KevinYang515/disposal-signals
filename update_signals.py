@@ -597,7 +597,7 @@ def build_tail20(df, price, hist20):
 
 SIGNALS_COLS = ['代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)', '起始日', '今D幾',
                 '出關日', 'D1%', 'D2%', 'D3%', 'D4%', 'D5%', 'D6%', 'D7%', 'D8%', '今日漲跌',
-                '評級', '買進訊號', '當前累積(%)', '目前損益(%)', '觸發價', '距觸發(%)']
+                '評級', '處置次別', '買進訊號', '當前累積(%)', '目前損益(%)', '觸發價', '距觸發(%)']
 
 # ── 產生訊號表 ───────────────────────────────────────────────────────────
 def build_signals(df, price, open_p, whale_dfs):
@@ -605,18 +605,21 @@ def build_signals(df, price, open_p, whale_dfs):
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
-    # 2026-08-10 處置新制上路（撮合統一改2分鐘、期間縮為5或7個營業日）的事件不進今日訊號，
-    # 避免影響這個舊制頁面既有的評級信心度；新制觀察改到獨立的「處置新制觀察」頁面
-    # （build_newregime_signals()，pages/18_處置新制觀察.py），兩邊資料互不影響。
+    # 2026-08-10 處置新制上路（撮合統一改2分鐘、期間縮為5或7個營業日）：Kevin 2026-08-18
+    # 要求本頁繼續混合顯示新制事件（不要空白），評級標「🆕新制觀察中」不套用舊制信心度。
+    # 完整拆第一次/第二次+對照的獨立統計頁另見 pages/18_處置新制觀察.py。
     active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
-                (df['處置類型'] == '20分鐘') &
+                (df['處置類型'].isin(['20分鐘', '2分鐘'])) &
                 (df['處置起始日'] >= cutoff)].copy()
 
     rows = []
     for _, row in active.iterrows():
         sid = row['股票代號']
         sd  = row['處置起始日']
-        ex  = exit_date(idx, sd)
+        is_new_regime = row['處置類型'] == '2分鐘'
+        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
+        # 先用5天近似（多數案例），僅影響「今D幾」/「出關日」等顯示，不影響評級本身。
+        ex  = exit_date(idx, sd, t1_offset=5) if is_new_regime else exit_date(idx, sd)
 
         # 已出關（今天超過 T+1）就跳過
         if pd.notna(ex) and today > ex:
@@ -629,6 +632,7 @@ def build_signals(df, price, open_p, whale_dfs):
             '名稱':   row['股票名稱'],
             '規模':   '大' if '大型' in row['市值規模'] else ('中' if '中型' in row['市值規模'] else '小'),
             '處置原因': row.get('處置原因', ''),
+            '處置次別': row.get('處置次別', ''),
             '近20日漲幅': prerun20(price, idx, sid, sd),
             '大戶(%)': whale_delta(whale_dfs, sid, sd, price),
             '起始日':  sd.strftime('%m/%d'),
@@ -641,15 +645,24 @@ def build_signals(df, price, open_p, whale_dfs):
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
-        d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
-                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+        if is_new_regime:
+            # 收款門檻文字逐字比對，第一次=舊制5分鐘同款、第二次+=舊制20分鐘同款（僅撮合頻率變快），
+            # 標示對照組方便之後比較，但仍不套用舊制信心度。
+            if row.get('處置次別') == '第一次':
+                d['評級'] = '🆕 新制觀察中(第一次,對照舊5分)'
+            else:
+                d['評級'] = '🆕 新制觀察中(第二次+,對照舊20分)'
+        else:
+            d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
+                               **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
 
         is_changduo = row.get('處置原因') == '漲多處置'
 
-        # ── 買進訊號：首個 D3~D8 < -5% 的天（僅漲多處置）──
+        # ── 買進訊號：首個 Dn < -5% 的天（僅漲多處置）；新制期間短，窗口只到D5近似 ──
         entry_n_sig = None
+        entry_upper = 6 if is_new_regime else 9
         if is_changduo:
-            for n in range(3, 9):
+            for n in range(3, entry_upper):
                 if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
                     entry_n_sig = n
                     break
