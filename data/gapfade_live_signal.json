@@ -1,9 +1,60 @@
 {
-  "date": "2026-08-19",
-  "generated_at": "2026-08-19T11:53:19.719665",
+  "date": "2026-08-20",
+  "generated_at": "2026-08-20T09:06:49.823499",
   "n_candidates_pool": 59,
-  "n_signal": 0,
+  "n_signal": 32,
   "min_candidates_required": 7,
-  "triggered": false,
-  "picks": []
+  "triggered": true,
+  "picks": [
+    {
+      "code": "7714",
+      "gap_pct": 9.15,
+      "open_px": 167.0,
+      "prev_close": 153.0,
+      "mktcap_e8": 32.1,
+      "industry": "數位雲端",
+      "pred_score": 2.3918,
+      "weight": 0.5453
+    },
+    {
+      "code": "2302",
+      "gap_pct": 7.23,
+      "open_px": 46.0,
+      "prev_close": 42.9,
+      "mktcap_e8": 71.3,
+      "industry": "半導體業",
+      "pred_score": 2.0522,
+      "weight": 0.2171
+    },
+    {
+      "code": "3430",
+      "gap_pct": 8.22,
+      "open_px": 118.5,
+      "prev_close": 109.5,
+      "mktcap_e8": 36.9,
+      "industry": "化學工業",
+      "pred_score": 1.9657,
+      "weight": 0.1336
+    },
+    {
+      "code": "2342",
+      "gap_pct": 8.12,
+      "open_px": 39.3,
+      "prev_close": 36.35,
+      "mktcap_e8": 57.2,
+      "industry": "半導體業",
+      "pred_score": 1.9251,
+      "weight": 0.0944
+    },
+    {
+      "code": "6530",
+      "gap_pct": 7.47,
+      "open_px": 80.6,
+      "prev_close": 75.0,
+      "mktcap_e8": 25.3,
+      "industry": "通信網路業",
+      "pred_score": 1.8375,
+      "weight": 0.0097
+    }
+  ]
 }
