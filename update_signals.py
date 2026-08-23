@@ -842,24 +842,29 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
         ser_v = price[sid].dropna()
         cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
+        # D1(sd)當天若還沒有真實收盤價可用（資料源尚未公布今天的資料），最新可得價格
+        # 就只會停在D0收盤——這時候「距觸發(%)」用cur_p算出來會巧合等於0.00%，
+        # 看起來像「剛好卡在門檻上」，其實只是「還沒有今天的真實資料」，必須分開處理，
+        # 不能顯示這個誤導的假精確數字。
+        has_current_data = len(ser_v) > 0 and ser_v.index[-1] >= sd
         if is_changduo and not is_first:
             trigger = p0_v * 0.95 if pd.notna(p0_v) and p0_v > 0 else np.nan
         elif is_changduo and is_first:
             trigger = p0_v if pd.notna(p0_v) and p0_v > 0 else np.nan
         else:
             trigger = np.nan
-        if pd.notna(trigger) and pd.notna(cur_p) and cur_p > 0:
-            d['觸發價']    = round(trigger, 2)
+        d['觸發價'] = round(trigger, 2) if pd.notna(trigger) else np.nan
+        if pd.notna(trigger) and has_current_data and pd.notna(cur_p) and cur_p > 0:
             d['距觸發(%)'] = round((trigger / cur_p - 1) * 100, 2)
         else:
-            d['觸發價']    = np.nan
             d['距觸發(%)'] = np.nan
 
         # alt觸發價：僅第一次才有值，若改用第二次+的-5%回檔規則，門檻價會是D0收盤*0.95
-        if is_changduo and is_first and pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
+        if is_changduo and is_first and pd.notna(p0_v) and p0_v > 0:
             trigger_alt = p0_v * 0.95
-            d['觸發價(-5%版)']    = round(trigger_alt, 2)
-            d['距觸發(-5%版)(%)'] = round((trigger_alt / cur_p - 1) * 100, 2)
+            d['觸發價(-5%版)'] = round(trigger_alt, 2)
+            d['距觸發(-5%版)(%)'] = (round((trigger_alt / cur_p - 1) * 100, 2)
+                                    if has_current_data and pd.notna(cur_p) and cur_p > 0 else np.nan)
         else:
             d['觸發價(-5%版)']    = np.nan
             d['距觸發(-5%版)(%)'] = np.nan

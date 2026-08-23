@@ -198,10 +198,22 @@ def compute_row(r, close, open_p, inst_f, inst_t, volume, basic_shares_map):
     cap = classify_cap(sid, sd, close, basic_shares_map)
 
     # ── 處置原因（近20日漲幅：>= 0% 為漲多，< 0% 為跌深）
+    # 2026-08-24修正：台股正常漲跌停約±10%，20天窗口內若出現單日變動遠超此範圍
+    # （減資恢復買賣參考價重設、除權息基準價調整等未還原的價格斷層），會把「漲多/跌深」
+    # 判斷完全拉偏（例如5314世紀*：8/14單日收盤從61.30跳到16.20，-73.6%，把20天漲幅
+    # 拖成-53.65%誤判跌深，但那不是真實市場交易造成的跌幅）。偵測到就標記異常，不套用
+    # 漲多/跌深分類，避免下游策略誤把資料斷層當成真實跌深/漲多訊號。
+    ANOMALY_DAILY_MOVE = 0.20  # 20%，明顯超過±10%正常漲跌停的保守門檻
     if ci >= 22:
-        c_pre1  = close.iloc[ci-1,  close.columns.get_loc(sid)]
-        c_pre21 = close.iloc[ci-21, close.columns.get_loc(sid)]
-        if not pd.isna(c_pre1) and not pd.isna(c_pre21) and c_pre21 > 0:
+        col = close.columns.get_loc(sid)
+        window = close.iloc[ci-21:ci, col]  # 20天窗口內每天收盤（用來抓斷層，不只看頭尾）
+        daily_ret = window.pct_change().dropna()
+        has_anomaly_jump = (daily_ret.abs() > ANOMALY_DAILY_MOVE).any()
+        c_pre1  = close.iloc[ci-1,  col]
+        c_pre21 = close.iloc[ci-21, col]
+        if has_anomaly_jump:
+            reason = '⚠️資料異常(疑似減資/除權息斷層)'
+        elif not pd.isna(c_pre1) and not pd.isna(c_pre21) and c_pre21 > 0:
             rise20 = (c_pre1 / c_pre21) - 1
             reason = '漲多處置' if rise20 >= 0 else '跌深處置'
         else:
