@@ -714,9 +714,9 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '買進訊號', '代號', '名稱', '規模', '處置原因',
-                      '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)',
-                      '今日漲跌', '觸發價', '距觸發(%)',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '買進訊號', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+                      '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
+                      '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       'D1%', 'D2%', 'D3%', 'D4%', 'D5%']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）今日訊號 ──────────────────────────────
@@ -794,6 +794,16 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                     break
         d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
 
+        # alt：僅第一次才有值，供比較「若套用第二次+的-5%回檔規則」會是什麼訊號，
+        # 純供比較，不是建議規則。
+        entry_n_sig_alt = None
+        if is_changduo and is_first:
+            for n in range(3, 6):
+                if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
+                    entry_n_sig_alt = n
+                    break
+        d['買進訊號(-5%版)'] = f'D{entry_n_sig_alt}' if entry_n_sig_alt else ''
+
         cur_cum = np.nan
         for n in range(nd, 0, -1):
             v = d.get(f'D{n}%')
@@ -812,23 +822,47 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         else:
             d['目前損益(%)'] = np.nan
 
-        # 觸發價/距觸發(%)只對第二次+(-5%回檔規則)有意義；第一次是5分盤動能規則
-        # （D0漲2~9%+D1不跳空高開+D1不鎖漲停判斷買不買，不是「跌到某個價位才觸發」），
-        # 沒有對應的單一觸發價概念，顯示會誤導，留空。
-        if is_changduo and not is_first:
-            pos_v = idx.searchsorted(sd)
-            p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
-            ser_v = price[sid].dropna()
-            cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
-            if pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
-                d['觸發價']    = round(p0_v * 0.95, 2)
-                d['距觸發(%)'] = round((d['觸發價'] / cur_p - 1) * 100, 2)
+        # alt：僅第一次才有值，若套用-5%版訊號的目前損益(%)
+        if entry_n_sig_alt and pd.notna(cur_cum):
+            entry_cum_v_alt = d.get(f'D{entry_n_sig_alt}%', np.nan)
+            if pd.notna(entry_cum_v_alt):
+                entry_factor_alt = 1 + entry_cum_v_alt / 100
+                cur_factor_alt   = 1 + cur_cum / 100
+                d['目前損益(-5%版)(%)'] = round((cur_factor_alt / entry_factor_alt - 1) * 100, 2) if entry_factor_alt > 0 else np.nan
             else:
-                d['觸發價']    = np.nan
-                d['距觸發(%)'] = np.nan
+                d['目前損益(-5%版)(%)'] = np.nan
+        else:
+            d['目前損益(-5%版)(%)'] = np.nan
+
+        # 觸發價/距觸發(%)：第二次+是「D0收盤*0.95」（-5%回檔規則的門檻價）；
+        # 第一次是「D0收盤本身」（5分盤動能規則：D1開盤只要不高於這個價，訊號才成立，
+        # 不是跌到某個價位，是「不能開得比這個價高」）。距觸發(%)一律用「觸發價相對最新可得
+        # 價格的距離」，跟第二次+同樣的算法、只是基準價不同。
+        pos_v = idx.searchsorted(sd)
+        p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
+        ser_v = price[sid].dropna()
+        cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
+        if is_changduo and not is_first:
+            trigger = p0_v * 0.95 if pd.notna(p0_v) and p0_v > 0 else np.nan
+        elif is_changduo and is_first:
+            trigger = p0_v if pd.notna(p0_v) and p0_v > 0 else np.nan
+        else:
+            trigger = np.nan
+        if pd.notna(trigger) and pd.notna(cur_p) and cur_p > 0:
+            d['觸發價']    = round(trigger, 2)
+            d['距觸發(%)'] = round((trigger / cur_p - 1) * 100, 2)
         else:
             d['觸發價']    = np.nan
             d['距觸發(%)'] = np.nan
+
+        # alt觸發價：僅第一次才有值，若改用第二次+的-5%回檔規則，門檻價會是D0收盤*0.95
+        if is_changduo and is_first and pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
+            trigger_alt = p0_v * 0.95
+            d['觸發價(-5%版)']    = round(trigger_alt, 2)
+            d['距觸發(-5%版)(%)'] = round((trigger_alt / cur_p - 1) * 100, 2)
+        else:
+            d['觸發價(-5%版)']    = np.nan
+            d['距觸發(-5%版)(%)'] = np.nan
 
         rows.append(d)
 
@@ -907,7 +941,7 @@ def build_history(df, price, open_p, whale_dfs):
         entry_rng = range(1, 6) if disp_type == '5分鐘' else range(3, 9)
 
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan,
-                   actual_ret=np.nan,
+                   actual_ret=np.nan, entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan,
                    **{f'_t{k}c': np.nan for k in range(1, 11)})
         for n in range(1, 11):
             out[f'_d{n}_cum'] = np.nan
@@ -965,6 +999,15 @@ def build_history(df, price, open_p, whale_dfs):
                     out['entry_cum'] = round(d1_ret, 2)
                     if has_exit:
                         out['actual_ret'] = round((t1_open / d1_close - 1) * 100, 2)
+            # alt：若第一次也套用-5%回檔規則(套用第二次+邏輯於D1~D5窗口)，純供比較，不是建議規則
+            for n in sorted(entry_rng):
+                if n in dn_rets and dn_rets[n] < -5:
+                    out['entry_n_alt']   = n
+                    out['entry_cum_alt'] = round(dn_rets[n], 2)
+                    if has_exit:
+                        pn = price[sid].iloc[pos + n - 1]
+                        out['actual_ret_alt'] = round((t1_open / pn - 1) * 100, 2)
+                    break
         else:
             for n in sorted(entry_rng):
                 if n in dn_rets and dn_rets[n] < -5:
@@ -1028,6 +1071,13 @@ def build_history(df, price, open_p, whale_dfs):
         '結果':          pool['actual_ret'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
+        # alt：僅5分鐘(第一次)才有值，若套用第二次+的-5%回檔規則會是什麼結果，純供比較
+        '買進日(-5%版)':        pool['entry_n_alt'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '買進時累積(-5%版)(%)': pool['entry_cum_alt'],
+        '出關報酬(-5%版)(%)':   pool['actual_ret_alt'],
+        '結果(-5%版)':          pool['actual_ret_alt'].apply(
+            lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
+                      else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
         # D1~D10 各天進場累積報酬與出關報酬（自訂策略回測頁使用）
         **{f'D{n}累積(%)': pool[f'_d{n}_cum'] for n in range(1, 11)},
         **{f'D{n}報酬(%)': pool[f'_d{n}_ret'] for n in range(1, 11)},
@@ -1059,7 +1109,8 @@ def build_history(df, price, open_p, whale_dfs):
 
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
                        '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '最深日',
-                       '期間最深(%)', '出關報酬(%)', '結果']
+                       '期間最深(%)', '出關報酬(%)', '結果',
+                       '買進日(-5%版)', '買進時累積(-5%版)(%)', '出關報酬(-5%版)(%)', '結果(-5%版)']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）歷史回測紀錄 ──────────────────────────
 # 完全獨立於 build_history()（舊制頁），寫入獨立檔案不影響舊制 history.csv。
@@ -1079,7 +1130,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
     def compute_row(row):
         sid = row['股票代號']
         sd  = row['處置起始日']
-        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan)
+        out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
+                   entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan)
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1127,6 +1179,17 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                 out['entry_cum'] = round(d1_ret, 2)
                 if has_exit:
                     out['actual_ret'] = round((t1_open / d1_close - 1) * 100, 2)
+            # alt：如果改用第二次+的-5%回檔規則(D3~D5任一天跌破-5%)，第一次會是什麼結果？
+            # 純供比較，不是建議規則——第一次沒有這個規則的歷史驗證。
+            if dn_rets:
+                for n in sorted(ENTRY_RNG):
+                    if n in dn_rets and dn_rets[n] < -5:
+                        out['entry_n_alt']   = n
+                        out['entry_cum_alt'] = round(dn_rets[n], 2)
+                        if has_exit:
+                            pn = price[sid].iloc[pos + n - 1]
+                            out['actual_ret_alt'] = round((t1_open / pn - 1) * 100, 2)
+                        break
             return pd.Series(out)
 
         if not dn_rets:
@@ -1174,6 +1237,14 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         '期間最深(%)':   pool['min_dn'],
         '出關報酬(%)':   pool['actual_ret'],
         '結果':          pool['actual_ret'].apply(
+            lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
+                      else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
+        # alt：僅第一次處置才有值，供比較「若套用第二次+的-5%回檔規則」的結果，
+        # 不是建議規則。第二次+本身沒有alt，因為-5%回檔就是它已驗證的規則。
+        '買進日(-5%版)':        pool['entry_n_alt'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '買進時累積(-5%版)(%)': pool['entry_cum_alt'],
+        '出關報酬(-5%版)(%)':   pool['actual_ret_alt'],
+        '結果(-5%版)':          pool['actual_ret_alt'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
     })
