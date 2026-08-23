@@ -717,7 +717,7 @@ def build_signals(df, price, open_p, whale_dfs):
 NEWREGIME_SIG_COLS = ['處置次別', '評級', '買進訊號', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)',
                       '今日漲跌', '觸發價', '距觸發(%)',
-                      'D1%', 'D2%', 'D3%', 'D4%', 'D5%', 'D6%', 'D7%', 'D8%']
+                      'D1%', 'D2%', 'D3%', 'D4%', 'D5%']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）今日訊號 ──────────────────────────────
 # 完全獨立於 build_signals()（舊制20分鐘頁），彼此不共用輸出檔，不影響舊制頁面。
@@ -757,14 +757,16 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
             '今D幾':   f'D{nd}' if sd <= today else '未開始',
             '出關日':  ex.strftime('%m/%d') if pd.notna(ex) else '?',
         }
-        for n in range(1, 9):
+        # 新制期間只有5(或7)個營業日，D6~D8不存在，只算到D5避免顯示出關後的一般交易日
+        # 誤植成「還在處置中的Dn%」
+        for n in range(1, 6):
             v = cumret(price, idx, sid, sd, n)
             d[f'D{n}%'] = v
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
         d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
-                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
+                           **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 6)}})
 
         is_changduo = row.get('處置原因') == '漲多處置'
 
