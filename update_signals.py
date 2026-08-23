@@ -769,9 +769,25 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                            **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 6)}})
 
         is_changduo = row.get('處置原因') == '漲多處置'
+        is_first = row.get('處置次別') == '第一次'
 
         entry_n_sig = None
-        if is_changduo:
+        if is_changduo and is_first:
+            # 第一次處置沿用「5分盤動能」規則（build_5min()），不是-5%回檔：
+            # D0(處置前一天)漲2~9%、D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進
+            pos_e = idx.searchsorted(sd)
+            p_1e  = price[sid].iloc[pos_e - 2] if pos_e >= 2 and sid in price.columns else np.nan
+            p0e   = price[sid].iloc[pos_e - 1] if pos_e >= 1 and sid in price.columns else np.nan
+            if pd.notna(p_1e) and p_1e > 0 and pd.notna(p0e) and p0e > 0:
+                prev1 = (p0e / p_1e - 1) * 100
+                hit = 2 <= prev1 <= 9
+                d1_open = open_p[sid].iloc[pos_e] if sid in open_p.columns and pos_e < len(open_p) else np.nan
+                gap = (d1_open / p0e - 1) * 100 if pd.notna(d1_open) else np.nan
+                d1_ret = d.get('D1%')
+                d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
+                if hit and pd.notna(gap) and gap <= 0 and not d1_locked:
+                    entry_n_sig = 1
+        elif is_changduo:
             for n in range(3, 6):
                 if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
                     entry_n_sig = n
@@ -796,7 +812,10 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         else:
             d['目前損益(%)'] = np.nan
 
-        if is_changduo:
+        # 觸發價/距觸發(%)只對第二次+(-5%回檔規則)有意義；第一次是5分盤動能規則
+        # （D0漲2~9%+D1不跳空高開+D1不鎖漲停判斷買不買，不是「跌到某個價位才觸發」），
+        # 沒有對應的單一觸發價概念，顯示會誤導，留空。
+        if is_changduo and not is_first:
             pos_v = idx.searchsorted(sd)
             p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
             ser_v = price[sid].dropna()
@@ -928,14 +947,33 @@ def build_history(df, price, open_p, whale_dfs):
         out['min_dn']    = round(dn_rets[deepest], 2)
         out['deepest_n'] = deepest
 
-        for n in sorted(entry_rng):
-            if n in dn_rets and dn_rets[n] < -5:
-                out['entry_n']   = n
-                out['entry_cum'] = round(dn_rets[n], 2)
-                if has_exit:
-                    pn = price[sid].iloc[pos + n - 1]
-                    out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
-                break
+        if disp_type == '5分鐘':
+            # 第一次處置(5分鐘)不是-5%回檔規則，是「5分盤動能」規則：
+            # D0(處置前一天)漲2~9%、D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進、出關日開盤賣出。
+            # min_dn/deepest_n上面仍算出來當診斷欄位參考，但不用來決定進場。
+            p_1 = price[sid].iloc[pos - 2] if pos >= 2 else np.nan
+            if pd.notna(p_1) and p_1 > 0:
+                prev1 = (p0 / p_1 - 1) * 100
+                hit = 2 <= prev1 <= 9
+                d1_close = price[sid].iloc[pos] if pos < len(price) else np.nan
+                d1_open  = open_p[sid].iloc[pos] if sid in open_p.columns and pos < len(open_p) else np.nan
+                gap = (d1_open / p0 - 1) * 100 if pd.notna(d1_open) else np.nan
+                d1_ret = (d1_close / p0 - 1) * 100 if pd.notna(d1_close) and p0 > 0 else np.nan
+                d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
+                if hit and pd.notna(gap) and gap <= 0 and not d1_locked and pd.notna(d1_close) and d1_close > 0:
+                    out['entry_n']   = 1
+                    out['entry_cum'] = round(d1_ret, 2)
+                    if has_exit:
+                        out['actual_ret'] = round((t1_open / d1_close - 1) * 100, 2)
+        else:
+            for n in sorted(entry_rng):
+                if n in dn_rets and dn_rets[n] < -5:
+                    out['entry_n']   = n
+                    out['entry_cum'] = round(dn_rets[n], 2)
+                    if has_exit:
+                        pn = price[sid].iloc[pos + n - 1]
+                        out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
+                    break
 
         ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else (1 if disp_type == '5分鐘' else 3)
         if ref_n in all_rets:
@@ -1063,12 +1101,36 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                     all_rets[n] = round((pn / p0 - 1) * 100, 2)
 
         dn_rets = {n: all_rets[n] for n in ENTRY_RNG if n in all_rets}
-        if not dn_rets:
+        if dn_rets:
+            deepest = min(dn_rets, key=lambda n: dn_rets[n])
+            out['min_dn']    = round(dn_rets[deepest], 2)
+            out['deepest_n'] = deepest
+
+        # 第一次處置：舊制底下對應的不是「D3~D5回檔-5%」（那是第二次+/原20分鐘驗證過的規則），
+        # 而是完全不同的「5分盤動能」規則（build_5min()）：D0(處置前一天)漲2~9%、
+        # D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進、出關日開盤賣出。兩者進場邏輯不能共用。
+        if row.get('處置次別') == '第一次':
+            if pos < 2:
+                return pd.Series(out)
+            p_1 = price[sid].iloc[pos - 2]
+            if pd.isna(p_1) or p_1 <= 0:
+                return pd.Series(out)
+            prev1 = (p0 / p_1 - 1) * 100
+            hit = 2 <= prev1 <= 9
+            d1_close = price[sid].iloc[pos] if pos < len(price) else np.nan
+            d1_open  = open_p[sid].iloc[pos] if sid in open_p.columns and pos < len(open_p) else np.nan
+            gap = (d1_open / p0 - 1) * 100 if pd.notna(d1_open) and p0 > 0 else np.nan
+            d1_ret = (d1_close / p0 - 1) * 100 if pd.notna(d1_close) and p0 > 0 else np.nan
+            d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
+            if hit and pd.notna(gap) and gap <= 0 and not d1_locked and pd.notna(d1_close) and d1_close > 0:
+                out['entry_n']   = 1
+                out['entry_cum'] = round(d1_ret, 2)
+                if has_exit:
+                    out['actual_ret'] = round((t1_open / d1_close - 1) * 100, 2)
             return pd.Series(out)
 
-        deepest = min(dn_rets, key=lambda n: dn_rets[n])
-        out['min_dn']    = round(dn_rets[deepest], 2)
-        out['deepest_n'] = deepest
+        if not dn_rets:
+            return pd.Series(out)
 
         for n in sorted(ENTRY_RNG):
             if n in dn_rets and dn_rets[n] < -5:
