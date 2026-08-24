@@ -1,16 +1,23 @@
 {
-  "trade_date": "2026-08-18",
-  "signal_date": "2026-08-17",
+  "trade_date": "2026-08-25",
+  "signal_date": "2026-08-24",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-08-18T00:37:44.156979+08:00",
+  "generated_at": "2026-08-25T07:43:19.471189+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "1727",
-      "prev_close": 82.6,
-      "net_amt_wan": 4014.3599999999997,
-      "d0_turnover": 415058474.59999996,
-      "cz_influence_pct": 9.671793845117167
+      "code": "3049",
+      "prev_close": 12.7,
+      "net_amt_wan": 3025.12603,
+      "d0_turnover": 128665173.19999999,
+      "cz_influence_pct": 23.511615107358363
+    },
+    {
+      "code": "6226",
+      "prev_close": 23.3,
+      "net_amt_wan": 6111.62029,
+      "d0_turnover": 444261309.7,
+      "cz_influence_pct": 13.756814191465477
     }
   ]
 }

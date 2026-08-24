@@ -1,37 +1,30 @@
 {
-  "trade_date": "2026-08-18",
-  "signal_date": "2026-08-17",
+  "trade_date": "2026-08-25",
+  "signal_date": "2026-08-24",
   "strategy": "UniCenter",
-  "generated_at": "2026-08-18T00:33:15.134843+08:00",
+  "generated_at": "2026-08-25T07:48:19.745746+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "3037",
-      "prev_close": 1120.0,
-      "net_amt_wan": 2532.432,
-      "d0_turnover": 60295152960.0,
-      "uc_influence_pct": 0.04200059002553693
+      "code": "3049",
+      "prev_close": 12.7,
+      "net_amt_wan": 124.46,
+      "d0_turnover": 128665173.19999999,
+      "uc_influence_pct": 0.9673169273750297
     },
     {
-      "code": "3008",
-      "prev_close": 5070.0,
-      "net_amt_wan": 871.0260000000001,
-      "d0_turnover": 17147262210.0,
-      "uc_influence_pct": 0.05079679714071393
+      "code": "6226",
+      "prev_close": 23.3,
+      "net_amt_wan": 44.269999999999996,
+      "d0_turnover": 444261309.7,
+      "uc_influence_pct": 0.09964856050574056
     },
     {
-      "code": "2615",
-      "prev_close": 99.6,
-      "net_amt_wan": 199.81752,
-      "d0_turnover": 4956888716.4,
-      "uc_influence_pct": 0.04031107644980981
-    },
-    {
-      "code": "2467",
-      "prev_close": 588.0,
-      "net_amt_wan": 63.504000000000005,
-      "d0_turnover": 1268152536.0,
-      "uc_influence_pct": 0.05007599495901651
+      "code": "7749",
+      "prev_close": 382.0,
+      "net_amt_wan": 38.123599999999996,
+      "d0_turnover": 76558530.0,
+      "uc_influence_pct": 0.4979667190579547
     }
   ]
 }
