@@ -210,10 +210,16 @@ def merge_upcoming(df, price):
     d['start_date'] = pd.to_datetime(d['處置開始時間'], errors='coerce')
     d = d[d['stock_id'].str.match(r'^\d{4}$')]
     d = d[d['處置措施'].str.contains('第一次|第二次', na=False)]
+    # 2026-08-25：分時交易偶爾解析失敗留空（例如3625西勝：處置內容原文「約每10分鐘
+    # 撮合一次」，分時交易卻是NaN），用原文文字補值當後備，跟build_disposal_data.py同步修正。
+    if '處置內容' in d.columns:
+        missing = d['分時交易'].isna()
+        if missing.any():
+            extracted = d.loc[missing, '處置內容'].str.extract(r'每\s*(\d+)\s*分鐘撮合')[0]
+            d.loc[missing, '分時交易'] = pd.to_numeric(extracted, errors='coerce')
     d = d[d['分時交易'].notna()]
-    type_map = {2.0: '2分鐘', 5.0: '5分鐘', 20.0: '20分鐘', 25.0: '25分鐘',
-                30.0: '30分鐘', 45.0: '45分鐘', 60.0: '60分鐘'}
-    d['處置類型'] = d['分時交易'].map(type_map)
+    # 直接用數字格式化，不用固定字典，避免每次遇到新搓合頻率就要手動補一筆
+    d['處置類型'] = d['分時交易'].apply(lambda v: f'{v:g}分鐘')
     d['處置次別'] = d['處置措施'].apply(lambda v: '第一次' if '第一次' in str(v) else '第二次+')
     today = tw_today()
     d = d[d['start_date'] >= today - pd.Timedelta(days=20)]
