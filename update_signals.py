@@ -720,7 +720,7 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '買進訊號', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       'D1%', 'D2%', 'D3%', 'D4%', 'D5%']
@@ -777,6 +777,11 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         is_changduo = row.get('處置原因') == '漲多處置'
         is_first = row.get('處置次別') == '第一次'
 
+        # 白話狀態欄——第一次處置的規則只在D1一天內就分出勝負(觸發/開高不買/鎖漲停買不到)，
+        # 但買進訊號/觸發價/距觸發(%)這些欄位空白時，看不出來是「今天還沒決定」「已經買了在
+        # 持有中」還是「D1已經過了、機會沒了」，容易混淆(Kevin反映過)。比照build_5min()舊制
+        # 5分盤動能頁已經在用的白話狀態寫法，搬過來給第一次用。
+        d['訊號'] = ''
         entry_n_sig = None
         if is_changduo and is_first:
             # 第一次處置沿用「5分盤動能」規則（build_5min()），不是-5%回檔：
@@ -793,6 +798,21 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                 d1_locked = pd.notna(d1_ret) and d1_ret >= 9.5
                 if hit and pd.notna(gap) and gap <= 0 and not d1_locked:
                     entry_n_sig = 1
+
+                if not hit:
+                    d['訊號'] = '❌ 不符合(D0漲幅不在2~9%)'
+                elif nd < 1:
+                    d['訊號'] = '⚪ 未開始'
+                elif pd.isna(gap):
+                    d['訊號'] = '🟡 等D1收盤資料'
+                elif gap > 0:
+                    d['訊號'] = '❌ D1開高，不買'
+                elif d1_locked:
+                    d['訊號'] = '🔒 D1漲停買不到'
+                elif entry_n_sig == 1:
+                    d['訊號'] = '🟢 今日D1收盤買進' if nd == 1 else '🔵 已於D1買進，持有中'
+            else:
+                d['訊號'] = '⚪ 資料不足'
         elif is_changduo:
             for n in range(3, 6):
                 if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:

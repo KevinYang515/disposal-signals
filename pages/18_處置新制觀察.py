@@ -55,6 +55,15 @@ def color_grade(val):
     return f'color: {color}; font-weight: bold;' if color else ''
 
 
+def color_signal(val):
+    s = str(val)
+    if '🟢' in s: return 'color:#26c281;font-weight:700'
+    if '🔵' in s: return 'color:#2980b9;font-weight:700'
+    if '🟡' in s: return 'color:#f6c90e'
+    if '🔒' in s or '❌' in s: return 'color:#e74c3c'
+    return 'color:#95a5a6'
+
+
 st.title('🆕 處置新制觀察（2026-08-10起，2分鐘撮合）')
 st.warning(
     '⚠️ **本頁資料尚未驗證，評級只是沿用舊制的分類方式，不代表已證實有效**。'
@@ -115,7 +124,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
         if sub_sig.empty:
             st.info('目前沒有符合條件的處置中股票。')
         else:
-            display_cols = ['評級', '買進訊號', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
+            display_cols = ['評級', '訊號', '買進訊號', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
                              '起始日', '今D幾', '出關日', '觸發價', '距觸發(%)', '目前損益(%)', '今日漲跌']
             d_cols = [c for c in [f'D{n}%' for n in range(1, 9)]
                       if c in sub_sig.columns and sub_sig[c].notna().any()]
@@ -127,6 +136,8 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
             if '觸發價' in disp.columns:
                 disp['觸發價'] = disp['觸發價'].apply(lambda v: f'{v:.2f}' if pd.notna(v) else '-')
             styled = disp.style.map(color_grade, subset=['評級']) if '評級' in disp.columns else disp
+            if '訊號' in disp.columns:
+                styled = styled.map(color_signal, subset=['訊號'])
             st.dataframe(styled, use_container_width=True, height=min(400, 60 + 35 * len(disp)))
 
             # ── 進場預覽 / 觸發分析（依缺口排序）── 跟首頁Tab1同樣的邏輯，只是資料源換成新制 ──
