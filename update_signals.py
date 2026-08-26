@@ -20,6 +20,7 @@ def tw_today():
 V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
 PRICE_F  = os.path.expanduser('~/finlab_db/price#收盤價.feather')
 OPEN_F   = os.path.expanduser('~/finlab_db/price#開盤價.feather')
+LOW_F    = os.path.expanduser('~/finlab_db/price#最低價.feather')
 WHALE_FILES = {
     100:  os.path.expanduser('~/finlab_db/etl#inventory#大於一百張佔比.feather'),
     200:  os.path.expanduser('~/finlab_db/etl#inventory#大於二百張佔比.feather'),
@@ -87,6 +88,18 @@ def load_price():
             w['date'] = pd.to_datetime(w['date'])
             whale_dfs[t] = w.set_index('date').sort_index()
     return price, open_p, whale_dfs
+
+_LOW_CACHE = None
+
+def load_low():
+    """最低價，只用在第二次+的-5%回檔判斷（改用當天最低價觸及，不再只看收盤）。
+    獨立小函式、懶載入快取，不改動load_price()既有回傳簽名，避免動到所有呼叫端。"""
+    global _LOW_CACHE
+    if _LOW_CACHE is None:
+        low = pd.DataFrame(pd.read_feather(LOW_F))
+        low['date'] = pd.to_datetime(low['date'])
+        _LOW_CACHE = low.set_index('date').sort_index()
+    return _LOW_CACHE
 
 # ── 工具函數 ────────────────────────────────────────────────────────────
 def whale_delta(whale_dfs, sid, sd, price_df=None):
@@ -731,6 +744,7 @@ NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '買�
 # 只是描述性分類，頁面本身要清楚標示「未驗證」，不是舊制頁面同等信心度的訊號。
 def build_newregime_signals(df, price, open_p, whale_dfs):
     idx = price.index
+    low_p = load_low()
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
@@ -814,10 +828,21 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
             else:
                 d['訊號'] = '⚪ 資料不足'
         elif is_changduo:
+            # 2026-08-26修正：觸發條件改用「當天最低價」相對D0收盤是否跌破-5%，不再只看
+            # 收盤價（disposal_dip_intraday_touch研究：盤中觸及但收盤沒守住-5%的獨有子集
+            # 合，驗證期n=39、勝率94.9%、平均+18.48%，比只看收盤的原規則還強）。
+            # 買進價維持不變，還是當天收盤價，只有「要不要觸發」這個判斷改成看最低價。
+            pos_s = idx.searchsorted(sd)
+            p0_s  = price[sid].iloc[pos_s - 1] if pos_s >= 1 and sid in price.columns else np.nan
             for n in range(3, 6):
-                if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
-                    entry_n_sig = n
-                    break
+                if pd.notna(d.get(f'D{n}%')) and pd.notna(p0_s) and p0_s > 0 and sid in low_p.columns:
+                    low_pos = pos_s + n - 1
+                    low_n = low_p[sid].iloc[low_pos] if low_pos < len(low_p) else np.nan
+                    if pd.notna(low_n):
+                        low_ret = (low_n / p0_s - 1) * 100
+                        if low_ret < -5:
+                            entry_n_sig = n
+                            break
         d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
 
         # alt：僅第一次才有值，供比較「若套用第二次+的-5%回檔規則」會是什麼訊號，
@@ -1149,6 +1174,7 @@ NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名�
 # 兩者的t1_offset/進場窗口是各自獨立近似，見函式內註解。
 def build_newregime_history(df, price, open_p, whale_dfs):
     idx = price.index
+    low_p = load_low()
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
               (df['處置類型'] == '2分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
@@ -1226,14 +1252,21 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         if not dn_rets:
             return pd.Series(out)
 
+        # 2026-08-26修正：觸發條件改用「當天最低價」相對D0收盤是否跌破-5%，不再只看收盤價
+        # （disposal_dip_intraday_touch研究驗證過：盤中觸及但收盤沒守住-5%的獨有子集合，
+        # 驗證期n=39、勝率94.9%、平均+18.48%，比只看收盤的原規則還強）。
+        # 買進價維持不變，還是當天收盤價；只有「要不要觸發」這個判斷改成看最低價。
         for n in sorted(ENTRY_RNG):
-            if n in dn_rets and dn_rets[n] < -5:
-                out['entry_n']   = n
-                out['entry_cum'] = round(dn_rets[n], 2)
-                if has_exit:
-                    pn = price[sid].iloc[pos + n - 1]
-                    out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
-                break
+            if n in dn_rets and pos + n - 1 < len(low_p) and sid in low_p.columns:
+                low_n = low_p[sid].iloc[pos + n - 1]
+                low_ret = (low_n / p0 - 1) * 100 if pd.notna(low_n) and p0 > 0 else np.nan
+                if pd.notna(low_ret) and low_ret < -5:
+                    out['entry_n']   = n
+                    out['entry_cum'] = round(dn_rets[n], 2)
+                    if has_exit:
+                        pn = price[sid].iloc[pos + n - 1]
+                        out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
+                    break
 
         return pd.Series(out)
 
