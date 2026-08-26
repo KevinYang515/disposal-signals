@@ -1,60 +1,60 @@
 {
-  "date": "2026-08-24",
-  "generated_at": "2026-08-24T09:01:22.476988",
+  "date": "2026-08-26",
+  "generated_at": "2026-08-26T09:01:27.676317",
   "n_candidates_pool": 59,
-  "n_signal": 30,
+  "n_signal": 24,
   "min_candidates_required": 7,
   "triggered": true,
   "picks": [
     {
-      "code": "8111",
-      "gap_pct": 9.43,
-      "open_px": 65.0,
-      "prev_close": 59.4,
-      "mktcap_e8": 64.8,
-      "industry": "光電業",
-      "pred_score": 2.203,
-      "weight": 0.4097
-    },
-    {
       "code": "6517",
-      "gap_pct": 7.7,
-      "open_px": 65.7,
+      "gap_pct": 8.69,
+      "open_px": 66.3,
       "prev_close": 61.0,
       "mktcap_e8": 18.7,
       "industry": "光電業",
-      "pred_score": 2.0024,
-      "weight": 0.2649
+      "pred_score": 2.3147,
+      "weight": 0.6023
+    },
+    {
+      "code": "2342",
+      "gap_pct": 7.29,
+      "open_px": 39.0,
+      "prev_close": 36.35,
+      "mktcap_e8": 57.2,
+      "industry": "半導體業",
+      "pred_score": 1.6844,
+      "weight": 0.1802
     },
     {
       "code": "3230",
-      "gap_pct": 7.7,
-      "open_px": 43.35,
+      "gap_pct": 6.34,
+      "open_px": 42.8,
       "prev_close": 40.25,
       "mktcap_e8": 34.6,
       "industry": "光電業",
-      "pred_score": 1.9207,
-      "weight": 0.2059
+      "pred_score": 1.5972,
+      "weight": 0.1218
     },
     {
-      "code": "6477",
-      "gap_pct": 7.64,
-      "open_px": 36.65,
-      "prev_close": 34.05,
-      "mktcap_e8": 42.1,
-      "industry": "光電業",
-      "pred_score": 1.7908,
-      "weight": 0.1123
+      "code": "8182",
+      "gap_pct": 7.26,
+      "open_px": 41.35,
+      "prev_close": 38.55,
+      "mktcap_e8": 41.3,
+      "industry": "電子零組件業",
+      "pred_score": 1.5481,
+      "weight": 0.089
     },
     {
-      "code": "4976",
-      "gap_pct": 7.03,
-      "open_px": 38.8,
-      "prev_close": 36.25,
-      "mktcap_e8": 51.2,
+      "code": "4949",
+      "gap_pct": 7.04,
+      "open_px": 71.5,
+      "prev_close": 66.8,
+      "mktcap_e8": 45.2,
       "industry": "光電業",
-      "pred_score": 1.6452,
-      "weight": 0.0072
+      "pred_score": 1.4253,
+      "weight": 0.0067
     }
   ]
 }
