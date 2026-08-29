@@ -293,7 +293,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 triggered = settled[settled['買進日'] != '-']
                 trig_rets = triggered['出關報酬(%)']
                 sharpe, pf = sharpe_pf(trig_rets) if len(trig_rets) else (np.nan, np.nan)
-                rule_label = ('觸發D3~D8<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
+                rule_label = ('觸發D3~D5<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric('已出關筆數', len(settled), delta=f'{len(triggered)} 筆有{rule_label}', delta_color='off')
                 c2.metric('觸發後勝率', f'{(trig_rets > 0).mean() * 100:.1f}%' if len(trig_rets) else '-')
