@@ -733,7 +733,7 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       'D1%', 'D2%', 'D3%', 'D4%', 'D5%']
@@ -797,6 +797,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 5分盤動能頁已經在用的白話狀態寫法，搬過來給第一次用。
         d['訊號'] = ''
         entry_n_sig = None
+        trigger_type_sig = ''
         if is_changduo and is_first:
             # 第一次處置沿用「5分盤動能」規則（build_5min()），不是-5%回檔：
             # D0(處置前一天)漲2~9%、D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進
@@ -842,8 +843,12 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                         low_ret = (low_n / p0_s - 1) * 100
                         if low_ret < -5:
                             entry_n_sig = n
+                            # 觸發方式：收盤本身跌破-5%(A)，或收盤沒守住、只有盤中最低價
+                            # 跌破(C，disposal_dip_intraday_touch驗證出更強的獨有子集合)。
+                            trigger_type_sig = '收盤跌破(A)' if d[f'D{n}%'] < -5 else '僅盤中觸及(C)'
                             break
         d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
+        d['觸發方式'] = trigger_type_sig if entry_n_sig else ''
 
         # alt：僅第一次才有值，供比較「若套用第二次+的-5%回檔規則」會是什麼訊號，
         # 純供比較，不是建議規則。
@@ -1164,7 +1169,7 @@ def build_history(df, price, open_p, whale_dfs):
     return hist, cmp_stats
 
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
-                       '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '最深日',
+                       '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '觸發方式', '最深日',
                        '期間最深(%)', '出關報酬(%)', '結果',
                        '買進日(-5%版)', '買進時累積(-5%版)(%)', '出關報酬(-5%版)(%)', '結果(-5%版)']
 
@@ -1188,7 +1193,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         sid = row['股票代號']
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
-                   entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan)
+                   entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='')
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1263,6 +1268,10 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                 if pd.notna(low_ret) and low_ret < -5:
                     out['entry_n']   = n
                     out['entry_cum'] = round(dn_rets[n], 2)
+                    # 觸發方式：收盤本身就跌破-5%(A，驗證期較強的原規則)，
+                    # 還是收盤沒守住、只有盤中最低價跌破(C，disposal_dip_intraday_touch
+                    # 驗證出的獨有子集合，驗證期表現比A更好：n=39/94.9%/+18.48%)。
+                    out['trigger_type'] = '收盤跌破(A)' if dn_rets[n] < -5 else '僅盤中觸及(C)'
                     if has_exit:
                         pn = price[sid].iloc[pos + n - 1]
                         out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
@@ -1297,6 +1306,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         '大戶(%)':       pool.apply(lambda r: whale_delta(whale_dfs, r['股票代號'], r['處置起始日'], price), axis=1),
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '買進時累積(%)': pool['entry_cum'],
+        '觸發方式':      pool['trigger_type'],
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
         '出關報酬(%)':   pool['actual_ret'],
