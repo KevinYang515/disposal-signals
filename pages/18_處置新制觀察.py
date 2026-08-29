@@ -306,9 +306,14 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 )
                 show_cols = ['起始日', '出關日', '代號', '名稱', '規模', 'Dn組別', '買進日', '觸發方式',
                              '買進時累積(%)', '最深日', '期間最深(%)', '出關報酬(%)', '結果']
+                show_cols += [f'T+{k}收盤(%)' for k in range(1, 11)]
                 show_cols = [c for c in show_cols if c in settled.columns]
-                st.dataframe(settled[show_cols].sort_values('起始日', ascending=False),
-                             use_container_width=True, height=min(400, 60 + 35 * len(settled)))
+                show_disp = settled[show_cols].sort_values('起始日', ascending=False).copy()
+                for c in [f'T+{k}收盤(%)' for k in range(1, 11)]:
+                    if c in show_disp.columns:
+                        show_disp[c] = show_disp[c].apply(lambda v: f'{v:+.2f}%' if pd.notna(v) else '-')
+                st.dataframe(show_disp, use_container_width=True, height=min(400, 60 + 35 * len(settled)))
+                st.caption('T+1~T+10收盤(%)：若出關日沒有照規則賣出、繼續抱著，之後10個交易日的報酬（基準是買進日收盤價）——比照舊制Tab2「歷史回測紀錄」同樣的欄位，方便對照是否該提早或延後出場。')
 
 st.divider()
 with st.expander('📖 本頁的已知近似與侷限（務必先讀再解讀數字）'):

@@ -1171,6 +1171,7 @@ def build_history(df, price, open_p, whale_dfs):
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
                        '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '觸發方式', '最深日',
                        '期間最深(%)', '出關報酬(%)', '結果',
+                       *[f'T+{k}收盤(%)' for k in range(1, 11)],
                        '買進日(-5%版)', '買進時累積(-5%版)(%)', '出關報酬(-5%版)(%)', '結果(-5%版)']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）歷史回測紀錄 ──────────────────────────
@@ -1193,7 +1194,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         sid = row['股票代號']
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
-                   entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='')
+                   entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
+                   **{f'_t{k}c': np.nan for k in range(1, 11)})
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1277,6 +1279,18 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                         out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
                     break
 
+        # T+1~T+10收盤(%)：如果沒有在出關日開盤賣、繼續抱著，之後10個交易日的報酬會是多少
+        # （基準是買進日收盤價），比照舊制Tab2表格同樣的欄位，讓新制也能看到出關後續走勢。
+        ref_n = int(out['entry_n']) if pd.notna(out['entry_n']) else 3
+        if ref_n in dn_rets:
+            p_ref = price[sid].iloc[pos + ref_n - 1]
+            for k in range(1, 11):
+                off = (T1_OFFSET - 1) + k  # T+1=pos+T1_OFFSET(出關日), T+2=pos+T1_OFFSET+1...
+                if pos + off < len(price) and pd.notna(p_ref) and p_ref > 0:
+                    p = price[sid].iloc[pos + off]
+                    if pd.notna(p) and p > 0:
+                        out[f'_t{k}c'] = round((p / p_ref - 1) * 100, 2)
+
         return pd.Series(out)
 
     if pool.empty:
@@ -1313,6 +1327,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         '結果':          pool['actual_ret'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
+        # T+1~T+10收盤(%)：出關後如果繼續抱著，之後10個交易日的報酬，比照舊制Tab2欄位
+        **{f'T+{k}收盤(%)': pool[f'_t{k}c'] for k in range(1, 11)},
         # alt：僅第一次處置才有值，供比較「若套用第二次+的-5%回檔規則」的結果，
         # 不是建議規則。第二次+本身沒有alt，因為-5%回檔就是它已驗證的規則。
         '買進日(-5%版)':        pool['entry_n_alt'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
