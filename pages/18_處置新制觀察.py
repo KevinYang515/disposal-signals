@@ -120,6 +120,86 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 if use_alt and alt_col in sub_hist.columns:
                     sub_hist[base_col] = sub_hist[alt_col]
 
+        # 第二次+：可自選進場窗口（D幾~D幾），今日訊號跟累積至今結果都會跟著重算。
+        # 2026-08-30 Kevin要求：現行固定D3~D5，但disposal_entry_day_full_test研究發現
+        # D1單日表現目前為止比D3~D5還好，且D3~D5幾乎都是D1早就觸發過的同一批股票，
+        # 值得讓使用者自己比較不同窗口，不是寫死一種。用最低價判斷觸發（跟現行規則
+        # 一致），買進價仍是觸發日收盤價，出場仍是出關日開盤。
+        if key == '第二次+':
+            wc1, wc2 = st.columns(2)
+            with wc1:
+                win_start = st.number_input('進場窗口起始 D', min_value=1, max_value=5, value=3, step=1, key=f'win_start_{key}')
+            with wc2:
+                win_end = st.number_input('進場窗口結束 D', min_value=1, max_value=5, value=5, step=1, key=f'win_end_{key}')
+            if win_start > win_end:
+                win_start, win_end = win_end, win_start
+                st.warning('起始日不能大於結束日，已自動對調。')
+            if (win_start, win_end) != (3, 5):
+                st.info(
+                    f'目前顯示的是自選窗口 D{win_start}~D{win_end}，不是網站預設、已驗證的D3~D5——'
+                    f'僅供比較觀察，不是建議規則。詳見PLAYBOOK.md「開放問題」與'
+                    f'disposal_entry_day_full_test研究（新制樣本仍很小，任何窗口的統計數字都可能只是巧合）。',
+                    icon='ℹ️',
+                )
+            window_days = list(range(win_start, win_end + 1))
+
+            def _recompute_sig(row):
+                trig_n = None
+                for n in window_days:
+                    lv = row.get(f'LowD{n}%')
+                    if pd.notna(lv) and lv < -5:
+                        trig_n = n
+                        break
+                if trig_n is None:
+                    return pd.Series({'買進訊號': '', '觸發方式': '', '目前損益(%)': np.nan})
+                close_v = row.get(f'D{trig_n}%')
+                ttype = '收盤跌破(A)' if pd.notna(close_v) and close_v < -5 else '僅盤中觸及(C)'
+                cur_cum = np.nan
+                for n in range(5, 0, -1):
+                    v = row.get(f'D{n}%')
+                    if pd.notna(v):
+                        cur_cum = v
+                        break
+                pl = np.nan
+                if pd.notna(cur_cum) and pd.notna(close_v):
+                    ef = 1 + close_v / 100
+                    cf = 1 + cur_cum / 100
+                    if ef > 0:
+                        pl = round((cf / ef - 1) * 100, 2)
+                return pd.Series({'買進訊號': f'D{trig_n}', '觸發方式': ttype, '目前損益(%)': pl})
+
+            if not sub_sig.empty:
+                _r = sub_sig.apply(_recompute_sig, axis=1)
+                for c in ['買進訊號', '觸發方式', '目前損益(%)']:
+                    sub_sig[c] = _r[c]
+
+            def _recompute_hist(row):
+                trig_n = None
+                for n in window_days:
+                    lv = row.get(f'LowD{n}%')
+                    if pd.notna(lv) and lv < -5:
+                        trig_n = n
+                        break
+                if trig_n is None:
+                    return pd.Series({'買進日': '-', '買進時累積(%)': np.nan, '出關報酬(%)': np.nan, '結果': '-'})
+                close_v = row.get(f'D{trig_n}%')
+                exit_v = row.get('出關開盤(相對D0)%')
+                ret = np.nan
+                if pd.notna(close_v) and pd.notna(exit_v):
+                    ef = 1 + close_v / 100
+                    xf = 1 + exit_v / 100
+                    if ef > 0:
+                        ret = round((xf / ef - 1) * 100, 2)
+                result = (f'✅ {ret:+.2f}%' if pd.notna(ret) and ret > 0
+                          else (f'❌ {ret:+.2f}%' if pd.notna(ret) else '-'))
+                return pd.Series({'買進日': f'D{trig_n}', '買進時累積(%)': close_v,
+                                   '出關報酬(%)': ret, '結果': result})
+
+            if not sub_hist.empty:
+                _rh = sub_hist.apply(_recompute_hist, axis=1)
+                for c in ['買進日', '買進時累積(%)', '出關報酬(%)', '結果']:
+                    sub_hist[c] = _rh[c]
+
         st.subheader(f'🔔 今日訊號（{key}）')
         if sub_sig.empty:
             st.info('目前沒有符合條件的處置中股票。')

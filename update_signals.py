@@ -736,7 +736,8 @@ def build_signals(df, price, open_p, whale_dfs):
 NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
-                      'D1%', 'D2%', 'D3%', 'D4%', 'D5%']
+                      'D1%', 'D2%', 'D3%', 'D4%', 'D5%',
+                      'LowD1%', 'LowD2%', 'LowD3%', 'LowD4%', 'LowD5%', '出關開盤(相對D0)%']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）今日訊號 ──────────────────────────────
 # 完全獨立於 build_signals()（舊制20分鐘頁），彼此不共用輸出檔，不影響舊制頁面。
@@ -782,6 +783,25 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         for n in range(1, 6):
             v = cumret(price, idx, sid, sd, n)
             d[f'D{n}%'] = v
+        # LowD{n}%：當天最低價相對D0收盤的累積跌幅（觸發判斷用，跟D{n}%收盤版分開存），
+        # 加上出關開盤價相對D0收盤的報酬，讓頁面可以自己選任意D幾~D幾窗口即時重算，
+        # 不用每加一種窗口就要改一次後端程式（2026-08-30，Kevin要求可自選窗口）。
+        pos_lw = idx.searchsorted(sd)
+        p0_lw  = price[sid].iloc[pos_lw - 1] if pos_lw >= 1 and sid in price.columns else np.nan
+        for n in range(1, 6):
+            lp = pos_lw + n - 1
+            v = np.nan
+            if pd.notna(p0_lw) and p0_lw > 0 and lp < len(low_p) and sid in low_p.columns:
+                ln = low_p[sid].iloc[lp]
+                if pd.notna(ln):
+                    v = round((ln / p0_lw - 1) * 100, 2)
+            d[f'LowD{n}%'] = v
+        ex_pos = pos_lw + 5
+        if pd.notna(p0_lw) and p0_lw > 0 and sid in open_p.columns and ex_pos < len(open_p):
+            ex_open = open_p[sid].iloc[ex_pos]
+            d['出關開盤(相對D0)%'] = round((ex_open / p0_lw - 1) * 100, 2) if pd.notna(ex_open) and ex_open > 0 else np.nan
+        else:
+            d['出關開盤(相對D0)%'] = np.nan
         d['今日漲跌'] = today_change(price, sid)
         pr = d['近20日漲幅']
         wh = d['大戶(%)']
@@ -1172,6 +1192,8 @@ NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名�
                        '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '觸發方式', '最深日',
                        '期間最深(%)', '出關報酬(%)', '結果',
                        *[f'T+{k}收盤(%)' for k in range(1, 11)],
+                       *[f'D{n}%' for n in range(1, 6)], *[f'LowD{n}%' for n in range(1, 6)],
+                       '出關開盤(相對D0)%',
                        '買進日(-5%版)', '買進時累積(-5%版)(%)', '出關報酬(-5%版)(%)', '結果(-5%版)']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）歷史回測紀錄 ──────────────────────────
@@ -1195,7 +1217,10 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
                    entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
-                   **{f'_t{k}c': np.nan for k in range(1, 11)})
+                   exit_open_rel_d0=np.nan,
+                   **{f'_t{k}c': np.nan for k in range(1, 11)},
+                   **{f'd{n}_close': np.nan for n in range(1, 6)},
+                   **{f'd{n}_low': np.nan for n in range(1, 6)})
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1208,6 +1233,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         t1_open = (open_p[sid].iloc[pos + T1_OFFSET]
                    if sid in open_p.columns and pos + T1_OFFSET < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
+        if has_exit:
+            out['exit_open_rel_d0'] = round((t1_open / p0 - 1) * 100, 2)
 
         all_rets = {}
         for n in range(1, T1_OFFSET + 1):
@@ -1215,6 +1242,11 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                 pn = price[sid].iloc[pos + n - 1]
                 if pd.notna(pn) and pn > 0:
                     all_rets[n] = round((pn / p0 - 1) * 100, 2)
+                    out[f'd{n}_close'] = all_rets[n]
+            if pos + n - 1 < len(low_p) and sid in low_p.columns:
+                ln = low_p[sid].iloc[pos + n - 1]
+                if pd.notna(ln) and ln > 0:
+                    out[f'd{n}_low'] = round((ln / p0 - 1) * 100, 2)
 
         dn_rets = {n: all_rets[n] for n in ENTRY_RNG if n in all_rets}
         if dn_rets:
@@ -1329,6 +1361,11 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                       else (f'❌ {v:+.2f}%' if pd.notna(v) else '-')),
         # T+1~T+10收盤(%)：出關後如果繼續抱著，之後10個交易日的報酬，比照舊制Tab2欄位
         **{f'T+{k}收盤(%)': pool[f'_t{k}c'] for k in range(1, 11)},
+        # D{n}%/LowD{n}%/出關開盤(相對D0)%：給頁面自選進場窗口(D幾~D幾)即時重算用，
+        # 不用每加一種窗口就要改後端程式（2026-08-30，Kevin要求可自選窗口）。
+        **{f'D{n}%': pool[f'd{n}_close'] for n in range(1, 6)},
+        **{f'LowD{n}%': pool[f'd{n}_low'] for n in range(1, 6)},
+        '出關開盤(相對D0)%': pool['exit_open_rel_d0'],
         # alt：僅第一次處置才有值，供比較「若套用第二次+的-5%回檔規則」的結果，
         # 不是建議規則。第二次+本身沒有alt，因為-5%回檔就是它已驗證的規則。
         '買進日(-5%版)':        pool['entry_n_alt'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
