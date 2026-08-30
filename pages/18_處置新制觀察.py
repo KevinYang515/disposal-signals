@@ -419,6 +419,58 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 st.dataframe(show_disp, use_container_width=True, height=min(400, 60 + 35 * len(settled)))
                 st.caption('T+1~T+10收盤(%)：若出關日沒有照規則賣出、繼續抱著，之後10個交易日的報酬（基準是買進日收盤價）——比照舊制Tab2「歷史回測紀錄」同樣的欄位，方便對照是否該提早或延後出場。')
 
+                # D1~D5各自獨立表現：不管現在選的窗口是哪一段，這張表固定顯示每一天
+                # 單獨進場(當天最低價跌破-5%就當天收盤買)的表現，方便一眼比較哪天最好。
+                if key == '第二次+':
+                    st.markdown('##### 📊 D1~D5 各自獨立表現（不受上面窗口選擇影響，固定顯示每一天）')
+                    day_rows = []
+                    for n in range(1, 6):
+                        low_col, close_col = f'LowD{n}%', f'D{n}%'
+                        if low_col not in sub_hist.columns or close_col not in sub_hist.columns:
+                            continue
+                        trig = sub_hist[sub_hist[low_col] < -5].copy()
+                        if trig.empty:
+                            day_rows.append({'進場日': f'D{n}', '觸發數': 0, '已出關': 0, '勝率': '-', '平均報酬': '-'})
+                            continue
+                        d0v = trig['D0收盤價']
+                        entry_p = [round_to_tick(d0*(1+c/100)) if pd.notna(d0) and pd.notna(c) else np.nan
+                                   for d0, c in zip(d0v, trig[close_col])]
+                        exit_p  = [round_to_tick(d0*(1+e/100)) if pd.notna(d0) and pd.notna(e) else np.nan
+                                   for d0, e in zip(d0v, trig['出關開盤(相對D0)%'])]
+                        ret = [round((xp/ep-1)*100, 2) if pd.notna(ep) and pd.notna(xp) and ep > 0 else np.nan
+                               for ep, xp in zip(entry_p, exit_p)]
+                        ret_s = pd.Series(ret).dropna()
+                        day_rows.append({
+                            '進場日': f'D{n}', '觸發數': len(trig), '已出關': len(ret_s),
+                            '勝率': f'{(ret_s > 0).mean()*100:.1f}%' if len(ret_s) else '-',
+                            '平均報酬': f'{ret_s.mean():+.2f}%' if len(ret_s) else '-',
+                        })
+                    st.dataframe(pd.DataFrame(day_rows), use_container_width=True, hide_index=True)
+                    st.caption('每一天都獨立計算「當天最低價跌破-5%就當天收盤買進」的表現，不是「第一次觸發」，同一事件可能在好幾天都算進去——樣本還很小，僅供觀察趨勢。')
+
+                # 出關時間點比較：跟現行「出關日開盤賣」比，若延後到出關日收盤、或再抱1~10天，
+                # 表現會怎樣，比照舊制Tab2「⏰出場時間點比較」的呈現方式。
+                st.markdown('##### ⏰ 出關時間點比較')
+                exit_rows = [{
+                    '出場時間點': 'T+1 開盤（現行策略）',
+                    '筆數': len(trig_rets),
+                    '勝率': f'{(trig_rets > 0).mean()*100:.1f}%' if len(trig_rets) else '-',
+                    '平均報酬': f'{trig_rets.mean():+.2f}%' if len(trig_rets) else '-',
+                }]
+                for k in range(1, 11):
+                    col = f'T+{k}收盤(%)'
+                    if col not in triggered.columns:
+                        continue
+                    s = triggered[col].dropna()
+                    exit_rows.append({
+                        '出場時間點': f'T+{k} 收盤',
+                        '筆數': len(s),
+                        '勝率': f'{(s > 0).mean()*100:.1f}%' if len(s) else '-',
+                        '平均報酬': f'{s.mean():+.2f}%' if len(s) else '-',
+                    })
+                st.dataframe(pd.DataFrame(exit_rows), use_container_width=True, hide_index=True)
+                st.caption('T+1開盤是現行規則（出關日開盤賣出）；T+1~T+10收盤是「如果沒賣、繼續抱著」的對照，基準都是買進日收盤價。比照舊制Tab2的呈現方式。')
+
 st.divider()
 with st.expander('📖 本頁的已知近似與侷限（務必先讀再解讀數字）'):
     st.markdown("""
