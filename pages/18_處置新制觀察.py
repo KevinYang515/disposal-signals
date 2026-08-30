@@ -207,14 +207,13 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                                        '出關價': np.nan, '出關報酬(%)': np.nan, '結果': '-'})
                 close_v = row.get(f'D{trig_n}%')
                 exit_v = row.get('出關開盤(相對D0)%')
-                ret = np.nan
-                if pd.notna(close_v) and pd.notna(exit_v):
-                    ef = 1 + close_v / 100
-                    xf = 1 + exit_v / 100
-                    if ef > 0:
-                        ret = round((xf / ef - 1) * 100, 2)
+                # 價格先對齊跳動單位，報酬%一定要用對齊後的真實價格重算，
+                # 不能沿用對齊前的百分比——不然價格跟報酬會對不起來(Kevin抓到的問題)。
                 entry_price = round_to_tick(d0 * (1 + close_v / 100)) if pd.notna(d0) and pd.notna(close_v) else np.nan
                 exit_price  = round_to_tick(d0 * (1 + exit_v / 100)) if pd.notna(d0) and pd.notna(exit_v) else np.nan
+                ret = np.nan
+                if pd.notna(entry_price) and pd.notna(exit_price) and entry_price > 0:
+                    ret = round((exit_price / entry_price - 1) * 100, 2)
                 result = (f'✅ {ret:+.2f}%' if pd.notna(ret) and ret > 0
                           else (f'❌ {ret:+.2f}%' if pd.notna(ret) else '-'))
                 return pd.Series({'買進日': f'D{trig_n}', '買進價': entry_price, '買進時累積(%)': close_v,
