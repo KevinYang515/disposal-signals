@@ -877,7 +877,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
             # 買進價維持不變，還是當天收盤價，只有「要不要觸發」這個判斷改成看最低價。
             pos_s = idx.searchsorted(sd)
             p0_s  = price[sid].iloc[pos_s - 1] if pos_s >= 1 and sid in price.columns else np.nan
-            for n in range(3, 6):
+            for n in range(1, 5):
                 if pd.notna(d.get(f'D{n}%')) and pd.notna(p0_s) and p0_s > 0 and sid in low_p.columns:
                     low_pos = pos_s + n - 1
                     low_n = low_p[sid].iloc[low_pos] if low_pos < len(low_p) else np.nan
@@ -896,7 +896,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 純供比較，不是建議規則。
         entry_n_sig_alt = None
         if is_changduo and is_first:
-            for n in range(3, 6):
+            for n in range(1, 5):
                 if pd.notna(d.get(f'D{n}%')) and d[f'D{n}%'] < -5:
                     entry_n_sig_alt = n
                     break
@@ -1232,7 +1232,11 @@ def build_newregime_history(df, price, open_p, whale_dfs):
     # 新制第一次/第二次+ 撮合頻率相同(2分鐘)，處置期間都是5(或7)個營業日，
     # 沒有欄位可精確分辨5或7天，統一用t1_offset=5近似（多數案例），進場窗口統一D3~D8。
     T1_OFFSET = 5
-    ENTRY_RNG = range(3, T1_OFFSET + 1)  # D3~D5：進場窗口不能超過T1_OFFSET，否則會檢查到出關後的一般交易日
+    # 2026-08-30起新預設窗口D1~D4（原本D3~D5）：新制真實資料顯示D1單日表現最好、
+    # D3~D5幾乎都是D1早就觸發過的同一批股票，改用比較早、比較便宜的進場點；
+    # D5排除是因為D5單獨測試時明顯最弱(見disposal_entry_day_full_test研究)，
+    # D1~D4跟D1~D5在目前資料下實測完全相同(D5從未單獨觸發過)，選D1~D4當更保守版本。
+    ENTRY_RNG = range(1, 5)  # D1~D4
 
     def compute_row(row):
         sid = row['股票代號']

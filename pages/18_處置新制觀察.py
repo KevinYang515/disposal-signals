@@ -58,7 +58,7 @@ def color_grade(val):
 def round_to_tick(price):
     """台股法定升降單位，自選窗口重算的價格是用百分比反推(D0收盤×(1+報酬%))，
     直接四捨五入到小數點兩位會出現528.02這種不存在的價格，要對齊到合法跳動單位。
-    （固定D3~D5的預設欄位不受影響，那是直接讀真實收盤價，本來就是合法跳動價。）"""
+    （固定預設窗口(D1~D4)的欄位不受影響，那是直接讀真實收盤價，本來就是合法跳動價。）"""
     if price is None or pd.isna(price) or price <= 0:
         return price
     if price < 10:
@@ -142,23 +142,26 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     sub_hist[base_col] = sub_hist[alt_col]
 
         # 第二次+：可自選進場窗口（D幾~D幾），今日訊號跟累積至今結果都會跟著重算。
-        # 2026-08-30 Kevin要求：現行固定D3~D5，但disposal_entry_day_full_test研究發現
-        # D1單日表現目前為止比D3~D5還好，且D3~D5幾乎都是D1早就觸發過的同一批股票，
-        # 值得讓使用者自己比較不同窗口，不是寫死一種。用最低價判斷觸發（跟現行規則
-        # 一致），買進價仍是觸發日收盤價，出場仍是出關日開盤。
+        # 2026-08-30 起預設改為D1~D4（原本D3~D5）：disposal_entry_day_full_test研究
+        # 發現D1單日表現目前為止最好，且D3~D5幾乎都是D1早就觸發過的同一批股票，改用
+        # 比較早、比較便宜的進場點；D1~D4排除D5是因為D5獨立測試時明顯最弱，跟D1~D5
+        # 在目前資料下實測完全相同(D5從未單獨觸發過)。**這是Kevin在樣本仍很小的情況下
+        # 主動決定要換的，不是本系列一貫的「驗證足夠才換」標準，務必在畫面上誠實揭露
+        # 這一點，不要包裝成已驗證的規則。**
         if key == '第二次+':
             wc1, wc2 = st.columns(2)
             with wc1:
-                win_start = st.number_input('進場窗口起始 D', min_value=1, max_value=5, value=3, step=1, key=f'win_start_{key}')
+                win_start = st.number_input('進場窗口起始 D', min_value=1, max_value=5, value=1, step=1, key=f'win_start_{key}')
             with wc2:
-                win_end = st.number_input('進場窗口結束 D', min_value=1, max_value=5, value=5, step=1, key=f'win_end_{key}')
+                win_end = st.number_input('進場窗口結束 D', min_value=1, max_value=5, value=4, step=1, key=f'win_end_{key}')
             if win_start > win_end:
                 win_start, win_end = win_end, win_start
                 st.warning('起始日不能大於結束日，已自動對調。')
-            if (win_start, win_end) != (3, 5):
+            st.caption('⚠️ 目前預設是D1~D4，2026-08-30由Kevin主動決定換掉原本的D3~D5——樣本量還很小(D1目前只有13筆已結算)、沒有訓練/驗證期切分，不是這系列一貫要求的驗證標準，屬於觀察中的規則，非正式驗證結論。')
+            if (win_start, win_end) != (1, 4):
                 st.info(
-                    f'目前顯示的是自選窗口 D{win_start}~D{win_end}，不是網站預設、已驗證的D3~D5——'
-                    f'僅供比較觀察，不是建議規則。詳見PLAYBOOK.md「開放問題」與'
+                    f'目前顯示的是自選窗口 D{win_start}~D{win_end}，不是網站預設的D1~D4——'
+                    f'僅供比較觀察。詳見PLAYBOOK.md「開放問題」與'
                     f'disposal_entry_day_full_test研究（新制樣本仍很小，任何窗口的統計數字都可能只是巧合）。',
                     icon='ℹ️',
                 )
@@ -326,24 +329,24 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                         elif key == '第一次':
                             st.caption(
                                 f'已觸發 = 距觸發 ≥ 0%（目前收盤已低於觸發價）｜🔥 = 距觸發 < 2%（高度警戒）｜'
-                                f'觸發條件：D3~D5 任意天收盤累積跌幅 < -5%（套用第二次+規則於第一次，僅供比較）'
+                                f'觸發條件：D1~D4 任意天收盤累積跌幅 < -5%（套用第二次+規則於第一次，僅供比較）'
                             )
                         else:
                             st.caption(
-                                f'觸發條件：D3~D5 任意天「最低價」相對D0收盤跌破-5%（不只看收盤，2026-08-26起改用最低價判斷，'
-                                f'買進價仍是當天收盤價——盤中觸及但收盤沒守住-5%的獨有案例，驗證期勝率94.9%、平均+18.48%，'
-                                f'比只看收盤還強，詳見disposal_dip_intraday_touch研究）'
+                                f'觸發條件：D1~D4 任意天「最低價」相對D0收盤跌破-5%（不只看收盤；2026-08-30起窗口由D3~D5'
+                                f'改為D1~D4，因新制真實資料顯示D1單日表現最好——樣本仍很小，屬觀察中的規則，非正式驗證結論，'
+                                f'詳見disposal_entry_day_full_test研究）'
                             )
 
         st.divider()
         st.subheader(f'⚖️ 策略對照：新制 vs 舊制基準（{key} vs 舊制{OLD_TYPE_MAP[key]}）')
         if key == '第一次':
             if use_alt:
-                st.caption('用「D3~D5(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較（套用第二次+規則於第一次，僅供比較）。')
+                st.caption('用「D1~D4(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較（套用第二次+規則於第一次，僅供比較）。')
             else:
                 st.caption('用「5分盤動能」規則比較：D0漲2~9%、D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進、出關日開盤出場——這是第一次已驗證的規則，新舊制用同一套規則比較表現是否相似。')
         else:
-            st.caption('用同樣的「D3~D5(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則，比較新舊制表現是否相似——這是驗證橡皮筋機制在新制下是否還成立的核心對照。')
+            st.caption('用「D1~D4(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較——舊制窗口是已驗證的基準；新制窗口2026-08-30起改為D1~D4，樣本仍很小，屬觀察中的規則。')
 
         old_pool = (old_hist[old_hist['處置類型'] == OLD_TYPE_MAP[key]] if len(old_hist) else pd.DataFrame()).copy()
         if key == '第一次' and use_alt and len(old_pool):
@@ -397,7 +400,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 triggered = settled[settled['買進日'] != '-']
                 trig_rets = triggered['出關報酬(%)']
                 sharpe, pf = sharpe_pf(trig_rets) if len(trig_rets) else (np.nan, np.nan)
-                rule_label = ('觸發D3~D5<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
+                rule_label = ('觸發D1~D4<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric('已出關筆數', len(settled), delta=f'{len(triggered)} 筆有{rule_label}', delta_color='off')
                 c2.metric('觸發後勝率', f'{(trig_rets > 0).mean() * 100:.1f}%' if len(trig_rets) else '-')
@@ -475,7 +478,7 @@ st.divider()
 with st.expander('📖 本頁的已知近似與侷限（務必先讀再解讀數字）'):
     st.markdown("""
 - **5天 vs 7天不分**：新制處置期間一般是5個營業日，若同時因當沖比重過高遭加重處置則是7個營業日；本頁資料沒有欄位可以精確分辨，統一用5天近似，可能讓少數7天案例的「今D幾」「出關日」顯示提前。
-- **進場窗口改為D3~D5**（不是舊制20分鐘的D3~D8）：因為新制期間本身只有5(或7)天近似，D6~D8多半已經是出關後的一般交易日，不應算進處置期間訊號；這個窗口縮短後是否還合理，尚未驗證。
+- **進場窗口預設為D1~D4**（不是舊制20分鐘的D3~D8，也不是2026-08-26~08-30間曾經用過的D3~D5）：2026-08-30由Kevin主動決定換成D1~D4，依據是新制真實資料(僅十幾筆已結算樣本)顯示D1單日表現目前最好——**這是樣本很小情況下的主動決策，不是這系列一貫「驗證足夠才換」的標準流程**，屬於觀察中的規則。可以用頁面上的窗口選擇器切回D3~D5或其他範圍比較。
 - **評級只是描述性分類**：套用跟舊制頁面相同的規則(grade())來標「✅主力訊號/🟡觀察中」等，純粹方便閱讀，**不代表這些評級在新制下已被證實有效**。
 - **樣本數極少**：新制上路才幾天，已完整出關的樣本數只有個位數到十幾筆，任何統計數字都可能只是巧合，需要更長時間累積才能判斷。
 - 完整規則變更細節與研究進度，見 PLAYBOOK.md「研究 Roadmap」章節。
