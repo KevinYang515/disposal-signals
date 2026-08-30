@@ -101,6 +101,28 @@ def load_low():
         _LOW_CACHE = low.set_index('date').sort_index()
     return _LOW_CACHE
 
+
+def round_to_tick(price):
+    """台股法定升降單位。觸發價(D0收盤×0.95)是用百分比乘出來的價格，不對齊會出現
+    像876.85這種不存在的價位（500~1000元區間法定跳動單位是1元）。pages/18裡也有
+    同一份函式（自選窗口重算用），這裡是後端固定規則(D3~D5等)用，兩邊各自獨立維護，
+    邏輯要保持一致。2026-08-30 Kevin抓到這個問題。"""
+    if price is None or pd.isna(price) or price <= 0:
+        return price
+    if price < 10:
+        tick = 0.01
+    elif price < 50:
+        tick = 0.05
+    elif price < 100:
+        tick = 0.1
+    elif price < 500:
+        tick = 0.5
+    elif price < 1000:
+        tick = 1
+    else:
+        tick = 5
+    return round(round(price / tick) * tick, 2)
+
 # ── 工具函數 ────────────────────────────────────────────────────────────
 def whale_delta(whale_dfs, sid, sd, price_df=None):
     """大戶持股比例變動：依持股市值 5000萬 動態回推張數門檻"""
@@ -715,7 +737,7 @@ def build_signals(df, price, open_p, whale_dfs):
             ser_v = price[sid].dropna()
             cur_p = float(ser_v.iloc[-1]) if len(ser_v) > 0 else np.nan
             if pd.notna(p0_v) and p0_v > 0 and pd.notna(cur_p) and cur_p > 0:
-                d['觸發價']    = round(p0_v * 0.95, 2)
+                d['觸發價']    = round_to_tick(p0_v * 0.95)
                 d['距觸發(%)'] = round((d['觸發價'] / cur_p - 1) * 100, 2)
             else:
                 d['觸發價']    = np.nan
@@ -924,12 +946,12 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 不能顯示這個誤導的假精確數字。
         has_current_data = len(ser_v) > 0 and ser_v.index[-1] >= sd
         if is_changduo and not is_first:
-            trigger = p0_v * 0.95 if pd.notna(p0_v) and p0_v > 0 else np.nan
+            trigger = round_to_tick(p0_v * 0.95) if pd.notna(p0_v) and p0_v > 0 else np.nan
         elif is_changduo and is_first:
             trigger = p0_v if pd.notna(p0_v) and p0_v > 0 else np.nan
         else:
             trigger = np.nan
-        d['觸發價'] = round(trigger, 2) if pd.notna(trigger) else np.nan
+        d['觸發價'] = trigger if pd.notna(trigger) else np.nan
         if pd.notna(trigger) and has_current_data and pd.notna(cur_p) and cur_p > 0:
             d['距觸發(%)'] = round((trigger / cur_p - 1) * 100, 2)
         else:
@@ -937,8 +959,8 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
 
         # alt觸發價：僅第一次才有值，若改用第二次+的-5%回檔規則，門檻價會是D0收盤*0.95
         if is_changduo and is_first and pd.notna(p0_v) and p0_v > 0:
-            trigger_alt = p0_v * 0.95
-            d['觸發價(-5%版)'] = round(trigger_alt, 2)
+            trigger_alt = round_to_tick(p0_v * 0.95)
+            d['觸發價(-5%版)'] = trigger_alt
             d['距觸發(-5%版)(%)'] = (round((trigger_alt / cur_p - 1) * 100, 2)
                                     if has_current_data and pd.notna(cur_p) and cur_p > 0 else np.nan)
         else:
