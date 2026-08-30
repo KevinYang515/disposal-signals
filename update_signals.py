@@ -1189,8 +1189,8 @@ def build_history(df, price, open_p, whale_dfs):
     return hist, cmp_stats
 
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
-                       '近20日漲幅', '大戶(%)', '買進日', '買進時累積(%)', '觸發方式', '最深日',
-                       '期間最深(%)', '出關報酬(%)', '結果',
+                       '近20日漲幅', '大戶(%)', 'D0收盤價', '買進日', '買進價', '買進時累積(%)', '觸發方式', '最深日',
+                       '期間最深(%)', '出關價', '出關報酬(%)', '結果',
                        *[f'T+{k}收盤(%)' for k in range(1, 11)],
                        *[f'D{n}%' for n in range(1, 6)], *[f'LowD{n}%' for n in range(1, 6)],
                        '出關開盤(相對D0)%',
@@ -1217,7 +1217,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         sd  = row['處置起始日']
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
                    entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
-                   exit_open_rel_d0=np.nan,
+                   exit_open_rel_d0=np.nan, d0_close=np.nan, entry_price=np.nan, exit_price=np.nan,
                    **{f'_t{k}c': np.nan for k in range(1, 11)},
                    **{f'd{n}_close': np.nan for n in range(1, 6)},
                    **{f'd{n}_low': np.nan for n in range(1, 6)})
@@ -1229,12 +1229,14 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         p0 = price[sid].iloc[pos - 1]
         if pd.isna(p0) or p0 <= 0:
             return pd.Series(out)
+        out['d0_close'] = round(float(p0), 2)
 
         t1_open = (open_p[sid].iloc[pos + T1_OFFSET]
                    if sid in open_p.columns and pos + T1_OFFSET < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
         if has_exit:
             out['exit_open_rel_d0'] = round((t1_open / p0 - 1) * 100, 2)
+            out['exit_price'] = round(float(t1_open), 2)
 
         all_rets = {}
         for n in range(1, T1_OFFSET + 1):
@@ -1273,6 +1275,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
             if hit and pd.notna(gap) and gap <= 0 and not d1_locked and pd.notna(d1_close) and d1_close > 0:
                 out['entry_n']   = 1
                 out['entry_cum'] = round(d1_ret, 2)
+                out['entry_price'] = round(float(d1_close), 2)
                 if has_exit:
                     out['actual_ret'] = round((t1_open / d1_close - 1) * 100, 2)
             # alt：如果改用第二次+的-5%回檔規則(D3~D5任一天跌破-5%)，第一次會是什麼結果？
@@ -1302,6 +1305,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                 if pd.notna(low_ret) and low_ret < -5:
                     out['entry_n']   = n
                     out['entry_cum'] = round(dn_rets[n], 2)
+                    out['entry_price'] = round(float(price[sid].iloc[pos + n - 1]), 2)
                     # 觸發方式：收盤本身就跌破-5%(A，驗證期較強的原規則)，
                     # 還是收盤沒守住、只有盤中最低價跌破(C，disposal_dip_intraday_touch
                     # 驗證出的獨有子集合，驗證期表現比A更好：n=39/94.9%/+18.48%)。
@@ -1350,11 +1354,14 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         'Dn組別':        pool['Dn組別'],
         '近20日漲幅':    pool.apply(lambda r: prerun20(price, idx, r['股票代號'], r['處置起始日']), axis=1).round(2),
         '大戶(%)':       pool.apply(lambda r: whale_delta(whale_dfs, r['股票代號'], r['處置起始日'], price), axis=1),
+        'D0收盤價':      pool['d0_close'],
         '買進日':        pool['entry_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
+        '買進價':        pool['entry_price'],
         '買進時累積(%)': pool['entry_cum'],
         '觸發方式':      pool['trigger_type'],
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
+        '出關價':        pool['exit_price'],
         '出關報酬(%)':   pool['actual_ret'],
         '結果':          pool['actual_ret'].apply(
             lambda v: f'✅ {v:+.2f}%' if pd.notna(v) and v > 0
