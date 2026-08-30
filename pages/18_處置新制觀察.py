@@ -55,6 +55,27 @@ def color_grade(val):
     return f'color: {color}; font-weight: bold;' if color else ''
 
 
+def round_to_tick(price):
+    """台股法定升降單位，自選窗口重算的價格是用百分比反推(D0收盤×(1+報酬%))，
+    直接四捨五入到小數點兩位會出現528.02這種不存在的價格，要對齊到合法跳動單位。
+    （固定D3~D5的預設欄位不受影響，那是直接讀真實收盤價，本來就是合法跳動價。）"""
+    if price is None or pd.isna(price) or price <= 0:
+        return price
+    if price < 10:
+        tick = 0.01
+    elif price < 50:
+        tick = 0.05
+    elif price < 100:
+        tick = 0.1
+    elif price < 500:
+        tick = 0.5
+    elif price < 1000:
+        tick = 1
+    else:
+        tick = 5
+    return round(round(price / tick) * tick, 2)
+
+
 def color_signal(val):
     s = str(val)
     if '🟢' in s: return 'color:#26c281;font-weight:700'
@@ -192,8 +213,8 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     xf = 1 + exit_v / 100
                     if ef > 0:
                         ret = round((xf / ef - 1) * 100, 2)
-                entry_price = round(d0 * (1 + close_v / 100), 2) if pd.notna(d0) and pd.notna(close_v) else np.nan
-                exit_price  = round(d0 * (1 + exit_v / 100), 2) if pd.notna(d0) and pd.notna(exit_v) else np.nan
+                entry_price = round_to_tick(d0 * (1 + close_v / 100)) if pd.notna(d0) and pd.notna(close_v) else np.nan
+                exit_price  = round_to_tick(d0 * (1 + exit_v / 100)) if pd.notna(d0) and pd.notna(exit_v) else np.nan
                 result = (f'✅ {ret:+.2f}%' if pd.notna(ret) and ret > 0
                           else (f'❌ {ret:+.2f}%' if pd.notna(ret) else '-'))
                 return pd.Series({'買進日': f'D{trig_n}', '買進價': entry_price, '買進時累積(%)': close_v,
