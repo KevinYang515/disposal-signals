@@ -47,6 +47,7 @@ GRADE_COLOR = {
     '🟡 觀察中':         '#f39c12',
     '⬜ 待觀察':         '#95a5a6',
     '❌ 避開':           '#e74c3c',
+    '⚠️ 資料異常(不採用)': '#e74c3c',
 }
 
 
@@ -81,7 +82,7 @@ def color_signal(val):
     if '🟢' in s: return 'color:#26c281;font-weight:700'
     if '🔵' in s: return 'color:#2980b9;font-weight:700'
     if '🟡' in s: return 'color:#f6c90e'
-    if '🔒' in s or '❌' in s: return 'color:#e74c3c'
+    if '🔒' in s or '❌' in s or '⚠️' in s: return 'color:#e74c3c'
     return 'color:#95a5a6'
 
 
