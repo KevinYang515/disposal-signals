@@ -783,7 +783,11 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 先用5天近似（多數案例），只影響「今D幾」/「出關日」等顯示。
         ex  = exit_date(idx, sd, t1_offset=5)
 
-        if pd.notna(ex) and today > ex:
+        # today>=ex（不是>）：出關日當天已經回歸正常交易，不該再留在「今日訊號」/
+        # 「進場預覽」裡讓人誤以為還能進場（Kevin抓到：出關日當天還顯示成D6、
+        # 還出現在進場預覽候選清單）。已出關的完整結果改看「累積至今結果」
+        # （build_newregime_history()，跟這裡是獨立算的，不受影響）。
+        if pd.notna(ex) and today >= ex:
             continue
 
         nd = trading_day_n(idx, sd)
