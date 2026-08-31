@@ -773,7 +773,8 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
 
     active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
                 (df['處置類型'] == '2分鐘') &
-                (df['處置起始日'] >= cutoff)].copy()
+                (df['處置起始日'] >= cutoff) &
+                (~df['處置原因'].astype(str).str.contains('資料異常'))].copy()
 
     rows = []
     for _, row in active.iterrows():
@@ -836,11 +837,6 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
 
         is_changduo = row.get('處置原因') == '漲多處置'
         is_first = row.get('處置次別') == '第一次'
-        # 資料異常(疑似減資/除權息斷層)的股票，D0收盤價本身可能已經失真，
-        # is_changduo會自動是False所以不會產生假訊號，但評級/訊號欄位原本是空白，
-        # 一眼看不出「這筆不能用」跟「單純還沒觸發」的差別（Kevin抓到：世紀*反覆出現
-        # 在表格裡卻沒有明顯警示）。這裡直接把評級/訊號改成清楚的警示文字。
-        is_anomaly = '資料異常' in str(row.get('處置原因', ''))
 
         # 白話狀態欄——第一次處置的規則只在D1一天內就分出勝負(觸發/開高不買/鎖漲停買不到)，
         # 但買進訊號/觸發價/距觸發(%)這些欄位空白時，看不出來是「今天還沒決定」「已經買了在
@@ -900,10 +896,6 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                             break
         d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
         d['觸發方式'] = trigger_type_sig if entry_n_sig else ''
-
-        if is_anomaly:
-            d['評級'] = '⚠️ 資料異常(不採用)'
-            d['訊號'] = '⚠️ 資料異常，此檔不採用'
 
         # alt：僅第一次才有值，供比較「若套用第二次+的-5%回檔規則」會是什麼訊號，
         # 純供比較，不是建議規則。
