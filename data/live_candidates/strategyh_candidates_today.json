@@ -1,35 +1,10 @@
 {
-  "trade_date": "2026-09-01",
-  "signal_date": "2026-08-31",
+  "trade_date": "2026-09-02",
+  "signal_date": "2026-09-01",
   "strategy": "StrategyH",
-  "generated_at": "2026-09-01T07:35:36.578124+08:00",
-  "candidate_count_before_daily_gate": 4,
+  "generated_at": "2026-09-02T07:35:50.819699+08:00",
+  "candidate_count_before_daily_gate": 2,
   "min_candidate_count": 4,
-  "active": true,
-  "candidates": [
-    {
-      "code": "1312",
-      "prev_close": 15.55,
-      "style_buyers": 31,
-      "aggregate_ratio_pct": 15.720724955108553
-    },
-    {
-      "code": "1326",
-      "prev_close": 68.3,
-      "style_buyers": 28,
-      "aggregate_ratio_pct": 15.592114593913026
-    },
-    {
-      "code": "2421",
-      "prev_close": 179.5,
-      "style_buyers": 12,
-      "aggregate_ratio_pct": 6.681032041797913
-    },
-    {
-      "code": "2455",
-      "prev_close": 477.0,
-      "style_buyers": 29,
-      "aggregate_ratio_pct": 5.592683833653364
-    }
-  ]
+  "active": false,
+  "candidates": []
 }
