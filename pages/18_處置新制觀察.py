@@ -97,6 +97,34 @@ st.warning(
 sig = safe_read_csv(f'{DATA_DIR}/newregime_signals.csv', dtype={'代號': str})
 hist = safe_read_csv(f'{DATA_DIR}/newregime_history.csv', dtype={'代號': str})
 old_hist = safe_read_csv(f'{DATA_DIR}/history.csv', dtype={'代號': str})  # 舊制基準，用來對照新制是否走勢相似
+watchlist = safe_read_csv(f'{DATA_DIR}/attention_watchlist.csv', dtype={'股票代號': str})
+
+# 2026-09-02 處置預警看板：TWSE處置的觸發條件是「連續N個營業日(通常3天)命中
+# 同一款注意條件」，這裡抓「同一款目前連續命中幾天」當提前預警——連續2天代表
+# 明天再中一次同一款就可能觸發處置。用大立光(3008)實測驗證過可行（連續3天中
+# 第一款、隔天果然公告處置）。Kevin要求優先關注第二次+候選（現行策略適用對象）。
+with st.expander('🔮 處置預警看板（連續注意天數篩選，尚未觸發處置的候選名單）', expanded=True):
+    st.caption(
+        '原理：處置的觸發條件是「連續N個營業日(多數款是3天，少數如跌深/借券等是5天)命中同一款注意條件」，'
+        '這裡列出「目前連續命中同一款注意條件≥2天」的股票，越接近3天代表越快可能被公告處置。'
+        '**已經在處置期間中的股票不會出現在這裡**（那些請看下面兩個分頁）。'
+        '「預估第幾次」是用過去30個營業日內有沒有處置紀錄推算，不是官方公告，正式次別以TWSE公告為準。'
+    )
+    if watchlist.empty:
+        st.info('目前沒有連續命中同一款注意條件≥2天的股票。')
+    else:
+        wl_2 = watchlist[watchlist['預估第幾次'] == '第二次+']
+        wl_1 = watchlist[watchlist['預估第幾次'] == '第一次']
+        st.markdown(f'##### 🔴 第二次+候選（優先關注，現行-5%回檔策略適用對象，共{len(wl_2)}檔）')
+        if wl_2.empty:
+            st.caption('目前沒有第二次+候選。')
+        else:
+            st.dataframe(wl_2, use_container_width=True, hide_index=True)
+        st.markdown(f'##### ⚪ 第一次候選（共{len(wl_1)}檔）')
+        if wl_1.empty:
+            st.caption('目前沒有第一次候選。')
+        else:
+            st.dataframe(wl_1, use_container_width=True, hide_index=True)
 
 OLD_TYPE_MAP = {'第一次': '5分鐘', '第二次+': '20分鐘'}
 

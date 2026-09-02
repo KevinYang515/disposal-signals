@@ -6,7 +6,7 @@ update_signals.py
 
 import pandas as pd
 import numpy as np
-import warnings, os, json
+import warnings, os, json, re
 from datetime import datetime, timezone, timedelta
 warnings.filterwarnings("ignore")
 
@@ -31,6 +31,8 @@ WHALE_FILES = {
 }
 _WHALE_THRESHOLDS = sorted(WHALE_FILES)
 BASIC_F  = os.path.expanduser('~/finlab_db/company_basic_info.feather')
+ATTENTION_F = os.path.expanduser('~/finlab_db/trading_attention.feather')
+DISPOSAL_INFO_F = os.path.expanduser('~/finlab_db/disposal_information.feather')
 OUT_DIR  = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -1522,6 +1524,113 @@ def build_newregime_history(df, price, open_p, whale_dfs):
 
     return hist.reindex(columns=NEWREGIME_HIST_COLS), cmp_stats
 
+_CN_NUM = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10}
+
+def _cn_to_int(s):
+    """中文數字轉阿拉伯數字，只需涵蓋TWSE注意條款款號(目前最大到十三款左右)。"""
+    if s == '十':
+        return 10
+    if len(s) == 1:
+        return _CN_NUM.get(s)
+    if s.startswith('十'):
+        return 10 + _CN_NUM.get(s[1], 0)
+    if '十' in s:
+        tens, ones = s.split('十')
+        return _CN_NUM.get(tens, 1) * 10 + (_CN_NUM.get(ones, 0) if ones else 0)
+    return None
+
+ATTENTION_WATCHLIST_COLS = ['股票代號', '股票名稱', '命中款', '連續天數', '最新日期', '預估第幾次']
+
+# ── 2026-09-02 處置預警看板：連續注意天數篩選 ─────────────────────────────
+# 起因：Kevin想知道「某檔股票最近是否可能進入處置」。TWSE處置的觸發條件是
+# 「連續N個營業日(通常3天，跌深/借券等少數條款是5天)命中同一款注意條件」，
+# 所以可以用「同一款連續命中幾天」當提前預警訊號——連續2天代表明天再中一次
+# 同一款就可能觸發處置。用大立光(3008)實測驗證過：2026-08-31~09-02連續3天
+# 命中第一款，09-02當天果然公告處置(09-03生效)，驗證此方法可行。
+# 「第幾次」用過去30個營業日內有沒有處置紀錄判斷（TWSE公告文字裡常見「最近30個
+# 營業日內曾發布處置」這個講法，但這裡是憑公告文字印象寫的近似規則，沒有在這份
+# codebase裡找到另一處程式化實作可以對照驗證，只是預估，不是官方精確邏輯，正式
+# 次別以TWSE公告為準）；目前正在處置期間中的股票不算「預警」對象，排除掉。
+def build_attention_watchlist(min_streak=2, lookback_days=8):
+    if not os.path.exists(ATTENTION_F) or not os.path.exists(DISPOSAL_INFO_F) or not os.path.exists(BASIC_F):
+        return pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+
+    att = pd.DataFrame(pd.read_feather(ATTENTION_F))
+    att['stock_id'] = att['stock_id'].astype(str)
+    att['date'] = pd.to_datetime(att['date'])
+    if att.empty:
+        return pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+
+    info = pd.DataFrame(pd.read_feather(BASIC_F))
+    info['stock_id'] = info['stock_id'].astype(str)
+    info = info[info['市場別'].isin(['sii', 'otc'])]
+    name_map = info.set_index('stock_id')['公司簡稱'].to_dict()
+    normal_universe = set(info['stock_id'])
+
+    disp = pd.DataFrame(pd.read_feather(DISPOSAL_INFO_F))
+    disp['stock_id'] = disp['stock_id'].astype(str)
+    disp['date'] = pd.to_datetime(disp['date'])
+    disp['處置開始時間'] = pd.to_datetime(disp['處置開始時間'])
+    disp['處置結束時間'] = pd.to_datetime(disp['處置結束時間'])
+
+    all_dates = sorted(att['date'].unique())
+    if not all_dates:
+        return pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+    today = all_dates[-1]
+
+    recent = att[att['date'].isin(all_dates[-lookback_days:])].copy()
+    recent = recent[recent['stock_id'].isin(normal_universe)]
+    if recent.empty:
+        return pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+
+    active_disp_ids = set(disp[(disp['處置開始時間'] <= today) & (disp['處置結束時間'] >= today)]['stock_id'])
+
+    recent['clauses'] = recent['注意交易資訊'].apply(
+        lambda s: set(_cn_to_int(c) for c in re.findall(r'第([一二三四五六七八九十]+)款', str(s))))
+
+    # 2026-09-02 review抓到的bug：trading_attention只有「當天真的有命中某款」才會有一列，
+    # 沒命中的交易日直接不存在該股票的列。如果只用「這檔股票自己有的列」往回數，會把
+    # 「今天有命中、中間跳過沒紀錄的幾天、更早又命中」誤判成連續——必須用完整交易日曆
+    # (recent_window_dates)逐日核對，沒有列的那天視為「沒命中」，才會正確在那天斷開連續。
+    recent_window_dates = all_dates[-lookback_days:]  # 完整交易日曆，不受個股是否當天有紀錄影響
+    results = []
+    cutoff_idx = max(0, len(all_dates) - 31)
+    cutoff_date = all_dates[cutoff_idx]
+    for sid, g in recent.groupby('stock_id'):
+        if sid in active_disp_ids:
+            continue
+        day_clauses = dict(zip(g['date'], g['clauses']))
+        stock_dates = [d for d in recent_window_dates if d in day_clauses]
+        if not stock_dates:
+            continue
+        last_date = stock_dates[-1]
+        last_clauses = day_clauses[last_date]
+        best_streak, best_clause = 0, None
+        for cl in last_clauses:
+            streak = 0
+            for d in reversed(recent_window_dates):
+                if cl in day_clauses.get(d, set()):
+                    streak += 1
+                else:
+                    break
+            if streak > best_streak:
+                best_streak, best_clause = streak, cl
+        if best_streak >= min_streak:
+            sub_disp = disp[disp['stock_id'] == sid]
+            recent_disp = sub_disp[(sub_disp['date'] < last_date) & (sub_disp['date'] >= cutoff_date)]
+            tier = '第二次+' if len(recent_disp) else '第一次'
+            results.append({
+                '股票代號': sid, '股票名稱': name_map.get(sid, ''),
+                '命中款': f'第{best_clause}款' if best_clause else '',
+                '連續天數': best_streak, '最新日期': last_date.strftime('%Y-%m-%d'),
+                '預估第幾次': tier,
+            })
+
+    if not results:
+        return pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+    out = pd.DataFrame(results).sort_values(['預估第幾次', '連續天數'], ascending=[True, False])
+    return out.reindex(columns=ATTENTION_WATCHLIST_COLS)
+
 # ── main ────────────────────────────────────────────────────────────────
 def main():
     print('刷新 finlab 價格資料...')
@@ -1565,6 +1674,15 @@ def main():
     hist_nr, cmp_stats_nr = build_newregime_history(df, price, open_p, whale_dfs)
     hist_nr.to_csv(f'{OUT_DIR}/newregime_history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
     print(f'  → newregime_signals.csv ({len(sig_nr)} 筆) / newregime_history.csv ({len(hist_nr)} 筆)')
+
+    print('產生處置預警看板(連續注意天數篩選)...')
+    try:
+        watchlist = build_attention_watchlist()
+    except Exception as e:
+        print(f'  ⚠️ 處置預警看板產生失敗，跳過（不影響其他資料）: {e}')
+        watchlist = pd.DataFrame(columns=ATTENTION_WATCHLIST_COLS)
+    watchlist.to_csv(f'{OUT_DIR}/attention_watchlist.csv', index=False, encoding='utf-8-sig')
+    print(f'  → attention_watchlist.csv ({len(watchlist)} 筆)')
 
     # 更新時間
     meta = {
