@@ -149,6 +149,23 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
         # 主動決定要換的，不是本系列一貫的「驗證足夠才換」標準，務必在畫面上誠實揭露
         # 這一點，不要包裝成已驗證的規則。**
         if key == '第二次+':
+            # 2026-09-02：觸發基準預設改用「處置前5日高點」(峰值版)，理由見
+            # disposal_peak3_reference_test研究(單筆品質不變、訊號量多25%、資金限制
+            # 模擬N=3/5/10六種情境CAGR全勝)。Kevin要求把舊的D0收盤基準留著當對照，
+            # 不要直接刪掉，用切換選項讓兩邊都能觀察。
+            basis_mode = st.radio(
+                '第二次+的-5%回檔基準',
+                ['峰值基準（處置前5日高點，預設，2026-09-02起）', 'D0收盤基準（舊版本，僅供對照觀察）'],
+                horizontal=True, key=f'basis_mode_{key}',
+            )
+            use_old_basis = basis_mode.startswith('D0收盤基準')
+            low_suffix = '' if use_old_basis else '(峰值版)'
+            if use_old_basis:
+                st.info('目前顯示的是舊版「D0收盤」基準，僅供跟峰值版對照——網站正式預設已改用峰值基準，理由見PLAYBOOK.md與disposal_peak3_reference_test研究。', icon='ℹ️')
+                for base_col, alt_col in [('觸發價', '觸發價(D0收盤版)'), ('距觸發(%)', '距觸發(D0收盤版)(%)')]:
+                    if alt_col in sub_sig.columns:
+                        sub_sig[base_col] = sub_sig[alt_col]
+
             wc1, wc2 = st.columns(2)
             with wc1:
                 win_start = st.number_input('進場窗口起始 D', min_value=1, max_value=5, value=1, step=1, key=f'win_start_{key}')
@@ -168,16 +185,21 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
             window_days = list(range(win_start, win_end + 1))
 
             def _recompute_sig(row):
+                # 2026-09-02起：觸發判斷預設改用「處置前5日高點」基準(峰值版欄位)，
+                # 可用上面的basis_mode切回D0收盤版對照——見update_signals.py同一處
+                # 註解(disposal_peak3_reference_test研究)。進場價/損益重建一律用
+                # D0收盤版D{n}%換算，不受選用哪個觸發基準影響。
                 trig_n = None
                 for n in window_days:
-                    lv = row.get(f'LowD{n}%')
+                    lv = row.get(f'LowD{n}%{low_suffix}')
                     if pd.notna(lv) and lv < -5:
                         trig_n = n
                         break
                 if trig_n is None:
                     return pd.Series({'買進訊號': '', '觸發方式': '', '目前損益(%)': np.nan})
                 close_v = row.get(f'D{trig_n}%')
-                ttype = '收盤跌破(A)' if pd.notna(close_v) and close_v < -5 else '僅盤中觸及(C)'
+                close_v_cls = close_v if use_old_basis else row.get(f'D{trig_n}%{low_suffix}')
+                ttype = '收盤跌破(A)' if pd.notna(close_v_cls) and close_v_cls < -5 else '僅盤中觸及(C)'
                 cur_cum = np.nan
                 for n in range(5, 0, -1):
                     v = row.get(f'D{n}%')
@@ -199,9 +221,12 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
 
             def _recompute_hist(row):
                 d0 = row.get('D0收盤價')
+                # 2026-09-02起：觸發判斷預設用峰值版欄位(處置前5日高點基準)，
+                # 可用basis_mode切回D0收盤版對照；買進價/出關價重建一律用
+                # D0收盤版D{n}%/出關開盤%換算，不受選用哪個觸發基準影響。
                 trig_n = None
                 for n in window_days:
-                    lv = row.get(f'LowD{n}%')
+                    lv = row.get(f'LowD{n}%{low_suffix}')
                     if pd.notna(lv) and lv < -5:
                         trig_n = n
                         break
@@ -428,7 +453,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     st.markdown('##### 📊 D1~D5 各自獨立表現（不受上面窗口選擇影響，固定顯示每一天）')
                     day_rows = []
                     for n in range(1, 6):
-                        low_col, close_col = f'LowD{n}%', f'D{n}%'
+                        low_col, close_col = f'LowD{n}%{low_suffix}', f'D{n}%'
                         if low_col not in sub_hist.columns or close_col not in sub_hist.columns:
                             continue
                         trig = sub_hist[sub_hist[low_col] < -5].copy()

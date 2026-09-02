@@ -21,6 +21,7 @@ V2_CSV   = os.path.join(os.path.dirname(__file__), '../disposal_data_v2.csv')
 PRICE_F  = os.path.expanduser('~/finlab_db/price#收盤價.feather')
 OPEN_F   = os.path.expanduser('~/finlab_db/price#開盤價.feather')
 LOW_F    = os.path.expanduser('~/finlab_db/price#最低價.feather')
+HIGH_F   = os.path.expanduser('~/finlab_db/price#最高價.feather')
 WHALE_FILES = {
     100:  os.path.expanduser('~/finlab_db/etl#inventory#大於一百張佔比.feather'),
     200:  os.path.expanduser('~/finlab_db/etl#inventory#大於二百張佔比.feather'),
@@ -100,6 +101,36 @@ def load_low():
         low['date'] = pd.to_datetime(low['date'])
         _LOW_CACHE = low.set_index('date').sort_index()
     return _LOW_CACHE
+
+_HIGH_CACHE = None
+
+def load_high():
+    """最高價，用來算「處置前5日高點」當第二次+-5%回檔的新基準（2026-09-02，
+    disposal_peak3_reference_test研究驗證：D0收盤有時已經比真正高點回落一些，
+    用高點當基準比D0收盤多抓到約25%的機會、單筆品質不變，資金限制模擬下N=3/5/10
+    六種情境CAGR全部勝過D0收盤版；5日高點又比3日高點更好，Kevin決定採用5日）。"""
+    global _HIGH_CACHE
+    if _HIGH_CACHE is None:
+        high = pd.DataFrame(pd.read_feather(HIGH_F))
+        high['date'] = pd.to_datetime(high['date'])
+        _HIGH_CACHE = high.set_index('date').sort_index()
+    return _HIGH_CACHE
+
+def peak_n_high(high_p, idx, sid, sd, n_days=5):
+    """處置起始日(D1)往前算n_days個交易日的最高價（含D0，不含D1當天，避免用到
+    處置期間自己的價格污染基準）。sd是處置起始日(=D1的日曆日期，可能非交易日，
+    idx.searchsorted會找到D1對應的交易日位置)。"""
+    if sid not in high_p.columns:
+        return np.nan
+    pos1 = idx.searchsorted(sd)  # D1位置
+    start = pos1 - n_days        # D0往前數n_days天，含D0共n_days天
+    if start < 0 or pos1 < 1:
+        return np.nan
+    window = high_p[sid].iloc[start:pos1]  # 不含pos1(D1)本身
+    if window.empty:
+        return np.nan
+    v = window.max()
+    return float(v) if pd.notna(v) else np.nan
 
 
 def round_to_tick(price):
@@ -758,8 +789,13 @@ def build_signals(df, price, open_p, whale_dfs):
 NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
+                      '觸發價(D0收盤版)', '距觸發(D0收盤版)(%)',
                       'D1%', 'D2%', 'D3%', 'D4%', 'D5%',
-                      'LowD1%', 'LowD2%', 'LowD3%', 'LowD4%', 'LowD5%', '出關開盤(相對D0)%']
+                      'LowD1%', 'LowD2%', 'LowD3%', 'LowD4%', 'LowD5%',
+                      '峰值(5日)',
+                      'LowD1%(峰值版)', 'LowD2%(峰值版)', 'LowD3%(峰值版)', 'LowD4%(峰值版)', 'LowD5%(峰值版)',
+                      'D1%(峰值版)', 'D2%(峰值版)', 'D3%(峰值版)', 'D4%(峰值版)', 'D5%(峰值版)',
+                      '出關開盤(相對D0)%']
 
 # ── 2026-08-10 處置新制（2分鐘撮合）今日訊號 ──────────────────────────────
 # 完全獨立於 build_signals()（舊制20分鐘頁），彼此不共用輸出檔，不影響舊制頁面。
@@ -768,6 +804,7 @@ NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '觸�
 def build_newregime_signals(df, price, open_p, whale_dfs):
     idx = price.index
     low_p = load_low()
+    high_p = load_high()
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
@@ -815,6 +852,15 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 不用每加一種窗口就要改一次後端程式（2026-08-30，Kevin要求可自選窗口）。
         pos_lw = idx.searchsorted(sd)
         p0_lw  = price[sid].iloc[pos_lw - 1] if pos_lw >= 1 and sid in price.columns else np.nan
+        # 2026-09-02：第二次+的-5%回檔改用「處置前5日高點」當基準，不再用D0收盤
+        # （disposal_peak3_reference_test研究：D0收盤有時已比真正高點回落一些，
+        # 用高點當基準多抓約25%機會、單筆品質不變，資金限制模擬N=3/5/10六種情境
+        # CAGR全部勝過D0收盤版，5日又比3日更好）。LowD{n}%/D{n}%(D0收盤版)保留給
+        # 第一次沿用、也保留當診斷欄位跟價格重建用；峰值版是第二次+實際觸發/A-C
+        # 判斷用的新基準，價格重建(進場價/出關價)仍用D0收盤版換算，兩者不衝突
+        # （因為進場當天的真實收盤價不受用哪個基準判斷觸發影響）。
+        peak5 = peak_n_high(high_p, idx, sid, sd, n_days=5)
+        d['峰值(5日)'] = round(peak5, 2) if pd.notna(peak5) else np.nan
         for n in range(1, 6):
             lp = pos_lw + n - 1
             v = np.nan
@@ -823,6 +869,18 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
                 if pd.notna(ln):
                     v = round((ln / p0_lw - 1) * 100, 2)
             d[f'LowD{n}%'] = v
+            v_peak = np.nan
+            c_peak = np.nan
+            if pd.notna(peak5) and peak5 > 0 and lp < len(low_p) and sid in low_p.columns:
+                ln = low_p[sid].iloc[lp]
+                if pd.notna(ln):
+                    v_peak = round((ln / peak5 - 1) * 100, 2)
+            if pd.notna(peak5) and peak5 > 0 and lp < len(price) and sid in price.columns:
+                cn = price[sid].iloc[lp]
+                if pd.notna(cn):
+                    c_peak = round((cn / peak5 - 1) * 100, 2)
+            d[f'LowD{n}%(峰值版)'] = v_peak
+            d[f'D{n}%(峰值版)'] = c_peak
         ex_pos = pos_lw + 5
         if pd.notna(p0_lw) and p0_lw > 0 and sid in open_p.columns and ex_pos < len(open_p):
             ex_open = open_p[sid].iloc[ex_pos]
@@ -876,23 +934,30 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
             else:
                 d['訊號'] = '⚪ 資料不足'
         elif is_changduo:
-            # 2026-08-26修正：觸發條件改用「當天最低價」相對D0收盤是否跌破-5%，不再只看
+            # 2026-08-26修正：觸發條件改用「當天最低價」相對基準是否跌破-5%，不再只看
             # 收盤價（disposal_dip_intraday_touch研究：盤中觸及但收盤沒守住-5%的獨有子集
             # 合，驗證期n=39、勝率94.9%、平均+18.48%，比只看收盤的原規則還強）。
-            # 買進價維持不變，還是當天收盤價，只有「要不要觸發」這個判斷改成看最低價。
+            # 2026-09-02修正：基準改用「處置前5日高點」(peak5)，不再用D0收盤
+            # （disposal_peak3_reference_test研究：D0收盤有時已比真正高點回落一些，
+            # 用高點基準多抓約25%機會、單筆品質不變，資金限制模擬六種情境CAGR全勝）。
+            # 買進價維持不變，還是當天收盤價，只有「要不要觸發」這個判斷改成看
+            # 最低價相對peak5的跌幅。
             pos_s = idx.searchsorted(sd)
-            p0_s  = price[sid].iloc[pos_s - 1] if pos_s >= 1 and sid in price.columns else np.nan
             for n in range(1, 5):
-                if pd.notna(d.get(f'D{n}%')) and pd.notna(p0_s) and p0_s > 0 and sid in low_p.columns:
+                if pd.notna(peak5) and peak5 > 0 and sid in low_p.columns:
                     low_pos = pos_s + n - 1
                     low_n = low_p[sid].iloc[low_pos] if low_pos < len(low_p) else np.nan
+                    close_n = price[sid].iloc[low_pos] if low_pos < len(price) and sid in price.columns else np.nan
                     if pd.notna(low_n):
-                        low_ret = (low_n / p0_s - 1) * 100
+                        low_ret = (low_n / peak5 - 1) * 100
                         if low_ret < -5:
                             entry_n_sig = n
-                            # 觸發方式：收盤本身跌破-5%(A)，或收盤沒守住、只有盤中最低價
-                            # 跌破(C，disposal_dip_intraday_touch驗證出更強的獨有子集合)。
-                            trigger_type_sig = '收盤跌破(A)' if d[f'D{n}%'] < -5 else '僅盤中觸及(C)'
+                            # 觸發方式：收盤本身(相對peak5)跌破-5%(A)，或收盤沒守住、
+                            # 只有盤中最低價跌破(C，disposal_dip_intraday_touch驗證出
+                            # 更強的獨有子集合)——A/C判斷現在也改用peak5基準，
+                            # 跟觸發判斷用同一把尺，不能一個用D0收盤一個用peak5。
+                            close_ret = (close_n / peak5 - 1) * 100 if pd.notna(close_n) else np.nan
+                            trigger_type_sig = '收盤跌破(A)' if pd.notna(close_ret) and close_ret < -5 else '僅盤中觸及(C)'
                             break
         d['買進訊號'] = f'D{entry_n_sig}' if entry_n_sig else ''
         d['觸發方式'] = trigger_type_sig if entry_n_sig else ''
@@ -937,9 +1002,10 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         else:
             d['目前損益(-5%版)(%)'] = np.nan
 
-        # 觸發價/距觸發(%)：第二次+是「D0收盤*0.95」（-5%回檔規則的門檻價）；
-        # 第一次是「D0收盤本身」（5分盤動能規則：D1開盤只要不高於這個價，訊號才成立，
-        # 不是跌到某個價位，是「不能開得比這個價高」）。距觸發(%)一律用「觸發價相對最新可得
+        # 觸發價/距觸發(%)：第二次+是「處置前5日高點*0.95」（2026-09-02起，-5%回檔
+        # 規則的門檻價改用peak5，理由同上）；第一次是「D0收盤本身」（5分盤動能規則：
+        # D1開盤只要不高於這個價，訊號才成立，不是跌到某個價位，是「不能開得比這個價
+        # 高」，這條規則沒有改動，維持D0收盤）。距觸發(%)一律用「觸發價相對最新可得
         # 價格的距離」，跟第二次+同樣的算法、只是基準價不同。
         pos_v = idx.searchsorted(sd)
         p0_v  = price[sid].iloc[pos_v - 1] if pos_v >= 1 and sid in price.columns else np.nan
@@ -951,7 +1017,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 不能顯示這個誤導的假精確數字。
         has_current_data = len(ser_v) > 0 and ser_v.index[-1] >= sd
         if is_changduo and not is_first:
-            trigger = round_to_tick(p0_v * 0.95) if pd.notna(p0_v) and p0_v > 0 else np.nan
+            trigger = round_to_tick(peak5 * 0.95) if pd.notna(peak5) and peak5 > 0 else np.nan
         elif is_changduo and is_first:
             trigger = p0_v if pd.notna(p0_v) and p0_v > 0 else np.nan
         else:
@@ -971,6 +1037,18 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         else:
             d['觸發價(-5%版)']    = np.nan
             d['距觸發(-5%版)(%)'] = np.nan
+
+        # 2026-09-02：僅第二次+才有值，保留「舊版D0收盤基準」的觸發價當對照，
+        # 讓網站可以有個切換選項比較新舊基準（Kevin要求：預設用峰值版，但D0收盤版
+        # 要留著給他觀察對照，不是直接刪掉）。
+        if is_changduo and not is_first and pd.notna(p0_v) and p0_v > 0:
+            trigger_d0 = round_to_tick(p0_v * 0.95)
+            d['觸發價(D0收盤版)'] = trigger_d0
+            d['距觸發(D0收盤版)(%)'] = (round((trigger_d0 / cur_p - 1) * 100, 2)
+                                       if has_current_data and pd.notna(cur_p) and cur_p > 0 else np.nan)
+        else:
+            d['觸發價(D0收盤版)']    = np.nan
+            d['距觸發(D0收盤版)(%)'] = np.nan
 
         rows.append(d)
 
@@ -1220,6 +1298,7 @@ NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名�
                        '期間最深(%)', '出關價', '出關報酬(%)', '結果',
                        *[f'T+{k}收盤(%)' for k in range(1, 11)],
                        *[f'D{n}%' for n in range(1, 6)], *[f'LowD{n}%' for n in range(1, 6)],
+                       '峰值(5日)', *[f'LowD{n}%(峰值版)' for n in range(1, 6)],
                        '出關開盤(相對D0)%',
                        '買進日(-5%版)', '買進時累積(-5%版)(%)', '出關報酬(-5%版)(%)', '結果(-5%版)']
 
@@ -1230,6 +1309,7 @@ NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名�
 def build_newregime_history(df, price, open_p, whale_dfs):
     idx = price.index
     low_p = load_low()
+    high_p = load_high()
     pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
               (df['處置類型'] == '2分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
@@ -1249,9 +1329,11 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
                    entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
                    exit_open_rel_d0=np.nan, d0_close=np.nan, entry_price=np.nan, exit_price=np.nan,
+                   peak5=np.nan,
                    **{f'_t{k}c': np.nan for k in range(1, 11)},
                    **{f'd{n}_close': np.nan for n in range(1, 6)},
-                   **{f'd{n}_low': np.nan for n in range(1, 6)})
+                   **{f'd{n}_low': np.nan for n in range(1, 6)},
+                   **{f'd{n}_low_peak5': np.nan for n in range(1, 6)})
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1261,6 +1343,10 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         if pd.isna(p0) or p0 <= 0:
             return pd.Series(out)
         out['d0_close'] = round(float(p0), 2)
+        # 2026-09-02：第二次+的-5%回檔基準改用處置前5日高點(peak5)，見build_newregime_signals
+        # 同一處註解；第一次處置不受影響，仍用D0收盤(p0)。
+        peak5 = peak_n_high(high_p, idx, sid, sd, n_days=5)
+        out['peak5'] = round(peak5, 2) if pd.notna(peak5) else np.nan
 
         t1_open = (open_p[sid].iloc[pos + T1_OFFSET]
                    if sid in open_p.columns and pos + T1_OFFSET < len(open_p) else np.nan)
@@ -1280,6 +1366,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                 ln = low_p[sid].iloc[pos + n - 1]
                 if pd.notna(ln) and ln > 0:
                     out[f'd{n}_low'] = round((ln / p0 - 1) * 100, 2)
+                if pd.notna(ln) and ln > 0 and pd.notna(peak5) and peak5 > 0:
+                    out[f'd{n}_low_peak5'] = round((ln / peak5 - 1) * 100, 2)
 
         dn_rets = {n: all_rets[n] for n in ENTRY_RNG if n in all_rets}
         if dn_rets:
@@ -1330,17 +1418,20 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         # 驗證期n=39、勝率94.9%、平均+18.48%，比只看收盤的原規則還強）。
         # 買進價維持不變，還是當天收盤價；只有「要不要觸發」這個判斷改成看最低價。
         for n in sorted(ENTRY_RNG):
-            if n in dn_rets and pos + n - 1 < len(low_p) and sid in low_p.columns:
+            if n in dn_rets and pd.notna(peak5) and peak5 > 0 and pos + n - 1 < len(low_p) and sid in low_p.columns:
                 low_n = low_p[sid].iloc[pos + n - 1]
-                low_ret = (low_n / p0 - 1) * 100 if pd.notna(low_n) and p0 > 0 else np.nan
+                low_ret = (low_n / peak5 - 1) * 100 if pd.notna(low_n) else np.nan
                 if pd.notna(low_ret) and low_ret < -5:
                     out['entry_n']   = n
                     out['entry_cum'] = round(dn_rets[n], 2)
                     out['entry_price'] = round(float(price[sid].iloc[pos + n - 1]), 2)
-                    # 觸發方式：收盤本身就跌破-5%(A，驗證期較強的原規則)，
+                    # 觸發方式：收盤本身(相對peak5)就跌破-5%(A，驗證期較強的原規則)，
                     # 還是收盤沒守住、只有盤中最低價跌破(C，disposal_dip_intraday_touch
-                    # 驗證出的獨有子集合，驗證期表現比A更好：n=39/94.9%/+18.48%)。
-                    out['trigger_type'] = '收盤跌破(A)' if dn_rets[n] < -5 else '僅盤中觸及(C)'
+                    # 驗證出的獨有子集合，驗證期表現比A更好：n=39/94.9%/+18.48%)——
+                    # A/C判斷跟觸發判斷一致改用peak5基準(2026-09-02)。
+                    close_n = price[sid].iloc[pos + n - 1]
+                    close_ret_peak5 = (close_n / peak5 - 1) * 100 if pd.notna(close_n) else np.nan
+                    out['trigger_type'] = '收盤跌破(A)' if pd.notna(close_ret_peak5) and close_ret_peak5 < -5 else '僅盤中觸及(C)'
                     if has_exit:
                         pn = price[sid].iloc[pos + n - 1]
                         out['actual_ret'] = round((t1_open / pn - 1) * 100, 2)
@@ -1403,6 +1494,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         # 不用每加一種窗口就要改後端程式（2026-08-30，Kevin要求可自選窗口）。
         **{f'D{n}%': pool[f'd{n}_close'] for n in range(1, 6)},
         **{f'LowD{n}%': pool[f'd{n}_low'] for n in range(1, 6)},
+        '峰值(5日)': pool['peak5'],
+        **{f'LowD{n}%(峰值版)': pool[f'd{n}_low_peak5'] for n in range(1, 6)},
         '出關開盤(相對D0)%': pool['exit_open_rel_d0'],
         # alt：僅第一次處置才有值，供比較「若套用第二次+的-5%回檔規則」的結果，
         # 不是建議規則。第二次+本身沒有alt，因為-5%回檔就是它已驗證的規則。
