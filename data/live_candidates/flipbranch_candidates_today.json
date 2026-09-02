@@ -1,18 +1,18 @@
 {
-  "trade_date": "2026-09-02",
-  "signal_date": "2026-09-01",
+  "trade_date": "2026-09-03",
+  "signal_date": "2026-09-02",
   "strategy": "FlipBranch",
-  "generated_at": "2026-09-02T07:35:50.829500+08:00",
+  "generated_at": "2026-09-03T07:35:40.676878+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
   "active": true,
   "candidates": [
     {
-      "code": "1714",
-      "prev_close": 18.55,
-      "ranking_value": 7682800.0,
+      "code": "3019",
+      "prev_close": 157.5,
+      "ranking_value": 2412000.0,
       "ranking_field": "dominant_net_shares",
-      "dominant_broker": "凱基城中"
+      "dominant_broker": "摩根大通"
     }
   ]
 }
