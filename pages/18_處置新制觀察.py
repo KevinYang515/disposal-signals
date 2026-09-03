@@ -55,6 +55,36 @@ def color_grade(val):
     return f'color: {color}; font-weight: bold;' if color else ''
 
 
+def round_to_tick(price):
+    """台股法定升降單位，自選窗口重算的價格是用百分比反推(D0收盤×(1+報酬%))，
+    直接四捨五入到小數點兩位會出現528.02這種不存在的價格，要對齊到合法跳動單位。
+    （固定預設窗口(D1~D4)的欄位不受影響，那是直接讀真實收盤價，本來就是合法跳動價。）"""
+    if price is None or pd.isna(price) or price <= 0:
+        return price
+    if price < 10:
+        tick = 0.01
+    elif price < 50:
+        tick = 0.05
+    elif price < 100:
+        tick = 0.1
+    elif price < 500:
+        tick = 0.5
+    elif price < 1000:
+        tick = 1
+    else:
+        tick = 5
+    return round(round(price / tick) * tick, 2)
+
+
+def color_signal(val):
+    s = str(val)
+    if '🟢' in s: return 'color:#26c281;font-weight:700'
+    if '🔵' in s: return 'color:#2980b9;font-weight:700'
+    if '🟡' in s: return 'color:#f6c90e'
+    if '🔒' in s or '❌' in s: return 'color:#e74c3c'
+    return 'color:#95a5a6'
+
+
 st.title('🆕 處置新制觀察（2026-08-10起，2分鐘撮合）')
 st.warning(
     '⚠️ **本頁資料尚未驗證，評級只是沿用舊制的分類方式，不代表已證實有效**。'
@@ -67,6 +97,34 @@ st.warning(
 sig = safe_read_csv(f'{DATA_DIR}/newregime_signals.csv', dtype={'代號': str})
 hist = safe_read_csv(f'{DATA_DIR}/newregime_history.csv', dtype={'代號': str})
 old_hist = safe_read_csv(f'{DATA_DIR}/history.csv', dtype={'代號': str})  # 舊制基準，用來對照新制是否走勢相似
+watchlist = safe_read_csv(f'{DATA_DIR}/attention_watchlist.csv', dtype={'股票代號': str})
+
+# 2026-09-02 處置預警看板：TWSE處置的觸發條件是「連續N個營業日(通常3天)命中
+# 同一款注意條件」，這裡抓「同一款目前連續命中幾天」當提前預警——連續2天代表
+# 明天再中一次同一款就可能觸發處置。用大立光(3008)實測驗證過可行（連續3天中
+# 第一款、隔天果然公告處置）。Kevin要求優先關注第二次+候選（現行策略適用對象）。
+with st.expander('🔮 處置預警看板（連續注意天數篩選，尚未觸發處置的候選名單）', expanded=True):
+    st.caption(
+        '原理：處置的觸發條件是「連續N個營業日(多數款是3天，少數如跌深/借券等是5天)命中同一款注意條件」，'
+        '這裡列出「目前連續命中同一款注意條件≥2天」的股票，越接近3天代表越快可能被公告處置。'
+        '**已經在處置期間中的股票不會出現在這裡**（那些請看下面兩個分頁）。'
+        '「預估第幾次」是用過去30個營業日內有沒有處置紀錄推算，不是官方公告，正式次別以TWSE公告為準。'
+    )
+    if watchlist.empty:
+        st.info('目前沒有連續命中同一款注意條件≥2天的股票。')
+    else:
+        wl_2 = watchlist[watchlist['預估第幾次'] == '第二次+']
+        wl_1 = watchlist[watchlist['預估第幾次'] == '第一次']
+        st.markdown(f'##### 🔴 第二次+候選（優先關注，現行-5%回檔策略適用對象，共{len(wl_2)}檔）')
+        if wl_2.empty:
+            st.caption('目前沒有第二次+候選。')
+        else:
+            st.dataframe(wl_2, use_container_width=True, hide_index=True)
+        st.markdown(f'##### ⚪ 第一次候選（共{len(wl_1)}檔）')
+        if wl_1.empty:
+            st.caption('目前沒有第一次候選。')
+        else:
+            st.dataframe(wl_1, use_container_width=True, hide_index=True)
 
 OLD_TYPE_MAP = {'第一次': '5分鐘', '第二次+': '20分鐘'}
 
@@ -111,11 +169,122 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 if use_alt and alt_col in sub_hist.columns:
                     sub_hist[base_col] = sub_hist[alt_col]
 
+        # 第二次+：可自選進場窗口（D幾~D幾），今日訊號跟累積至今結果都會跟著重算。
+        # 2026-08-30 起預設改為D1~D4（原本D3~D5）：disposal_entry_day_full_test研究
+        # 發現D1單日表現目前為止最好，且D3~D5幾乎都是D1早就觸發過的同一批股票，改用
+        # 比較早、比較便宜的進場點；D1~D4排除D5是因為D5獨立測試時明顯最弱，跟D1~D5
+        # 在目前資料下實測完全相同(D5從未單獨觸發過)。**這是Kevin在樣本仍很小的情況下
+        # 主動決定要換的，不是本系列一貫的「驗證足夠才換」標準，務必在畫面上誠實揭露
+        # 這一點，不要包裝成已驗證的規則。**
+        if key == '第二次+':
+            # 2026-09-02：觸發基準預設改用「處置前5日高點」(峰值版)，理由見
+            # disposal_peak3_reference_test研究(單筆品質不變、訊號量多25%、資金限制
+            # 模擬N=3/5/10六種情境CAGR全勝)。Kevin要求把舊的D0收盤基準留著當對照，
+            # 不要直接刪掉，用切換選項讓兩邊都能觀察。
+            basis_mode = st.radio(
+                '第二次+的-5%回檔基準',
+                ['峰值基準（處置前5日高點，預設，2026-09-02起）', 'D0收盤基準（舊版本，僅供對照觀察）'],
+                horizontal=True, key=f'basis_mode_{key}',
+            )
+            use_old_basis = basis_mode.startswith('D0收盤基準')
+            low_suffix = '' if use_old_basis else '(峰值版)'
+            if use_old_basis:
+                st.info('目前顯示的是舊版「D0收盤」基準，僅供跟峰值版對照——網站正式預設已改用峰值基準，理由見PLAYBOOK.md與disposal_peak3_reference_test研究。', icon='ℹ️')
+                for base_col, alt_col in [('觸發價', '觸發價(D0收盤版)'), ('距觸發(%)', '距觸發(D0收盤版)(%)')]:
+                    if alt_col in sub_sig.columns:
+                        sub_sig[base_col] = sub_sig[alt_col]
+
+            wc1, wc2 = st.columns(2)
+            with wc1:
+                win_start = st.number_input('進場窗口起始 D', min_value=1, max_value=5, value=1, step=1, key=f'win_start_{key}')
+            with wc2:
+                win_end = st.number_input('進場窗口結束 D', min_value=1, max_value=5, value=4, step=1, key=f'win_end_{key}')
+            if win_start > win_end:
+                win_start, win_end = win_end, win_start
+                st.warning('起始日不能大於結束日，已自動對調。')
+            st.caption('⚠️ 目前預設是D1~D4，2026-08-30由Kevin主動決定換掉原本的D3~D5——樣本量還很小(D1目前只有13筆已結算)、沒有訓練/驗證期切分，不是這系列一貫要求的驗證標準，屬於觀察中的規則，非正式驗證結論。')
+            if (win_start, win_end) != (1, 4):
+                st.info(
+                    f'目前顯示的是自選窗口 D{win_start}~D{win_end}，不是網站預設的D1~D4——'
+                    f'僅供比較觀察。詳見PLAYBOOK.md「開放問題」與'
+                    f'disposal_entry_day_full_test研究（新制樣本仍很小，任何窗口的統計數字都可能只是巧合）。',
+                    icon='ℹ️',
+                )
+            window_days = list(range(win_start, win_end + 1))
+
+            def _recompute_sig(row):
+                # 2026-09-02起：觸發判斷預設改用「處置前5日高點」基準(峰值版欄位)，
+                # 可用上面的basis_mode切回D0收盤版對照——見update_signals.py同一處
+                # 註解(disposal_peak3_reference_test研究)。進場價/損益重建一律用
+                # D0收盤版D{n}%換算，不受選用哪個觸發基準影響。
+                trig_n = None
+                for n in window_days:
+                    lv = row.get(f'LowD{n}%{low_suffix}')
+                    if pd.notna(lv) and lv < -5:
+                        trig_n = n
+                        break
+                if trig_n is None:
+                    return pd.Series({'買進訊號': '', '觸發方式': '', '目前損益(%)': np.nan})
+                close_v = row.get(f'D{trig_n}%')
+                close_v_cls = close_v if use_old_basis else row.get(f'D{trig_n}%{low_suffix}')
+                ttype = '收盤跌破(A)' if pd.notna(close_v_cls) and close_v_cls < -5 else '僅盤中觸及(C)'
+                cur_cum = np.nan
+                for n in range(5, 0, -1):
+                    v = row.get(f'D{n}%')
+                    if pd.notna(v):
+                        cur_cum = v
+                        break
+                pl = np.nan
+                if pd.notna(cur_cum) and pd.notna(close_v):
+                    ef = 1 + close_v / 100
+                    cf = 1 + cur_cum / 100
+                    if ef > 0:
+                        pl = round((cf / ef - 1) * 100, 2)
+                return pd.Series({'買進訊號': f'D{trig_n}', '觸發方式': ttype, '目前損益(%)': pl})
+
+            if not sub_sig.empty:
+                _r = sub_sig.apply(_recompute_sig, axis=1)
+                for c in ['買進訊號', '觸發方式', '目前損益(%)']:
+                    sub_sig[c] = _r[c]
+
+            def _recompute_hist(row):
+                d0 = row.get('D0收盤價')
+                # 2026-09-02起：觸發判斷預設用峰值版欄位(處置前5日高點基準)，
+                # 可用basis_mode切回D0收盤版對照；買進價/出關價重建一律用
+                # D0收盤版D{n}%/出關開盤%換算，不受選用哪個觸發基準影響。
+                trig_n = None
+                for n in window_days:
+                    lv = row.get(f'LowD{n}%{low_suffix}')
+                    if pd.notna(lv) and lv < -5:
+                        trig_n = n
+                        break
+                if trig_n is None:
+                    return pd.Series({'買進日': '-', '買進價': np.nan, '買進時累積(%)': np.nan,
+                                       '出關價': np.nan, '出關報酬(%)': np.nan, '結果': '-'})
+                close_v = row.get(f'D{trig_n}%')
+                exit_v = row.get('出關開盤(相對D0)%')
+                # 價格先對齊跳動單位，報酬%一定要用對齊後的真實價格重算，
+                # 不能沿用對齊前的百分比——不然價格跟報酬會對不起來(Kevin抓到的問題)。
+                entry_price = round_to_tick(d0 * (1 + close_v / 100)) if pd.notna(d0) and pd.notna(close_v) else np.nan
+                exit_price  = round_to_tick(d0 * (1 + exit_v / 100)) if pd.notna(d0) and pd.notna(exit_v) else np.nan
+                ret = np.nan
+                if pd.notna(entry_price) and pd.notna(exit_price) and entry_price > 0:
+                    ret = round((exit_price / entry_price - 1) * 100, 2)
+                result = (f'✅ {ret:+.2f}%' if pd.notna(ret) and ret > 0
+                          else (f'❌ {ret:+.2f}%' if pd.notna(ret) else '-'))
+                return pd.Series({'買進日': f'D{trig_n}', '買進價': entry_price, '買進時累積(%)': close_v,
+                                   '出關價': exit_price, '出關報酬(%)': ret, '結果': result})
+
+            if not sub_hist.empty:
+                _rh = sub_hist.apply(_recompute_hist, axis=1)
+                for c in ['買進日', '買進價', '買進時累積(%)', '出關價', '出關報酬(%)', '結果']:
+                    sub_hist[c] = _rh[c]
+
         st.subheader(f'🔔 今日訊號（{key}）')
         if sub_sig.empty:
             st.info('目前沒有符合條件的處置中股票。')
         else:
-            display_cols = ['評級', '買進訊號', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
+            display_cols = ['評級', '訊號', '買進訊號', '觸發方式', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
                              '起始日', '今D幾', '出關日', '觸發價', '距觸發(%)', '目前損益(%)', '今日漲跌']
             d_cols = [c for c in [f'D{n}%' for n in range(1, 9)]
                       if c in sub_sig.columns and sub_sig[c].notna().any()]
@@ -127,6 +296,8 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
             if '觸發價' in disp.columns:
                 disp['觸發價'] = disp['觸發價'].apply(lambda v: f'{v:.2f}' if pd.notna(v) else '-')
             styled = disp.style.map(color_grade, subset=['評級']) if '評級' in disp.columns else disp
+            if '訊號' in disp.columns:
+                styled = styled.map(color_signal, subset=['訊號'])
             st.dataframe(styled, use_container_width=True, height=min(400, 60 + 35 * len(disp)))
 
             # ── 進場預覽 / 觸發分析（依缺口排序）── 跟首頁Tab1同樣的邏輯，只是資料源換成新制 ──
@@ -208,22 +379,27 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                                 '觸發條件（5分盤動能）：D0(處置前一天)漲2~9%，且D1開盤不高於D0收盤（觸發價=D0收盤）、'
                                 'D1收盤沒鎖漲停 → D1收盤買進。距觸發(%)為正代表目前還沒開高（安全），轉負代表已經開高、訊號作廢。'
                             )
-                        else:
+                        elif key == '第一次':
                             st.caption(
                                 f'已觸發 = 距觸發 ≥ 0%（目前收盤已低於觸發價）｜🔥 = 距觸發 < 2%（高度警戒）｜'
-                                f'觸發條件：D3~D5 任意天累積跌幅 < -5%'
-                                + ('（套用第二次+規則於第一次，僅供比較）' if key == '第一次' else '（比照舊制邏輯但窗口縮到5天近似）')
+                                f'觸發條件：D1~D4 任意天收盤累積跌幅 < -5%（套用第二次+規則於第一次，僅供比較）'
+                            )
+                        else:
+                            st.caption(
+                                f'觸發條件：D1~D4 任意天「最低價」相對D0收盤跌破-5%（不只看收盤；2026-08-30起窗口由D3~D5'
+                                f'改為D1~D4，因新制真實資料顯示D1單日表現最好——樣本仍很小，屬觀察中的規則，非正式驗證結論，'
+                                f'詳見disposal_entry_day_full_test研究）'
                             )
 
         st.divider()
         st.subheader(f'⚖️ 策略對照：新制 vs 舊制基準（{key} vs 舊制{OLD_TYPE_MAP[key]}）')
         if key == '第一次':
             if use_alt:
-                st.caption('用「D3~D5(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較（套用第二次+規則於第一次，僅供比較）。')
+                st.caption('用「D1~D4(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較（套用第二次+規則於第一次，僅供比較）。')
             else:
                 st.caption('用「5分盤動能」規則比較：D0漲2~9%、D1不跳空高開、D1收盤沒鎖漲停 → D1收盤買進、出關日開盤出場——這是第一次已驗證的規則，新舊制用同一套規則比較表現是否相似。')
         else:
-            st.caption('用同樣的「D3~D5(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則，比較新舊制表現是否相似——這是驗證橡皮筋機制在新制下是否還成立的核心對照。')
+            st.caption('用「D1~D4(新制)/D3~D8(舊制) 任一天跌破-5%進場、出關日開盤出場」規則比較——舊制窗口是已驗證的基準；新制窗口2026-08-30起改為D1~D4，樣本仍很小，屬觀察中的規則。')
 
         old_pool = (old_hist[old_hist['處置類型'] == OLD_TYPE_MAP[key]] if len(old_hist) else pd.DataFrame()).copy()
         if key == '第一次' and use_alt and len(old_pool):
@@ -277,7 +453,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 triggered = settled[settled['買進日'] != '-']
                 trig_rets = triggered['出關報酬(%)']
                 sharpe, pf = sharpe_pf(trig_rets) if len(trig_rets) else (np.nan, np.nan)
-                rule_label = ('觸發D3~D8<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
+                rule_label = ('觸發D1~D4<-5%進場訊號' if key != '第一次' or use_alt else '觸發5分盤動能進場訊號')
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric('已出關筆數', len(settled), delta=f'{len(triggered)} 筆有{rule_label}', delta_color='off')
                 c2.metric('觸發後勝率', f'{(trig_rets > 0).mean() * 100:.1f}%' if len(trig_rets) else '-')
@@ -288,17 +464,74 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     f'全部{key}已出關（不論是否觸發進場條件）平均報酬：{rets.mean():+.2f}%，勝率 {(rets > 0).mean()*100:.1f}%'
                     f'（n={len(settled)}）。樣本數還很小，以上數字僅供觀察趨勢，不是可信賴的統計結果。'
                 )
-                show_cols = ['起始日', '出關日', '代號', '名稱', '規模', 'Dn組別', '買進日',
-                             '買進時累積(%)', '最深日', '期間最深(%)', '出關報酬(%)', '結果']
+                show_cols = ['起始日', '出關日', '代號', '名稱', '規模', 'Dn組別', '買進日', '觸發方式',
+                             '買進價', '買進時累積(%)', '最深日', '期間最深(%)', '出關價', '出關報酬(%)', '結果']
+                show_cols += [f'T+{k}收盤(%)' for k in range(1, 11)]
                 show_cols = [c for c in show_cols if c in settled.columns]
-                st.dataframe(settled[show_cols].sort_values('起始日', ascending=False),
-                             use_container_width=True, height=min(400, 60 + 35 * len(settled)))
+                show_disp = settled[show_cols].sort_values('起始日', ascending=False).copy()
+                for c in [f'T+{k}收盤(%)' for k in range(1, 11)]:
+                    if c in show_disp.columns:
+                        show_disp[c] = show_disp[c].apply(lambda v: f'{v:+.2f}%' if pd.notna(v) else '-')
+                st.dataframe(show_disp, use_container_width=True, height=min(400, 60 + 35 * len(settled)))
+                st.caption('T+1~T+10收盤(%)：若出關日沒有照規則賣出、繼續抱著，之後10個交易日的報酬（基準是買進日收盤價）——比照舊制Tab2「歷史回測紀錄」同樣的欄位，方便對照是否該提早或延後出場。')
+
+                # D1~D5各自獨立表現：不管現在選的窗口是哪一段，這張表固定顯示每一天
+                # 單獨進場(當天最低價跌破-5%就當天收盤買)的表現，方便一眼比較哪天最好。
+                if key == '第二次+':
+                    st.markdown('##### 📊 D1~D5 各自獨立表現（不受上面窗口選擇影響，固定顯示每一天）')
+                    day_rows = []
+                    for n in range(1, 6):
+                        low_col, close_col = f'LowD{n}%{low_suffix}', f'D{n}%'
+                        if low_col not in sub_hist.columns or close_col not in sub_hist.columns:
+                            continue
+                        trig = sub_hist[sub_hist[low_col] < -5].copy()
+                        if trig.empty:
+                            day_rows.append({'進場日': f'D{n}', '觸發數': 0, '已出關': 0, '勝率': '-', '平均報酬': '-'})
+                            continue
+                        d0v = trig['D0收盤價']
+                        entry_p = [round_to_tick(d0*(1+c/100)) if pd.notna(d0) and pd.notna(c) else np.nan
+                                   for d0, c in zip(d0v, trig[close_col])]
+                        exit_p  = [round_to_tick(d0*(1+e/100)) if pd.notna(d0) and pd.notna(e) else np.nan
+                                   for d0, e in zip(d0v, trig['出關開盤(相對D0)%'])]
+                        ret = [round((xp/ep-1)*100, 2) if pd.notna(ep) and pd.notna(xp) and ep > 0 else np.nan
+                               for ep, xp in zip(entry_p, exit_p)]
+                        ret_s = pd.Series(ret).dropna()
+                        day_rows.append({
+                            '進場日': f'D{n}', '觸發數': len(trig), '已出關': len(ret_s),
+                            '勝率': f'{(ret_s > 0).mean()*100:.1f}%' if len(ret_s) else '-',
+                            '平均報酬': f'{ret_s.mean():+.2f}%' if len(ret_s) else '-',
+                        })
+                    st.dataframe(pd.DataFrame(day_rows), use_container_width=True, hide_index=True)
+                    st.caption('每一天都獨立計算「當天最低價跌破-5%就當天收盤買進」的表現，不是「第一次觸發」，同一事件可能在好幾天都算進去——樣本還很小，僅供觀察趨勢。')
+
+                # 出關時間點比較：跟現行「出關日開盤賣」比，若延後到出關日收盤、或再抱1~10天，
+                # 表現會怎樣，比照舊制Tab2「⏰出場時間點比較」的呈現方式。
+                st.markdown('##### ⏰ 出關時間點比較')
+                exit_rows = [{
+                    '出場時間點': 'T+1 開盤（現行策略）',
+                    '筆數': len(trig_rets),
+                    '勝率': f'{(trig_rets > 0).mean()*100:.1f}%' if len(trig_rets) else '-',
+                    '平均報酬': f'{trig_rets.mean():+.2f}%' if len(trig_rets) else '-',
+                }]
+                for k in range(1, 11):
+                    col = f'T+{k}收盤(%)'
+                    if col not in triggered.columns:
+                        continue
+                    s = triggered[col].dropna()
+                    exit_rows.append({
+                        '出場時間點': f'T+{k} 收盤',
+                        '筆數': len(s),
+                        '勝率': f'{(s > 0).mean()*100:.1f}%' if len(s) else '-',
+                        '平均報酬': f'{s.mean():+.2f}%' if len(s) else '-',
+                    })
+                st.dataframe(pd.DataFrame(exit_rows), use_container_width=True, hide_index=True)
+                st.caption('T+1開盤是現行規則（出關日開盤賣出）；T+1~T+10收盤是「如果沒賣、繼續抱著」的對照，基準都是買進日收盤價。比照舊制Tab2的呈現方式。')
 
 st.divider()
 with st.expander('📖 本頁的已知近似與侷限（務必先讀再解讀數字）'):
     st.markdown("""
 - **5天 vs 7天不分**：新制處置期間一般是5個營業日，若同時因當沖比重過高遭加重處置則是7個營業日；本頁資料沒有欄位可以精確分辨，統一用5天近似，可能讓少數7天案例的「今D幾」「出關日」顯示提前。
-- **進場窗口改為D3~D5**（不是舊制20分鐘的D3~D8）：因為新制期間本身只有5(或7)天近似，D6~D8多半已經是出關後的一般交易日，不應算進處置期間訊號；這個窗口縮短後是否還合理，尚未驗證。
+- **進場窗口預設為D1~D4**（不是舊制20分鐘的D3~D8，也不是2026-08-26~08-30間曾經用過的D3~D5）：2026-08-30由Kevin主動決定換成D1~D4，依據是新制真實資料(僅十幾筆已結算樣本)顯示D1單日表現目前最好——**這是樣本很小情況下的主動決策，不是這系列一貫「驗證足夠才換」的標準流程**，屬於觀察中的規則。可以用頁面上的窗口選擇器切回D3~D5或其他範圍比較。
 - **評級只是描述性分類**：套用跟舊制頁面相同的規則(grade())來標「✅主力訊號/🟡觀察中」等，純粹方便閱讀，**不代表這些評級在新制下已被證實有效**。
 - **樣本數極少**：新制上路才幾天，已完整出關的樣本數只有個位數到十幾筆，任何統計數字都可能只是巧合，需要更長時間累積才能判斷。
 - 完整規則變更細節與研究進度，見 PLAYBOOK.md「研究 Roadmap」章節。
