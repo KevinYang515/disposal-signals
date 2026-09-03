@@ -11,6 +11,7 @@
 「第二次+(對照舊20分)」兩組獨立呈現，避免混在一起看不出差異。
 """
 import os
+from datetime import datetime, timezone, timedelta
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -18,6 +19,7 @@ import streamlit as st
 st.set_page_config(page_title='處置新制觀察', page_icon='🆕', layout='wide')
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+TODAY_STR = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d')  # 跟後端tw_today()同一套時區邏輯，「今日出關」篩選要用同一個today
 
 
 def sharpe_pf(s):
@@ -279,6 +281,21 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                 _rh = sub_hist.apply(_recompute_hist, axis=1)
                 for c in ['買進日', '買進價', '買進時累積(%)', '出關價', '出關報酬(%)', '結果']:
                     sub_hist[c] = _rh[c]
+
+        # 2026-09-04：今日出關股票獨立列出來——出關日一到就會從「今日訊號」/
+        # 「進場預覽」移除（避免誤以為還能進場），但這樣使用者看不到「今天有誰
+        # 出關」，容易誤以為資料沒更新（Kevin反映過：華星光今天出關就直接消失，
+        # 疑惑是不是網站沒更新）。出關報酬(%)如果還是空的，代表出關日雖然到了，
+        # 但今天的開盤價還沒有資料可以算，不是漏算，是還沒到能算的時間點。
+        if not sub_hist.empty and '出關日' in sub_hist.columns:
+            today_exit = sub_hist[sub_hist['出關日'] == TODAY_STR]
+            if not today_exit.empty:
+                st.subheader(f'📤 今日出關（{key}）')
+                exit_cols = [c for c in ['代號', '名稱', '起始日', '出關日', '買進日', '買進價',
+                                          '觸發方式', '出關價', '出關報酬(%)', '結果']
+                             if c in today_exit.columns]
+                st.dataframe(today_exit[exit_cols], use_container_width=True, hide_index=True)
+                st.caption('出關報酬(%)/結果如果還是空的，代表出關日到了、但今天的開盤價資料還沒更新到，不是漏算，收盤後重新整理資料就會補上。')
 
         st.subheader(f'🔔 今日訊號（{key}）')
         if sub_sig.empty:
