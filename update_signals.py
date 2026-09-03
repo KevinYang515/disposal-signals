@@ -217,6 +217,50 @@ def exit_date(idx, sd, t1_offset=10):
             cnt += 1
     return cur
 
+_DISPOSAL_END_CACHE = None
+
+def load_disposal_end_dates():
+    """2026-09-03修正：新制處置期間實際上是5個或7個營業日(當沖比重過高時加重為7天)，
+    之前一律用t1_offset=5近似，導致像先進光(3362,2026-08-27起始、TWSE公告實際到
+    2026-09-04共7個營業日)這種7天案例被提早2天標記成「已出關」，出關報酬也用錯的
+    出場日算——這裡改成直接讀disposal_information.feather的真實處置結束時間，
+    不再用5天猜。key是(股票代號, 處置起始日)，value是TWSE公告的處置結束時間。"""
+    global _DISPOSAL_END_CACHE
+    if _DISPOSAL_END_CACHE is None:
+        if not os.path.exists(DISPOSAL_INFO_F):
+            _DISPOSAL_END_CACHE = {}
+        else:
+            raw = pd.DataFrame(pd.read_feather(DISPOSAL_INFO_F))
+            raw['stock_id'] = raw['stock_id'].astype(str)
+            raw['處置開始時間'] = pd.to_datetime(raw['處置開始時間'])
+            raw['處置結束時間'] = pd.to_datetime(raw['處置結束時間'])
+            _DISPOSAL_END_CACHE = dict(zip(zip(raw['stock_id'], raw['處置開始時間']), raw['處置結束時間']))
+    return _DISPOSAL_END_CACHE
+
+def real_exit_date(idx, sid, sd, t1_offset=5):
+    """優先用TWSE公告的真實處置結束時間算出關日(結束時間後第一個交易日)；
+    查不到（例如資料還沒同步）才退回舊的t1_offset天數近似法。"""
+    end_map = load_disposal_end_dates()
+    real_end = end_map.get((str(sid), pd.Timestamp(sd)))
+    if pd.notna(real_end):
+        pos_end = idx.searchsorted(real_end)
+        # searchsorted找的是>=real_end的第一個位置；若real_end本身就是交易日，
+        # 該位置就是real_end自己，出關日要再往後一天。
+        if pos_end < len(idx) and idx[pos_end] == real_end:
+            pos_end += 1
+        if pos_end < len(idx):
+            return idx[pos_end]
+        # 2026-09-03修正：real_end已知，但價格資料還沒長到那天(常見於處置期間
+        # 還沒走完的進行中事件)——不能就這樣退回舊的t1_offset近似(那正是先進光
+        # 案例出錯的原因，5天近似比真實的7天少算2天)。改用weekday往後推算下一個
+        # 交易日(不含假日，比照exit_date()資料不夠長時的備援邏輯)。
+        cur = real_end
+        while True:
+            cur += pd.Timedelta(days=1)
+            if cur.weekday() < 5:
+                return cur
+    return exit_date(idx, sd, t1_offset=t1_offset)
+
 def trading_day_n(idx, sd):
     today = tw_today()
     last_data = idx[-1]
@@ -691,9 +735,10 @@ def build_signals(df, price, open_p, whale_dfs):
         sid = row['股票代號']
         sd  = row['處置起始日']
         is_new_regime = row['處置類型'] == '2分鐘'
-        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
-        # 先用5天近似（多數案例），僅影響「今D幾」/「出關日」等顯示，不影響評級本身。
-        ex  = exit_date(idx, sd, t1_offset=5) if is_new_regime else exit_date(idx, sd)
+        # 2026-09-03：新制優先用TWSE公告的真實處置結束時間算出關日（disposal_information
+        # 裡的處置結束時間），5天近似只在查不到公告時當備援（例如先進光8/27那次實際是
+        # 7天到9/4，之前用5天近似會提早2天誤判成已出關）。
+        ex  = real_exit_date(idx, sid, sd, t1_offset=5) if is_new_regime else exit_date(idx, sd)
 
         # 已出關（今天超過 T+1）就跳過
         if pd.notna(ex) and today > ex:
@@ -819,9 +864,9 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
     for _, row in active.iterrows():
         sid = row['股票代號']
         sd  = row['處置起始日']
-        # 新制期間5(或當沖加重7)個營業日，遠短於舊制10天；沒有欄位可精確判斷5或7天，
-        # 先用5天近似（多數案例），只影響「今D幾」/「出關日」等顯示。
-        ex  = exit_date(idx, sd, t1_offset=5)
+        # 2026-09-03：優先用TWSE公告的真實處置結束時間算出關日，5天近似只在查不到
+        # 公告時當備援（先進光案例：8/27起始實際是7天到9/4，5天近似會提早2天誤判）。
+        ex  = real_exit_date(idx, sid, sd, t1_offset=5)
 
         # today>=ex（不是>）：出關日當天已經回歸正常交易，不該再留在「今日訊號」/
         # 「進場預覽」裡讓人誤以為還能進場（Kevin抓到：出關日當天還顯示成D6、
@@ -1350,8 +1395,20 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         peak5 = peak_n_high(high_p, idx, sid, sd, n_days=5)
         out['peak5'] = round(peak5, 2) if pd.notna(peak5) else np.nan
 
-        t1_open = (open_p[sid].iloc[pos + T1_OFFSET]
-                   if sid in open_p.columns and pos + T1_OFFSET < len(open_p) else np.nan)
+        # 2026-09-03：出場位置優先用TWSE公告的真實處置結束時間換算，查不到才退回
+        # T1_OFFSET=5天近似（先進光8/27那次實際是7天到9/4，用5天近似會少算2天、
+        # 出關報酬用錯的出場日算）。
+        end_map = load_disposal_end_dates()
+        real_end = end_map.get((str(sid), pd.Timestamp(sd)))
+        if pd.notna(real_end):
+            exit_pos = idx.searchsorted(real_end)
+            if exit_pos < len(idx) and idx[exit_pos] == real_end:
+                exit_pos += 1
+        else:
+            exit_pos = pos + T1_OFFSET
+
+        t1_open = (open_p[sid].iloc[exit_pos]
+                   if sid in open_p.columns and exit_pos < len(open_p) else np.nan)
         has_exit = pd.notna(t1_open) and t1_open > 0
         if has_exit:
             out['exit_open_rel_d0'] = round((t1_open / p0 - 1) * 100, 2)
@@ -1445,9 +1502,9 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         if ref_n in dn_rets:
             p_ref = price[sid].iloc[pos + ref_n - 1]
             for k in range(1, 11):
-                off = (T1_OFFSET - 1) + k  # T+1=pos+T1_OFFSET(出關日), T+2=pos+T1_OFFSET+1...
-                if pos + off < len(price) and pd.notna(p_ref) and p_ref > 0:
-                    p = price[sid].iloc[pos + off]
+                pk = exit_pos - 1 + k  # T+1=exit_pos(出關日)當天收盤，T+2=exit_pos+1...
+                if pk < len(price) and pd.notna(p_ref) and p_ref > 0:
+                    p = price[sid].iloc[pk]
                     if pd.notna(p) and p > 0:
                         out[f'_t{k}c'] = round((p / p_ref - 1) * 100, 2)
 
@@ -1466,7 +1523,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         return 'Dn ≥ 0%'
 
     pool['Dn組別'] = pool['min_dn'].apply(dn_group)
-    pool['_exit_date'] = pool.apply(lambda r: exit_date(idx, r['處置起始日'], t1_offset=T1_OFFSET), axis=1)
+    pool['_exit_date'] = pool.apply(lambda r: real_exit_date(idx, r['股票代號'], r['處置起始日'], t1_offset=T1_OFFSET), axis=1)
 
     out = pd.DataFrame({
         '起始日':        pool['處置起始日'].dt.strftime('%Y-%m-%d'),
