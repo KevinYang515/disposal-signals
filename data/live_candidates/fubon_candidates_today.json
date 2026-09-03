@@ -1,8 +1,15 @@
 {
-  "trade_date": "2026-09-03",
-  "signal_date": "2026-09-02",
+  "trade_date": "2026-09-04",
+  "signal_date": "2026-09-03",
   "strategy": "FubonBare",
-  "generated_at": "2026-09-03T07:30:39.745957+08:00",
-  "active": false,
-  "candidates": []
+  "generated_at": "2026-09-04T07:30:35.009515+08:00",
+  "active": true,
+  "candidates": [
+    {
+      "code": "2464",
+      "prev_close": 222.0,
+      "net_amt_wan": 34498.8,
+      "influence_pct": 9.136413208582502
+    }
+  ]
 }
