@@ -1,9 +1,9 @@
 {
-  "trade_date": "2026-09-04",
-  "signal_date": "2026-09-03",
+  "trade_date": "2026-09-07",
+  "signal_date": "2026-09-04",
   "strategy": "StrategyH",
-  "generated_at": "2026-09-04T07:35:19.393376+08:00",
-  "candidate_count_before_daily_gate": 0,
+  "generated_at": "2026-09-07T07:35:47.662389+08:00",
+  "candidate_count_before_daily_gate": 1,
   "min_candidate_count": 4,
   "active": false,
   "candidates": []
