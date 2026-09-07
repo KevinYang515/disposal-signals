@@ -482,7 +482,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     f'（n={len(settled)}）。樣本數還很小，以上數字僅供觀察趨勢，不是可信賴的統計結果。'
                 )
                 show_cols = ['起始日', '出關日', '代號', '名稱', '規模', 'Dn組別', '買進日', '觸發方式',
-                             '買進價', '買進時累積(%)', '最深日', '期間最深(%)', '出關價', '出關報酬(%)', '結果']
+                             '是否當沖加重', '買進價', '買進時累積(%)', '最深日', '期間最深(%)', '出關價', '出關報酬(%)', '結果']
                 show_cols += [f'T+{k}收盤(%)' for k in range(1, 11)]
                 show_cols = [c for c in show_cols if c in settled.columns]
                 show_disp = settled[show_cols].sort_values('起始日', ascending=False).copy()
