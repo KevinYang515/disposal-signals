@@ -1,16 +1,8 @@
 {
-  "trade_date": "2026-09-07",
-  "signal_date": "2026-09-04",
+  "trade_date": "2026-09-08",
+  "signal_date": "2026-09-07",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-09-07T07:44:33.248144+08:00",
-  "active": true,
-  "candidates": [
-    {
-      "code": "6672",
-      "prev_close": 289.0,
-      "net_amt_wan": 58802.6855,
-      "d0_turnover": 1713146338.0,
-      "cz_influence_pct": 34.32437976585746
-    }
-  ]
+  "generated_at": "2026-09-08T07:44:20.307417+08:00",
+  "active": false,
+  "candidates": []
 }
