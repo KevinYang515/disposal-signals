@@ -153,8 +153,8 @@ for tab, events, label in [(tab1, solo_events, "路徑一"), (tab2, conv_events,
 
         st.markdown("##### 逐筆歷史事件")
         show_cols = ["event_date", "stock_id", "公司簡稱"]
-        if "branch" in view.columns:
-            show_cols.append("branch")
+        if "broker" in view.columns:
+            show_cols.append("broker")
         if "參與分點清單" in view.columns:
             show_cols += ["參與分點清單", "參與分點數"]
         show_cols += ["ret_60d", "excess_60d"]
@@ -164,7 +164,7 @@ for tab, events, label in [(tab1, solo_events, "路徑一"), (tab2, conv_events,
             if pct_col in show.columns:
                 show[pct_col] = (show[pct_col] * 100).round(2)
         rename_map = {
-            "event_date": "訊號日", "stock_id": "代號", "branch": "分點",
+            "event_date": "訊號日", "stock_id": "代號", "broker": "分點",
             "ret_60d": "60日原始報酬%", "excess_60d": "60日超額報酬%",
         }
         show = show.rename(columns=rename_map)
