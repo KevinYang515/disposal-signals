@@ -218,6 +218,7 @@ def exit_date(idx, sd, t1_offset=10):
     return cur
 
 _DISPOSAL_END_CACHE = None
+_DISPOSAL_REASON_CACHE = None
 
 def load_disposal_end_dates():
     """2026-09-03修正：新制處置期間實際上是5個或7個營業日(當沖比重過高時加重為7天)，
@@ -236,6 +237,28 @@ def load_disposal_end_dates():
             raw['處置結束時間'] = pd.to_datetime(raw['處置結束時間'])
             _DISPOSAL_END_CACHE = dict(zip(zip(raw['stock_id'], raw['處置開始時間']), raw['處置結束時間']))
     return _DISPOSAL_END_CACHE
+
+def load_disposal_reasons():
+    """2026-09-07新增：Kevin想知道「處置觸發原因」(TWSE的處置條件文字，例如
+    連續3天達注意標準/連續5天+當沖比重超標/跌深處置等)跟後續績效有沒有關係
+    (懷疑當沖比重過高觸發的案例表現特別差)。跟load_disposal_end_dates()共用
+    同一份disposal_information.feather、同一種key，只是回傳處置條件文字，
+    不重新讀檔。key是(股票代號, 處置起始日)，value是TWSE公告的處置條件原文。"""
+    global _DISPOSAL_REASON_CACHE
+    if _DISPOSAL_REASON_CACHE is None:
+        if not os.path.exists(DISPOSAL_INFO_F):
+            _DISPOSAL_REASON_CACHE = {}
+        else:
+            raw = pd.DataFrame(pd.read_feather(DISPOSAL_INFO_F))
+            raw['stock_id'] = raw['stock_id'].astype(str)
+            raw['處置開始時間'] = pd.to_datetime(raw['處置開始時間'])
+            _DISPOSAL_REASON_CACHE = dict(zip(zip(raw['stock_id'], raw['處置開始時間']), raw['處置條件'].astype(str)))
+    return _DISPOSAL_REASON_CACHE
+
+def is_daytrade_aggravated(reason_text):
+    """處置條件文字裡有沒有「沖銷」兩個字，判斷是不是當沖比重過高觸發的加重案例
+    (這類通常會被拉長成7個營業日，而不是一般的5天)。"""
+    return isinstance(reason_text, str) and '沖銷' in reason_text
 
 def real_exit_date(idx, sid, sd, t1_offset=5):
     """優先用TWSE公告的真實處置結束時間算出關日(結束時間後第一個交易日)；
@@ -1341,7 +1364,8 @@ def build_history(df, price, open_p, whale_dfs):
     return hist, cmp_stats
 
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
-                       '近20日漲幅', '大戶(%)', 'D0收盤價', '買進日', '買進價', '買進時累積(%)', '觸發方式', '最深日',
+                       '近20日漲幅', '大戶(%)', 'D0收盤價', '買進日', '買進價', '買進時累積(%)', '觸發方式',
+                       '處置觸發原因', '是否當沖加重', '最深日',
                        '期間最深(%)', '出關價', '出關報酬(%)', '結果',
                        *[f'T+{k}收盤(%)' for k in range(1, 11)],
                        *[f'D{n}%' for n in range(1, 6)], *[f'LowD{n}%' for n in range(1, 6)],
@@ -1376,11 +1400,19 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         out = dict(entry_n=np.nan, entry_cum=np.nan, min_dn=np.nan, deepest_n=np.nan, actual_ret=np.nan,
                    entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
                    exit_open_rel_d0=np.nan, d0_close=np.nan, entry_price=np.nan, exit_price=np.nan,
-                   peak5=np.nan,
+                   peak5=np.nan, disposal_reason_text='', is_daytrade='',
                    **{f'_t{k}c': np.nan for k in range(1, 11)},
                    **{f'd{n}_close': np.nan for n in range(1, 6)},
                    **{f'd{n}_low': np.nan for n in range(1, 6)},
                    **{f'd{n}_low_peak5': np.nan for n in range(1, 6)})
+        # 2026-09-07新增：處置觸發原因(TWSE處置條件原文)，Kevin想驗證「當沖比重過高
+        # 觸發的案例(通常會加重成7天)績效是不是特別差」這個假說，跟後面的peak5/
+        # exit_pos計算無關，這裡先算好放進out，不受下面的sid/price資料完整性影響
+        # (即使股票沒有價格資料，觸發原因這個欄位還是查得到，能查就先填)。
+        reason_map = load_disposal_reasons()
+        reason_text = reason_map.get((str(sid), pd.Timestamp(sd)), '')
+        out['disposal_reason_text'] = reason_text
+        out['is_daytrade'] = '是' if is_daytrade_aggravated(reason_text) else ('否' if reason_text else '')
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1540,6 +1572,8 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         '買進價':        pool['entry_price'],
         '買進時累積(%)': pool['entry_cum'],
         '觸發方式':      pool['trigger_type'],
+        '處置觸發原因':  pool['disposal_reason_text'],
+        '是否當沖加重':  pool['is_daytrade'],
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
         '出關價':        pool['exit_price'],
