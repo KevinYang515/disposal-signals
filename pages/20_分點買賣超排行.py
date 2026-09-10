@@ -17,8 +17,9 @@ st.set_page_config(page_title="分點買賣超排行", page_icon="🔎", layout=
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "broker_flow_recent.parquet")
 
 
-@st.cache_data(ttl=3600)
-def load_flow():
+@st.cache_data(ttl=600)
+def load_flow(_v: str = "roster19"):
+    """_v 只用來讓精選名單改版時強制失效舊快取。"""
     if not os.path.exists(DATA_FILE):
         return pd.DataFrame()
     df = pd.read_parquet(DATA_FILE)
