@@ -1,5 +1,5 @@
 {
   "data_asof": "2026-09-07",
-  "generated_at": "2026-09-09 22:11",
-  "note": "分點/財報資料常落後1-2個交易日，data_asof是broker_transactions實際涵蓋到的最後一天，不是今天"
+  "generated_at": "2026-09-10 23:41",
+  "note": "分點揭露資料常落後1-2個交易日，data_asof是broker_transactions實際涵蓋到的最後一天，不是今天"
 }

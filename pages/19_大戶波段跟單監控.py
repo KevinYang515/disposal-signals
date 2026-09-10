@@ -17,6 +17,7 @@ st.set_page_config(page_title="大戶波段跟單監控", page_icon="🐋", layo
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 TODAY_FILE = os.path.join(DATA_DIR, "bigmoney_today_watchlist.csv")
+OBS_FILE = os.path.join(DATA_DIR, "bigmoney_observation_watchlist.csv")
 SOLO_FILE = os.path.join(DATA_DIR, "bigmoney_solo_zhanqian_events.csv")
 CONV_FILE = os.path.join(DATA_DIR, "bigmoney_convergence_events.csv")
 META_FILE = os.path.join(DATA_DIR, "bigmoney_watchlist_meta.json")
@@ -47,6 +48,15 @@ def load_today():
         return pd.DataFrame()
     df = pd.read_csv(TODAY_FILE, dtype={"stock_id": str})
     df.columns = ["股票代號", "公司簡稱", "觸發路徑", "說明"]
+    df["公司簡稱"] = df["公司簡稱"].fillna("")
+    return df
+
+
+@st.cache_data(ttl=3600)
+def load_observation():
+    if not os.path.exists(OBS_FILE):
+        return pd.DataFrame()
+    df = pd.read_csv(OBS_FILE, dtype={"股票代號": str})
     df["公司簡稱"] = df["公司簡稱"].fillna("")
     return df
 
@@ -115,6 +125,23 @@ st.caption(
     "有≥3個在近10個交易日內同時買超各自的驗證門檻。任一路徑觸發即列入，不代表兩者強度相同——"
     "下面的歷史回測分別列出兩條路徑各自的實際表現，請對照著看。"
 )
+
+st.divider()
+with st.expander("👀 觀察名單（弱訊號，僅供參考）：國票-安和／港商野村／群益金鼎 最近在買什麼", expanded=False):
+    st.caption(
+        "這三個分點用同一套嚴謹方法測過，**有真實但很溫和的優勢**（近2年新建倉衝到高門檻時，"
+        "60日扣大盤勝率約 50-55%、中位數約 +0~+2%，遠不如凱基-站前的 67%／+9%），"
+        "還不到能單獨當進場訊號的程度。這裡不套用門檻，單純列出牠們**近20個交易日淨買超金額前15名**，"
+        "當作「這些次要大戶最近在買什麼」的背景參考。群益金鼎為裸名稱（總公司彙總帳戶），"
+        "訊號較雜，僅列出非 ETF 個股。"
+    )
+    obs = load_observation()
+    if obs.empty:
+        st.info("目前沒有觀察名單資料。")
+    else:
+        sel_obs = st.multiselect("篩選分點", obs["分點"].unique().tolist(),
+                                 default=obs["分點"].unique().tolist(), key="obs_branch")
+        st.dataframe(obs[obs["分點"].isin(sel_obs)], use_container_width=True, height=420, hide_index=True)
 
 st.divider()
 st.header("📊 兩條規則的歷史回測實績")
