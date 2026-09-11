@@ -218,6 +218,7 @@ def exit_date(idx, sd, t1_offset=10):
     return cur
 
 _DISPOSAL_END_CACHE = None
+_DISPOSAL_PERIODS_CACHE = None
 _DISPOSAL_REASON_CACHE = None
 
 def load_disposal_end_dates():
@@ -237,6 +238,47 @@ def load_disposal_end_dates():
             raw['處置結束時間'] = pd.to_datetime(raw['處置結束時間'])
             _DISPOSAL_END_CACHE = dict(zip(zip(raw['stock_id'], raw['處置開始時間']), raw['處置結束時間']))
     return _DISPOSAL_END_CACHE
+
+def load_disposal_periods():
+    """每檔股票的全部(處置開始時間, 處置結束時間)清單，依開始時間排序。
+    用來把連續銜接/重疊的處置串成一個「連續受限區塊」——見chained_disposal_end()。"""
+    global _DISPOSAL_PERIODS_CACHE
+    if _DISPOSAL_PERIODS_CACHE is None:
+        if not os.path.exists(DISPOSAL_INFO_F):
+            _DISPOSAL_PERIODS_CACHE = {}
+        else:
+            raw = pd.DataFrame(pd.read_feather(DISPOSAL_INFO_F))
+            raw['stock_id'] = raw['stock_id'].astype(str)
+            raw['處置開始時間'] = pd.to_datetime(raw['處置開始時間'])
+            raw['處置結束時間'] = pd.to_datetime(raw['處置結束時間'])
+            raw = raw.dropna(subset=['處置開始時間', '處置結束時間'])
+            d = {}
+            for sid, g in raw.groupby('stock_id'):
+                d[sid] = sorted(zip(g['處置開始時間'], g['處置結束時間']))
+            _DISPOSAL_PERIODS_CACHE = d
+    return _DISPOSAL_PERIODS_CACHE
+
+def chained_disposal_end(sid, sd, single_end):
+    """2026-09-11修正（Kevin抓到雙鴻案例）：像雙鴻/AMAX-KY/世紀*這種反覆被列管的股票，
+    常常「第二次處置在第一次還沒結束前就開始」連續銜接——整段期間股票根本沒有一天
+    恢復正常交易。策略的邏輯是「等股票恢復正常交易時賣出」，所以出關日要算在整條
+    連續受限區塊的最尾端，不能只看單一筆公告的處置結束時間。這裡從single_end往後
+    串：只要有同一檔股票的另一筆處置開始時間 <= 目前區塊尾端+3個日曆日，就把區塊
+    尾端延伸到那筆的結束時間，重複直到沒有可串的為止。"""
+    if pd.isna(single_end):
+        return single_end
+    periods = load_disposal_periods().get(str(sid))
+    if not periods:
+        return single_end
+    end = pd.Timestamp(single_end)
+    changed = True
+    while changed:
+        changed = False
+        for p_start, p_end in periods:
+            if p_start <= end + pd.Timedelta(days=3) and p_end > end:
+                end = p_end
+                changed = True
+    return end
 
 def load_disposal_reasons():
     """2026-09-07新增：Kevin想知道「處置觸發原因」(TWSE的處置條件文字，例如
@@ -262,9 +304,13 @@ def is_daytrade_aggravated(reason_text):
 
 def real_exit_date(idx, sid, sd, t1_offset=5):
     """優先用TWSE公告的真實處置結束時間算出關日(結束時間後第一個交易日)；
-    查不到（例如資料還沒同步）才退回舊的t1_offset天數近似法。"""
+    查不到（例如資料還沒同步）才退回舊的t1_offset天數近似法。
+    2026-09-11起：真實結束時間會先經過chained_disposal_end()把連續銜接的處置串起來，
+    避免像雙鴻那樣「第一次處置的名目結束日」被當成出關、但股票其實還在第二次處置中。"""
     end_map = load_disposal_end_dates()
     real_end = end_map.get((str(sid), pd.Timestamp(sd)))
+    if pd.notna(real_end):
+        real_end = chained_disposal_end(sid, sd, real_end)
     if pd.notna(real_end):
         pos_end = idx.searchsorted(real_end)
         # searchsorted找的是>=real_end的第一個位置；若real_end本身就是交易日，
@@ -1429,9 +1475,13 @@ def build_newregime_history(df, price, open_p, whale_dfs):
 
         # 2026-09-03：出場位置優先用TWSE公告的真實處置結束時間換算，查不到才退回
         # T1_OFFSET=5天近似（先進光8/27那次實際是7天到9/4，用5天近似會少算2天、
-        # 出關報酬用錯的出場日算）。
+        # 出關報酬用錯的出場日算）。2026-09-11：真實結束時間先經過chained_disposal_end()
+        # 把連續銜接的處置串起來（雙鴻案例：第一次名目結束9/9，但緊接第二次到9/14，
+        # 股票整段沒有恢復正常交易，真正出關要等到9/15）。
         end_map = load_disposal_end_dates()
         real_end = end_map.get((str(sid), pd.Timestamp(sd)))
+        if pd.notna(real_end):
+            real_end = chained_disposal_end(sid, sd, real_end)
         if pd.notna(real_end):
             exit_pos = idx.searchsorted(real_end)
             if exit_pos < len(idx) and idx[exit_pos] == real_end:
