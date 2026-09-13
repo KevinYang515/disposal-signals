@@ -1,8 +1,8 @@
 {
-  "trade_date": "2026-09-11",
-  "signal_date": "2026-09-10",
+  "trade_date": "2026-09-14",
+  "signal_date": "2026-09-11",
   "strategy": "FubonBare",
-  "generated_at": "2026-09-11T07:30:16.373153+08:00",
+  "generated_at": "2026-09-14T07:30:34.856462+08:00",
   "active": false,
   "candidates": []
 }
