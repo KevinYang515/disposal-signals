@@ -1,16 +1,8 @@
 {
-  "trade_date": "2026-09-14",
-  "signal_date": "2026-09-11",
+  "trade_date": "2026-09-16",
+  "signal_date": "2026-09-15",
   "strategy": "UniCenter",
-  "generated_at": "2026-09-14T07:48:11.858319+08:00",
-  "active": true,
-  "candidates": [
-    {
-      "code": "2468",
-      "prev_close": 35.8,
-      "net_amt_wan": 3.5799999999999996,
-      "d0_turnover": 151594348.2,
-      "uc_influence_pct": 0.023615656140932566
-    }
-  ]
+  "generated_at": "2026-09-16T07:48:49.452648+08:00",
+  "active": false,
+  "candidates": []
 }
