@@ -1,23 +1,86 @@
 {
-  "trade_date": "2026-09-21",
-  "signal_date": "2026-09-18",
+  "trade_date": "2026-09-22",
+  "signal_date": "2026-09-21",
   "strategy": "UniCenter",
-  "generated_at": "2026-09-21T07:47:05.607196+08:00",
+  "generated_at": "2026-09-22T07:47:06.152886+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "3605",
-      "prev_close": 154.0,
-      "net_amt_wan": 7238.0,
-      "d0_turnover": 5925351586.0,
-      "uc_influence_pct": 1.221530890605957
+      "code": "8150",
+      "prev_close": 103.0,
+      "net_amt_wan": 4738.0,
+      "d0_turnover": 6503334304.0,
+      "uc_influence_pct": 0.7285493530735153
+    },
+    {
+      "code": "1709",
+      "prev_close": 43.1,
+      "net_amt_wan": 2995.45,
+      "d0_turnover": 1180221997.1000001,
+      "uc_influence_pct": 2.5380394598307046
+    },
+    {
+      "code": "4956",
+      "prev_close": 46.85,
+      "net_amt_wan": 2375.295,
+      "d0_turnover": 1267843737.1000001,
+      "uc_influence_pct": 1.8734919221458048
+    },
+    {
+      "code": "3380",
+      "prev_close": 33.15,
+      "net_amt_wan": 1528.215,
+      "d0_turnover": 355575916.8,
+      "uc_influence_pct": 4.297858566331341
     },
     {
       "code": "8110",
-      "prev_close": 47.4,
-      "net_amt_wan": 1848.6,
-      "d0_turnover": 783833607.6,
-      "uc_influence_pct": 2.3584087006171894
+      "prev_close": 52.1,
+      "net_amt_wan": 1021.1600000000001,
+      "d0_turnover": 1614357001.9,
+      "uc_influence_pct": 0.6325490574873814
+    },
+    {
+      "code": "8215",
+      "prev_close": 30.05,
+      "net_amt_wan": 721.2,
+      "d0_turnover": 229638223.55,
+      "uc_influence_pct": 3.140592140327938
+    },
+    {
+      "code": "2419",
+      "prev_close": 30.65,
+      "net_amt_wan": 364.735,
+      "d0_turnover": 312443985.15,
+      "uc_influence_pct": 1.1673612466083987
+    },
+    {
+      "code": "6234",
+      "prev_close": 42.35,
+      "net_amt_wan": 211.75,
+      "d0_turnover": 142087341.55,
+      "uc_influence_pct": 1.4902805393504104
+    },
+    {
+      "code": "6218",
+      "prev_close": 67.7,
+      "net_amt_wan": 169.25,
+      "d0_turnover": 146914280.6,
+      "uc_influence_pct": 1.1520323232621132
+    },
+    {
+      "code": "3178",
+      "prev_close": 75.9,
+      "net_amt_wan": 83.49000000000001,
+      "d0_turnover": 165041893.5,
+      "uc_influence_pct": 0.5058715592111164
+    },
+    {
+      "code": "3297",
+      "prev_close": 36.4,
+      "net_amt_wan": 50.959999999999994,
+      "d0_turnover": 39607458.8,
+      "uc_influence_pct": 1.2866263462476921
     }
   ]
 }
