@@ -1,75 +1,45 @@
 {
-  "trade_date": "2026-09-22",
-  "signal_date": "2026-09-21",
+  "trade_date": "2026-09-23",
+  "signal_date": "2026-09-22",
   "strategy": "FubonBare",
-  "generated_at": "2026-09-22T07:30:26.031654+08:00",
+  "generated_at": "2026-09-23T07:30:27.372065+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "6443",
-      "prev_close": 28.05,
-      "net_amt_wan": 13974.51,
-      "influence_pct": 47.149942621484456
+      "code": "7772",
+      "prev_close": 188.0,
+      "net_amt_wan": 7388.4,
+      "influence_pct": 26.531448542829388
     },
     {
-      "code": "8215",
-      "prev_close": 30.05,
-      "net_amt_wan": 2704.5,
-      "influence_pct": 12.076452099928241
+      "code": "3533",
+      "prev_close": 1745.0,
+      "net_amt_wan": 16752.0,
+      "influence_pct": 11.180640720592294
     },
     {
-      "code": "1709",
-      "prev_close": 43.1,
-      "net_amt_wan": 12537.79,
-      "influence_pct": 10.857749647831461
+      "code": "3529",
+      "prev_close": 3110.0,
+      "net_amt_wan": 41052.0,
+      "influence_pct": 8.293167746417328
     },
     {
-      "code": "3380",
-      "prev_close": 33.15,
-      "net_amt_wan": 3590.145,
-      "influence_pct": 10.334449254291798
+      "code": "3189",
+      "prev_close": 909.0,
+      "net_amt_wan": 183072.6,
+      "influence_pct": 6.985660059805547
     },
     {
-      "code": "8110",
-      "prev_close": 52.1,
-      "net_amt_wan": 12149.72,
-      "influence_pct": 7.721181107073131
+      "code": "8046",
+      "prev_close": 1165.0,
+      "net_amt_wan": 129897.5,
+      "influence_pct": 6.5744947879783115
     },
     {
-      "code": "6168",
-      "prev_close": 42.7,
-      "net_amt_wan": 3258.01,
-      "influence_pct": 6.604863752813397
-    },
-    {
-      "code": "8150",
-      "prev_close": 103.0,
-      "net_amt_wan": 26450.4,
-      "influence_pct": 4.1190964274367525
-    },
-    {
-      "code": "2363",
-      "prev_close": 59.0,
-      "net_amt_wan": 3292.2,
-      "influence_pct": 4.008723968184349
-    },
-    {
-      "code": "1528",
-      "prev_close": 27.05,
-      "net_amt_wan": 2139.655,
-      "influence_pct": 3.438542359201726
-    },
-    {
-      "code": "4956",
-      "prev_close": 46.85,
-      "net_amt_wan": 3954.14,
-      "influence_pct": 3.2520998332027116
-    },
-    {
-      "code": "3605",
-      "prev_close": 169.0,
-      "net_amt_wan": 22426.3,
-      "influence_pct": 2.7745287211455376
+      "code": "3374",
+      "prev_close": 487.0,
+      "net_amt_wan": 33992.6,
+      "influence_pct": 4.110964041270209
     }
   ]
 }

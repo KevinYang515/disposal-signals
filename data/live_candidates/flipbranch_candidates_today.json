@@ -1,46 +1,25 @@
 {
-  "trade_date": "2026-09-22",
-  "signal_date": "2026-09-21",
+  "trade_date": "2026-09-23",
+  "signal_date": "2026-09-22",
   "strategy": "FlipBranch",
-  "generated_at": "2026-09-22T07:35:08.818005+08:00",
+  "generated_at": "2026-09-23T07:35:10.482718+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
   "active": true,
   "candidates": [
     {
-      "code": "6443",
-      "prev_close": 28.05,
-      "ranking_value": 4982000.0,
+      "code": "3189",
+      "prev_close": 909.0,
+      "ranking_value": 2504000.0,
       "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
+      "dominant_broker": "台灣摩根士丹利"
     },
     {
-      "code": "2363",
-      "prev_close": 59.0,
-      "ranking_value": 3520000.0,
+      "code": "3037",
+      "prev_close": 1120.0,
+      "ranking_value": 2199000.0,
       "ranking_field": "dominant_net_shares",
-      "dominant_broker": "元大證券"
-    },
-    {
-      "code": "1709",
-      "prev_close": 43.1,
-      "ranking_value": 2909000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
-    },
-    {
-      "code": "2406",
-      "prev_close": 30.4,
-      "ranking_value": 2466000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "華南永昌"
-    },
-    {
-      "code": "6456",
-      "prev_close": 71.9,
-      "ranking_value": 1184000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "統一"
+      "dominant_broker": "港商野村"
     }
   ]
 }
