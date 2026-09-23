@@ -795,7 +795,9 @@ def build_signals(df, price, open_p, whale_dfs):
     # 2026-08-10 處置新制上路（撮合統一改2分鐘、期間縮為5或7個營業日）：Kevin 2026-08-18
     # 要求本頁繼續混合顯示新制事件（不要空白），評級標「🆕新制觀察中」不套用舊制信心度。
     # 完整拆第一次/第二次+對照的獨立統計頁另見 pages/18_處置新制觀察.py。
-    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+    # 2026-09-23 排除小型股：核心已驗證數據(82.4%/+12.1%)母體只含大+中型，
+    # 小型股實測42.9%勝率/-0.74%平均(見PLAYBOOK)，不應繼續出現在網站候選/訊號中。
+    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
                 (df['處置類型'].isin(['20分鐘', '2分鐘'])) &
                 (df['處置起始日'] >= cutoff)].copy()
 
@@ -924,7 +926,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
     today = tw_today()
     cutoff = today - pd.Timedelta(days=20)
 
-    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+    active = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
                 (df['處置類型'] == '2分鐘') &
                 (df['處置起始日'] >= cutoff) &
                 (~df['處置原因'].astype(str).str.contains('資料異常'))].copy()
@@ -1178,7 +1180,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
 def build_backtest_grid(df, price, open_p):
     idx = price.index
 
-    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+    base = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '20分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
 
@@ -1231,7 +1233,7 @@ def build_backtest_grid(df, price, open_p):
 # ── 產生歷史回測紀錄 ──────────────────────────────────────────────────────
 def build_history(df, price, open_p, whale_dfs):
     idx = price.index
-    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'].isin(['5分鐘', '20分鐘'])) &
               (df['處置原因'] == '漲多處置')].copy()
 
@@ -1427,7 +1429,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
     idx = price.index
     low_p = load_low()
     high_p = load_high()
-    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)', '小型股(<100億)'])) &
+    pool = df[(df['市值規模'].isin(['大型股(>500億)', '中型股(100~500億)'])) &
               (df['處置類型'] == '2分鐘') &
               (df['處置原因'] == '漲多處置')].copy()
 
