@@ -1,25 +1,32 @@
 {
-  "trade_date": "2026-09-23",
-  "signal_date": "2026-09-22",
+  "trade_date": "2026-09-24",
+  "signal_date": "2026-09-23",
   "strategy": "FlipBranch",
-  "generated_at": "2026-09-23T07:35:10.482718+08:00",
+  "generated_at": "2026-09-24T07:35:09.479829+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
   "active": true,
   "candidates": [
     {
-      "code": "3189",
-      "prev_close": 909.0,
-      "ranking_value": 2504000.0,
+      "code": "1727",
+      "prev_close": 116.5,
+      "ranking_value": 5471000.0,
       "ranking_field": "dominant_net_shares",
-      "dominant_broker": "台灣摩根士丹利"
+      "dominant_broker": "永豐金證券"
     },
     {
-      "code": "3037",
-      "prev_close": 1120.0,
-      "ranking_value": 2199000.0,
+      "code": "2342",
+      "prev_close": 46.35,
+      "ranking_value": 1796000.0,
       "ranking_field": "dominant_net_shares",
-      "dominant_broker": "港商野村"
+      "dominant_broker": "元大證券"
+    },
+    {
+      "code": "2368",
+      "prev_close": 1140.0,
+      "ranking_value": 955000.0,
+      "ranking_field": "dominant_net_shares",
+      "dominant_broker": "元大證券"
     }
   ]
 }
