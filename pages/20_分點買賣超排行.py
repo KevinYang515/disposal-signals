@@ -148,11 +148,17 @@ with tab_flow:
         view.groupby(["stock_id", "name"], as_index=False)
         .agg(淨買賣超金額_萬=("net_wan", "sum"), 淨張數=("net_lots", "sum"), 出現天數=("date", "nunique"),
              出現分點數=("broker", "nunique"),
-             _turnover_sum=("turnover_wan", "sum"), _shares_out=("shares_out", "max"))
+             _shares_out=("shares_out", "max"))
         .sort_values("淨買賣超金額_萬", ascending=False)
     )
+    # turnover_wan 是「當日全市場成交金額」，同一天同一檔股票在每個分點的列都重複同一個值——
+    # 多選分點重疊同一天同一檔股票時，若直接對view逐列sum會把turnover重複加總、稀釋掉影響力%，
+    # 所以先用(date, stock_id)去重再加總，不管選了幾個分點，每個交易日的市場成交金額只算一次。
+    turnover_by_day = view.drop_duplicates(["date", "stock_id"])[["stock_id", "turnover_wan"]]
+    turnover_sum = turnover_by_day.groupby("stock_id")["turnover_wan"].sum().rename("_turnover_sum")
+    agg = agg.merge(turnover_sum, on="stock_id", how="left")
     agg["淨買賣超金額_萬"] = agg["淨買賣超金額_萬"].round(1)
-    # 期間影響力% = 期間淨買賣超金額加總 / 期間全市場成交金額加總；佔股本比% = 期間淨股數 / 已發行股數
+    # 期間影響力% = 期間淨買賣超金額加總 / 期間全市場成交金額加總(已去重)；佔股本比% = 期間淨股數 / 已發行股數
     agg["期間影響力_pct"] = np.where(agg["_turnover_sum"] > 0, agg["淨買賣超金額_萬"] / agg["_turnover_sum"] * 100, np.nan).round(2)
     agg["期間佔股本比_pct"] = np.where(
         agg["_shares_out"] > 0, agg["淨張數"] * 1000 / agg["_shares_out"] * 100, np.nan
