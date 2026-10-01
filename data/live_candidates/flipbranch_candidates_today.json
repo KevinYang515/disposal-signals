@@ -1,44 +1,23 @@
 {
-  "trade_date": "2026-10-01",
-  "signal_date": "2026-09-30",
+  "trade_date": "2026-10-02",
+  "signal_date": "2026-10-01",
   "strategy": "FlipBranch",
-  "generated_at": "2026-10-01T07:35:06.448547+08:00",
+  "generated_at": "2026-10-02T07:35:08.679631+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
   "active": true,
   "candidates": [
     {
-      "code": "2409",
-      "prev_close": 38.55,
-      "ranking_value": 53883000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
-    },
-    {
-      "code": "3481",
-      "prev_close": 54.7,
-      "ranking_value": 25096000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "台灣摩根士丹利"
-    },
-    {
-      "code": "6116",
-      "prev_close": 16.35,
-      "ranking_value": 25058000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
-    },
-    {
-      "code": "3576",
-      "prev_close": 19.7,
-      "ranking_value": 6716000.0,
+      "code": "2492",
+      "prev_close": 329.0,
+      "ranking_value": 5654000.0,
       "ranking_field": "dominant_net_shares",
       "dominant_broker": "元大證券"
     },
     {
-      "code": "8150",
-      "prev_close": 114.5,
-      "ranking_value": 5285000.0,
+      "code": "4919",
+      "prev_close": 152.0,
+      "ranking_value": 5058000.0,
       "ranking_field": "dominant_net_shares",
       "dominant_broker": "元大證券"
     }

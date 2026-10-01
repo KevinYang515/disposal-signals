@@ -1,65 +1,44 @@
 {
-  "trade_date": "2026-10-01",
-  "signal_date": "2026-09-30",
+  "trade_date": "2026-10-02",
+  "signal_date": "2026-10-01",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-10-01T07:42:04.614942+08:00",
+  "generated_at": "2026-10-02T07:42:06.629955+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "6957",
-      "prev_close": 371.0,
-      "net_amt_wan": 5713.4,
-      "d0_turnover": 112257551.0,
-      "cz_influence_pct": 50.89546270254907
+      "code": "4722",
+      "prev_close": 209.5,
+      "net_amt_wan": 11857.7,
+      "d0_turnover": 476364033.0,
+      "cz_influence_pct": 24.89209759461416
     },
     {
-      "code": "4939",
-      "prev_close": 82.8,
-      "net_amt_wan": 19002.6,
-      "d0_turnover": 895826116.8,
-      "cz_influence_pct": 21.21237553095639
+      "code": "3441",
+      "prev_close": 202.5,
+      "net_amt_wan": 10327.5,
+      "d0_turnover": 1272357720.0,
+      "cz_influence_pct": 8.116821109082437
     },
     {
-      "code": "6120",
-      "prev_close": 14.35,
-      "net_amt_wan": 2911.615,
-      "d0_turnover": 187326349.35,
-      "cz_influence_pct": 15.543008285289043
+      "code": "6155",
+      "prev_close": 69.6,
+      "net_amt_wan": 2728.3199999999997,
+      "d0_turnover": 724747932.0,
+      "cz_influence_pct": 3.7645088444350328
     },
     {
-      "code": "3518",
-      "prev_close": 41.1,
-      "net_amt_wan": 5084.070000000001,
-      "d0_turnover": 346327752.6,
-      "cz_influence_pct": 14.679938185236848
+      "code": "3236",
+      "prev_close": 48.55,
+      "net_amt_wan": 2233.3,
+      "d0_turnover": 659242340.8499999,
+      "cz_influence_pct": 3.387676824762916
     },
     {
-      "code": "1595",
-      "prev_close": 85.3,
-      "net_amt_wan": 3778.79,
-      "d0_turnover": 496067182.7,
-      "cz_influence_pct": 7.617496443592095
-    },
-    {
-      "code": "6672",
-      "prev_close": 369.0,
-      "net_amt_wan": 17232.3,
-      "d0_turnover": 3047776533.0,
-      "cz_influence_pct": 5.654056264760931
-    },
-    {
-      "code": "6533",
-      "prev_close": 333.5,
-      "net_amt_wan": 17908.95,
-      "d0_turnover": 3276551123.5,
-      "cz_influence_pct": 5.465792940495836
-    },
-    {
-      "code": "6207",
-      "prev_close": 151.0,
-      "net_amt_wan": 17138.5,
-      "d0_turnover": 3143293312.0,
-      "cz_influence_pct": 5.452402400555866
+      "code": "6127",
+      "prev_close": 56.8,
+      "net_amt_wan": 2232.24,
+      "d0_turnover": 939310517.5999999,
+      "cz_influence_pct": 2.376466523236128
     }
   ]
 }
