@@ -1,44 +1,51 @@
 {
-  "trade_date": "2026-10-02",
-  "signal_date": "2026-10-01",
+  "trade_date": "2026-10-05",
+  "signal_date": "2026-10-02",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-10-02T07:42:06.629955+08:00",
+  "generated_at": "2026-10-05T07:42:08.935656+08:00",
   "active": true,
   "candidates": [
     {
+      "code": "6174",
+      "prev_close": 55.0,
+      "net_amt_wan": 2343.0,
+      "d0_turnover": 86690725.0,
+      "cz_influence_pct": 27.027112762063073
+    },
+    {
       "code": "4722",
-      "prev_close": 209.5,
-      "net_amt_wan": 11857.7,
-      "d0_turnover": 476364033.0,
-      "cz_influence_pct": 24.89209759461416
-    },
-    {
-      "code": "3441",
-      "prev_close": 202.5,
-      "net_amt_wan": 10327.5,
-      "d0_turnover": 1272357720.0,
-      "cz_influence_pct": 8.116821109082437
-    },
-    {
-      "code": "6155",
-      "prev_close": 69.6,
-      "net_amt_wan": 2728.3199999999997,
-      "d0_turnover": 724747932.0,
-      "cz_influence_pct": 3.7645088444350328
+      "prev_close": 230.0,
+      "net_amt_wan": 11960.0,
+      "d0_turnover": 1057651090.0,
+      "cz_influence_pct": 11.308077033230306
     },
     {
       "code": "3236",
-      "prev_close": 48.55,
-      "net_amt_wan": 2233.3,
-      "d0_turnover": 659242340.8499999,
-      "cz_influence_pct": 3.387676824762916
+      "prev_close": 53.4,
+      "net_amt_wan": 5468.16,
+      "d0_turnover": 533412546.59999996,
+      "cz_influence_pct": 10.251277430301075
     },
     {
-      "code": "6127",
-      "prev_close": 56.8,
-      "net_amt_wan": 2232.24,
-      "d0_turnover": 939310517.5999999,
-      "cz_influence_pct": 2.376466523236128
+      "code": "3707",
+      "prev_close": 85.2,
+      "net_amt_wan": 27136.2,
+      "d0_turnover": 3054920976.0,
+      "cz_influence_pct": 8.882782963352176
+    },
+    {
+      "code": "9933",
+      "prev_close": 45.8,
+      "net_amt_wan": 3966.2799999999997,
+      "d0_turnover": 974440708.4,
+      "cz_influence_pct": 4.070314351411389
+    },
+    {
+      "code": "2466",
+      "prev_close": 141.0,
+      "net_amt_wan": 676.8,
+      "d0_turnover": 349705803.0,
+      "cz_influence_pct": 1.9353410615265083
     }
   ]
 }

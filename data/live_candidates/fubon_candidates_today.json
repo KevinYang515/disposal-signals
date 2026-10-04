@@ -1,69 +1,63 @@
 {
-  "trade_date": "2026-10-02",
-  "signal_date": "2026-10-01",
+  "trade_date": "2026-10-05",
+  "signal_date": "2026-10-02",
   "strategy": "FubonBare",
-  "generated_at": "2026-10-02T07:30:35.914551+08:00",
+  "generated_at": "2026-10-05T07:30:46.384863+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "3588",
-      "prev_close": 59.2,
-      "net_amt_wan": 1823.36,
-      "influence_pct": 51.14389215240429
-    },
-    {
-      "code": "3441",
-      "prev_close": 202.5,
-      "net_amt_wan": 21768.75,
-      "influence_pct": 17.411273249286666
-    },
-    {
-      "code": "7795",
-      "prev_close": 536.0,
-      "net_amt_wan": 13292.8,
-      "influence_pct": 13.547452908348228
-    },
-    {
-      "code": "6449",
-      "prev_close": 230.0,
-      "net_amt_wan": 6141.0,
-      "influence_pct": 10.599497846157355
-    },
-    {
-      "code": "3147",
-      "prev_close": 267.5,
-      "net_amt_wan": 4494.0,
-      "influence_pct": 10.359858538552185
-    },
-    {
-      "code": "2492",
-      "prev_close": 329.0,
-      "net_amt_wan": 91363.3,
-      "influence_pct": 5.549876778931781
-    },
-    {
       "code": "6834",
-      "prev_close": 119.5,
-      "net_amt_wan": 5724.05,
-      "influence_pct": 5.099913389009444
+      "prev_close": 131.0,
+      "net_amt_wan": 22034.2,
+      "influence_pct": 14.378868770289213
     },
     {
-      "code": "5328",
-      "prev_close": 58.4,
-      "net_amt_wan": 3842.72,
-      "influence_pct": 4.927405962507171
+      "code": "3105",
+      "prev_close": 591.0,
+      "net_amt_wan": 210632.4,
+      "influence_pct": 12.624622338932731
+    },
+    {
+      "code": "9933",
+      "prev_close": 45.8,
+      "net_amt_wan": 9421.06,
+      "influence_pct": 9.747571154777974
     },
     {
       "code": "1709",
-      "prev_close": 53.2,
-      "net_amt_wan": 5298.72,
-      "influence_pct": 3.5136490080669827
+      "prev_close": 58.5,
+      "net_amt_wan": 14894.1,
+      "influence_pct": 7.856758867771591
     },
     {
-      "code": "2327",
-      "prev_close": 602.0,
-      "net_amt_wan": 126179.2,
-      "influence_pct": 2.89360895797469
+      "code": "2466",
+      "prev_close": 141.0,
+      "net_amt_wan": 2213.7,
+      "influence_pct": 6.497661980546312
+    },
+    {
+      "code": "1727",
+      "prev_close": 123.0,
+      "net_amt_wan": 23074.8,
+      "influence_pct": 5.350250443058079
+    },
+    {
+      "code": "3081",
+      "prev_close": 2925.0,
+      "net_amt_wan": 69322.5,
+      "influence_pct": 5.231352055490289
+    },
+    {
+      "code": "8150",
+      "prev_close": 127.0,
+      "net_amt_wan": 57772.3,
+      "influence_pct": 4.750115376938256
+    },
+    {
+      "code": "4958",
+      "prev_close": 561.0,
+      "net_amt_wan": 157865.4,
+      "influence_pct": 4.170819485147661
     }
   ]
 }
