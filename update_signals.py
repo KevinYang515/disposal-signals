@@ -220,6 +220,7 @@ def exit_date(idx, sd, t1_offset=10):
 _DISPOSAL_END_CACHE = None
 _DISPOSAL_PERIODS_CACHE = None
 _DISPOSAL_REASON_CACHE = None
+_ATTENTION_CACHE = None
 
 def load_disposal_end_dates():
     """2026-09-03修正：新制處置期間實際上是5個或7個營業日(當沖比重過高時加重為7天)，
@@ -301,6 +302,76 @@ def is_daytrade_aggravated(reason_text):
     """處置條件文字裡有沒有「沖銷」兩個字，判斷是不是當沖比重過高觸發的加重案例
     (這類通常會被拉長成7個營業日，而不是一般的5天)。"""
     return isinstance(reason_text, str) and '沖銷' in reason_text
+
+def load_attention_raw():
+    """2026-10-04新增：trading_attention.feather逐日注意股公告原文，用來回推處置
+    觸發到底是哪一款條件(漲跌幅/週轉率/本益比/成交量放大/當沖比重/券商或大戶集中度)
+    ——disposal_information的「處置條件」只會寫「連續N天達注意標準」，不會列出是
+    哪個指標，要另外查這份才能回推。"""
+    global _ATTENTION_CACHE
+    if _ATTENTION_CACHE is None:
+        if not os.path.exists(ATTENTION_F):
+            _ATTENTION_CACHE = pd.DataFrame(columns=['stock_id', 'date', '注意交易資訊'])
+        else:
+            raw = pd.DataFrame(pd.read_feather(ATTENTION_F))
+            raw['stock_id'] = raw['stock_id'].astype(str)
+            raw['date'] = pd.to_datetime(raw['date'])
+            _ATTENTION_CACHE = raw[['stock_id', 'date', '注意交易資訊']].sort_values(['stock_id', 'date'])
+    return _ATTENTION_CACHE
+
+def _tag_attention_text(text):
+    """把一則注意股公告原文分類成條款類型標籤（可能同時中多款）。"""
+    tags = []
+    # 2026-10-05修正(review抓到)：第十一款是用絕對金額「收盤價價差達X元」觸發
+    # (常見於高股價股)，不含「漲幅/跌幅」字樣，原本會被漏分類成'其他'，導致window裡
+    # 若同時混到其他非價格條款時，這筆真正的價格觸發訊號會被悄悄蓋掉而誤標「非漲多觸發」。
+    if re.search(r'漲幅|跌幅|價差達', text):
+        tags.append('漲跌幅')
+    if '週轉率' in text:
+        tags.append('週轉率')
+    if '本益比' in text or '淨值比' in text:
+        tags.append('本益比/淨值比')
+    if re.search(r'成交量.*放大', text):
+        tags.append('成交量放大')
+    if '當日沖銷' in text:
+        tags.append('當沖比重')
+    if '證券公司' in text or '單一投資人' in text:
+        tags.append('券商/大戶集中度')
+    return tags
+
+_TRIGGER_TAG_ORDER = ['漲跌幅', '週轉率', '本益比/淨值比', '成交量放大', '當沖比重', '券商/大戶集中度']
+
+def disposal_trigger_tags(sid, start_date, lookback_days=30, max_records=10):
+    """2026-10-04新增：Kevin想知道處置近期是否仍然是因為「漲多」，還是混入了週轉率/
+    本益比/當沖比重等其他條款撐出來的案例（2026-10研究發現：最近窗13筆事件裡有3筆
+    回溯30天完全沒出現過漲跌幅條款，歷史窗13筆是0筆——母體組成有變化）。
+    回傳(tags_str, has_price_tag)：tags_str是處置起始日前30天內(最多抓10筆)注意股
+    公告出現過的條款類型組合；has_price_tag=False代表這段期間完全沒看到漲跌幅條款，
+    很可能是純估值/週轉率/當沖比重撐出來的，不是短期真的漲很多，標記起來提醒多觀察。
+    查無注意股記錄時回傳('查無資料', True)，避免資料缺失被誤判成觀察中。"""
+    att = load_attention_raw()
+    sid = str(sid)
+    window = att[(att['stock_id'] == sid) & (att['date'] < start_date) &
+                 (att['date'] >= start_date - pd.Timedelta(days=lookback_days))].tail(max_records)
+    if window.empty:
+        return '查無資料', True
+    all_tags = set()
+    for t in window['注意交易資訊']:
+        all_tags.update(_tag_attention_text(str(t)))
+    if not all_tags:
+        return '其他/未分類', True
+    has_price = '漲跌幅' in all_tags
+    tags_str = '、'.join([t for t in _TRIGGER_TAG_ORDER if t in all_tags])
+    return tags_str, has_price
+
+def observation_flag(no_price_trigger, is_daytrade):
+    """組合「非漲多觸發」跟「7天當沖加重」兩個觀察旗標成一句顯示文字，給網站/評級旁標示用。"""
+    flags = []
+    if no_price_trigger:
+        flags.append('⚠️非漲多觸發')
+    if is_daytrade:
+        flags.append('⚠️7天當沖加重')
+    return '、'.join(flags)
 
 def real_exit_date(idx, sid, sd, t1_offset=5):
     """優先用TWSE公告的真實處置結束時間算出關日(結束時間後第一個交易日)；
@@ -842,6 +913,14 @@ def build_signals(df, price, open_p, whale_dfs):
                 d['評級'] = '🆕 新制觀察中(第一次,對照舊5分)'
             else:
                 d['評級'] = '🆕 新制觀察中(第二次+,對照舊20分)'
+            # 2026-10-04新增：在評級旁加註「非漲多觸發」/「7天當沖加重」觀察旗標
+            # （見disposal_trigger_tags/observation_flag註解），讓Kevin不用開原始欄位
+            # 就能一眼看出這筆是不是母體組成變化後才出現的可疑類型。
+            reason_text_sig = load_disposal_reasons().get((str(sid), pd.Timestamp(sd)), '')
+            _, has_price_sig = disposal_trigger_tags(sid, pd.Timestamp(sd))
+            obs_sig = observation_flag(not has_price_sig, is_daytrade_aggravated(reason_text_sig))
+            if obs_sig:
+                d['評級'] += ' ' + obs_sig
         else:
             d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
                                **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 9)}})
@@ -904,7 +983,7 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '處置觸發條款', '觀察標記', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       '觸發價(D0收盤版)', '距觸發(D0收盤版)(%)',
@@ -1010,6 +1089,15 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         wh = d['大戶(%)']
         d['評級'] = grade({**row.to_dict(), '入場前20日漲幅(%)': pr, '大戶持股變動(%)': wh,
                            **{f'D{n}%': d.get(f'D{n}%') for n in range(1, 6)}})
+        # 2026-10-04新增：處置觸發條款(見disposal_trigger_tags)+觀察旗標，跟build_newregime_history
+        # 同一套邏輯，讓這個獨立對照頁也看得到「是不是真的漲多觸發」。
+        reason_text_sig = load_disposal_reasons().get((str(sid), pd.Timestamp(sd)), '')
+        tags_str_sig, has_price_sig = disposal_trigger_tags(sid, pd.Timestamp(sd))
+        d['處置觸發條款'] = tags_str_sig
+        obs_sig = observation_flag(not has_price_sig, is_daytrade_aggravated(reason_text_sig))
+        d['觀察標記'] = obs_sig
+        if obs_sig:
+            d['評級'] += ' ' + obs_sig
 
         is_changduo = row.get('處置原因') == '漲多處置'
         is_first = row.get('處置次別') == '第一次'
@@ -1413,7 +1501,7 @@ def build_history(df, price, open_p, whale_dfs):
 
 NEWREGIME_HIST_COLS = ['起始日', '出關日', '處置次別', '代號', '名稱', '規模', 'Dn組別',
                        '近20日漲幅', '大戶(%)', 'D0收盤價', '買進日', '買進價', '買進時累積(%)', '觸發方式',
-                       '處置觸發原因', '是否當沖加重', '最深日',
+                       '處置觸發原因', '處置觸發條款', '是否當沖加重', '觀察標記', '最深日',
                        '期間最深(%)', '出關價', '出關報酬(%)', '結果',
                        *[f'T+{k}收盤(%)' for k in range(1, 11)],
                        *[f'D{n}%' for n in range(1, 6)], *[f'LowD{n}%' for n in range(1, 6)],
@@ -1449,6 +1537,7 @@ def build_newregime_history(df, price, open_p, whale_dfs):
                    entry_n_alt=np.nan, entry_cum_alt=np.nan, actual_ret_alt=np.nan, trigger_type='',
                    exit_open_rel_d0=np.nan, d0_close=np.nan, entry_price=np.nan, exit_price=np.nan,
                    peak5=np.nan, disposal_reason_text='', is_daytrade='',
+                   trigger_tags='', no_price_trigger=False, obs_flag='',
                    **{f'_t{k}c': np.nan for k in range(1, 11)},
                    **{f'd{n}_close': np.nan for n in range(1, 6)},
                    **{f'd{n}_low': np.nan for n in range(1, 6)},
@@ -1460,7 +1549,15 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         reason_map = load_disposal_reasons()
         reason_text = reason_map.get((str(sid), pd.Timestamp(sd)), '')
         out['disposal_reason_text'] = reason_text
-        out['is_daytrade'] = '是' if is_daytrade_aggravated(reason_text) else ('否' if reason_text else '')
+        is_daytrade_bool = is_daytrade_aggravated(reason_text)
+        out['is_daytrade'] = '是' if is_daytrade_bool else ('否' if reason_text else '')
+        # 2026-10-04新增：回推處置前30天注意股公告是不是出現過漲跌幅條款——Kevin懷疑
+        # 近期有些處置不是真的漲多，是週轉率/本益比/當沖比重撐出來的（見disposal_trigger_tags
+        # 註解，實測發現近期窗13筆裡有3筆完全沒有漲跌幅條款，歷史窗0筆，是真實的母體變化）。
+        tags_str, has_price = disposal_trigger_tags(sid, pd.Timestamp(sd))
+        out['trigger_tags'] = tags_str
+        out['no_price_trigger'] = (not has_price)
+        out['obs_flag'] = observation_flag(out['no_price_trigger'], is_daytrade_bool)
         if sid not in price.columns:
             return pd.Series(out)
         pos = idx.searchsorted(sd)
@@ -1625,7 +1722,9 @@ def build_newregime_history(df, price, open_p, whale_dfs):
         '買進時累積(%)': pool['entry_cum'],
         '觸發方式':      pool['trigger_type'],
         '處置觸發原因':  pool['disposal_reason_text'],
+        '處置觸發條款':  pool['trigger_tags'],
         '是否當沖加重':  pool['is_daytrade'],
+        '觀察標記':      pool['obs_flag'],
         '最深日':        pool['deepest_n'].apply(lambda v: f'D{int(v)}' if pd.notna(v) else '-'),
         '期間最深(%)':   pool['min_dn'],
         '出關價':        pool['exit_price'],
