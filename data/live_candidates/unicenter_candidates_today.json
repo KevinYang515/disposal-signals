@@ -1,79 +1,30 @@
 {
-  "trade_date": "2026-10-06",
-  "signal_date": "2026-10-05",
+  "trade_date": "2026-10-07",
+  "signal_date": "2026-10-06",
   "strategy": "UniCenter",
-  "generated_at": "2026-10-06T07:47:07.239015+08:00",
+  "generated_at": "2026-10-07T07:47:08.405112+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "6274",
-      "prev_close": 1780.0,
-      "net_amt_wan": 39516.0,
-      "d0_turnover": 21706010640.0,
-      "uc_influence_pct": 1.820509565547693
-    },
-    {
-      "code": "2368",
-      "prev_close": 1215.0,
-      "net_amt_wan": 32805.0,
-      "d0_turnover": 8793498105.0,
-      "uc_influence_pct": 3.7305972672407823
-    },
-    {
-      "code": "1303",
+      "code": "6257",
       "prev_close": 286.0,
-      "net_amt_wan": 25511.2,
-      "d0_turnover": 26006654388.0,
-      "uc_influence_pct": 0.9809489378907341
+      "net_amt_wan": 13299.0,
+      "d0_turnover": 10342427524.0,
+      "uc_influence_pct": 1.2858683291847257
     },
     {
-      "code": "6213",
-      "prev_close": 751.0,
-      "net_amt_wan": 20051.7,
-      "d0_turnover": 15067973129.0,
-      "uc_influence_pct": 1.3307496521485203
+      "code": "3556",
+      "prev_close": 64.3,
+      "net_amt_wan": 96.45,
+      "d0_turnover": 79651174.89999999,
+      "uc_influence_pct": 1.2109049253961477
     },
     {
-      "code": "2313",
-      "prev_close": 248.5,
-      "net_amt_wan": 13692.35,
-      "d0_turnover": 12781907131.0,
-      "uc_influence_pct": 1.0712290317609883
-    },
-    {
-      "code": "8261",
-      "prev_close": 205.0,
-      "net_amt_wan": 7236.5,
-      "d0_turnover": 3232428520.0,
-      "uc_influence_pct": 2.238719264857866
-    },
-    {
-      "code": "3441",
-      "prev_close": 232.0,
-      "net_amt_wan": 5660.8,
-      "d0_turnover": 2246351368.0,
-      "uc_influence_pct": 2.519997575018727
-    },
-    {
-      "code": "4760",
-      "prev_close": 348.5,
-      "net_amt_wan": 139.4,
-      "d0_turnover": 163453470.0,
-      "uc_influence_pct": 0.8528420962858727
-    },
-    {
-      "code": "6716",
-      "prev_close": 133.0,
-      "net_amt_wan": 133.0,
-      "d0_turnover": 150383632.0,
-      "uc_influence_pct": 0.8844047602201813
-    },
-    {
-      "code": "1735",
-      "prev_close": 24.35,
-      "net_amt_wan": 121.75,
-      "d0_turnover": 21891794.450000003,
-      "uc_influence_pct": 5.5614445073505605
+      "code": "6152",
+      "prev_close": 18.95,
+      "net_amt_wan": 37.9,
+      "d0_turnover": 116758037.3,
+      "uc_influence_pct": 0.32460292136137164
     }
   ]
 }
