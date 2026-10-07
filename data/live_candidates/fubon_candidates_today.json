@@ -1,27 +1,45 @@
 {
-  "trade_date": "2026-10-07",
-  "signal_date": "2026-10-06",
+  "trade_date": "2026-10-08",
+  "signal_date": "2026-10-07",
   "strategy": "FubonBare",
-  "generated_at": "2026-10-07T07:30:42.369863+08:00",
+  "generated_at": "2026-10-08T07:30:53.491018+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "2466",
-      "prev_close": 170.5,
-      "net_amt_wan": 8252.2,
-      "influence_pct": 7.429934137355051
+      "code": "3265",
+      "prev_close": 217.0,
+      "net_amt_wan": 12954.9,
+      "influence_pct": 25.21554646143943
     },
     {
-      "code": "6257",
-      "prev_close": 286.0,
-      "net_amt_wan": 70642.0,
-      "influence_pct": 7.0373838833340345
+      "code": "6442",
+      "prev_close": 1815.0,
+      "net_amt_wan": 156997.5,
+      "influence_pct": 21.97764252037467
     },
     {
-      "code": "1711",
-      "prev_close": 48.6,
-      "net_amt_wan": 5355.72,
-      "influence_pct": 2.984790590625612
+      "code": "8086",
+      "prev_close": 140.0,
+      "net_amt_wan": 23660.0,
+      "influence_pct": 8.779544296469386
+    },
+    {
+      "code": "1301",
+      "prev_close": 75.4,
+      "net_amt_wan": 71343.48,
+      "influence_pct": 8.368194533347417
+    },
+    {
+      "code": "6449",
+      "prev_close": 261.5,
+      "net_amt_wan": 10015.45,
+      "influence_pct": 4.867199091547272
+    },
+    {
+      "code": "3532",
+      "prev_close": 513.0,
+      "net_amt_wan": 20058.3,
+      "influence_pct": 3.9702214622222427
     }
   ]
 }
