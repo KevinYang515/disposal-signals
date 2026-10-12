@@ -1,60 +1,60 @@
 {
-  "date": "2026-08-26",
-  "generated_at": "2026-08-26T09:01:27.676317",
+  "date": "2026-10-12",
+  "generated_at": "2026-10-12T09:02:35.522544",
   "n_candidates_pool": 59,
-  "n_signal": 24,
+  "n_signal": 34,
   "min_candidates_required": 7,
   "triggered": true,
   "picks": [
     {
+      "code": "3535",
+      "gap_pct": 9.15,
+      "open_px": 93.0,
+      "prev_close": 85.2,
+      "mktcap_e8": 67.4,
+      "industry": "光電業",
+      "pred_score": 1.9134,
+      "weight": 0.4065
+    },
+    {
       "code": "6517",
-      "gap_pct": 8.69,
-      "open_px": 66.3,
+      "gap_pct": 4.26,
+      "open_px": 63.6,
       "prev_close": 61.0,
       "mktcap_e8": 18.7,
       "industry": "光電業",
-      "pred_score": 2.3147,
-      "weight": 0.6023
+      "pred_score": 1.5795,
+      "weight": 0.2802
     },
     {
-      "code": "2342",
-      "gap_pct": 7.29,
-      "open_px": 39.0,
-      "prev_close": 36.35,
-      "mktcap_e8": 57.2,
+      "code": "4976",
+      "gap_pct": 3.45,
+      "open_px": 37.5,
+      "prev_close": 36.25,
+      "mktcap_e8": 51.2,
+      "industry": "光電業",
+      "pred_score": 1.257,
+      "weight": 0.1581
+    },
+    {
+      "code": "6163",
+      "gap_pct": 5.78,
+      "open_px": 43.0,
+      "prev_close": 40.65,
+      "mktcap_e8": 60.5,
+      "industry": "資訊服務業",
+      "pred_score": 1.2392,
+      "weight": 0.1514
+    },
+    {
+      "code": "3317",
+      "gap_pct": 3.27,
+      "open_px": 69.5,
+      "prev_close": 67.3,
+      "mktcap_e8": 60.6,
       "industry": "半導體業",
-      "pred_score": 1.6844,
-      "weight": 0.1802
-    },
-    {
-      "code": "3230",
-      "gap_pct": 6.34,
-      "open_px": 42.8,
-      "prev_close": 40.25,
-      "mktcap_e8": 34.6,
-      "industry": "光電業",
-      "pred_score": 1.5972,
-      "weight": 0.1218
-    },
-    {
-      "code": "8182",
-      "gap_pct": 7.26,
-      "open_px": 41.35,
-      "prev_close": 38.55,
-      "mktcap_e8": 41.3,
-      "industry": "電子零組件業",
-      "pred_score": 1.5481,
-      "weight": 0.089
-    },
-    {
-      "code": "4949",
-      "gap_pct": 7.04,
-      "open_px": 71.5,
-      "prev_close": 66.8,
-      "mktcap_e8": 45.2,
-      "industry": "光電業",
-      "pred_score": 1.4253,
-      "weight": 0.0067
+      "pred_score": 0.8492,
+      "weight": 0.0038
     }
   ]
 }
