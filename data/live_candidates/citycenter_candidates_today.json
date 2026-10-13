@@ -1,37 +1,51 @@
 {
-  "trade_date": "2026-10-13",
-  "signal_date": "2026-10-12",
+  "trade_date": "2026-10-14",
+  "signal_date": "2026-10-13",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-10-13T07:42:09.294299+08:00",
+  "generated_at": "2026-10-14T07:42:08.417899+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "3311",
-      "prev_close": 51.5,
-      "net_amt_wan": 2492.6,
-      "d0_turnover": 61043722.5,
-      "cz_influence_pct": 40.833027507455824
+      "code": "3564",
+      "prev_close": 75.3,
+      "net_amt_wan": 10436.58,
+      "d0_turnover": 187361008.2,
+      "cz_influence_pct": 55.70305209320495
     },
     {
-      "code": "3265",
-      "prev_close": 262.0,
-      "net_amt_wan": 53788.6,
-      "d0_turnover": 2265104756.0,
-      "cz_influence_pct": 23.74662799039216
+      "code": "8050",
+      "prev_close": 66.7,
+      "net_amt_wan": 15501.080000000002,
+      "d0_turnover": 664370419.2,
+      "cz_influence_pct": 23.331984013775912
     },
     {
-      "code": "4903",
-      "prev_close": 50.5,
-      "net_amt_wan": 8463.8,
-      "d0_turnover": 595954843.0,
-      "cz_influence_pct": 14.202082757468254
+      "code": "6668",
+      "prev_close": 60.5,
+      "net_amt_wan": 13086.15,
+      "d0_turnover": 912128431.5,
+      "cz_influence_pct": 14.34682830627235
     },
     {
-      "code": "3605",
-      "prev_close": 179.0,
-      "net_amt_wan": 7142.1,
-      "d0_turnover": 3549899718.0,
-      "cz_influence_pct": 2.011915988439198
+      "code": "6117",
+      "prev_close": 71.1,
+      "net_amt_wan": 1656.6299999999999,
+      "d0_turnover": 162001989.89999998,
+      "cz_influence_pct": 10.22598550192253
+    },
+    {
+      "code": "6217",
+      "prev_close": 197.0,
+      "net_amt_wan": 23600.6,
+      "d0_turnover": 2986243215.0,
+      "cz_influence_pct": 7.90310711513831
+    },
+    {
+      "code": "1312",
+      "prev_close": 17.65,
+      "net_amt_wan": 7891.315,
+      "d0_turnover": 2403580159.35,
+      "cz_influence_pct": 3.2831503327661213
     }
   ]
 }
