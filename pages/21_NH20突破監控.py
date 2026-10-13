@@ -51,7 +51,7 @@ fresh = bool(im) and str(im.get("snapshot_at", "")).startswith(today)
 
 # ---------------- 標題與今日狀態 ----------------
 st.title("📈 NH20 突破監控")
-st.markdown("找出**今天收盤可能帶量突破**的股票。每天 **13:15、13:21** 用即時報價更新一次，"
+st.markdown("找出**今天收盤可能帶量突破**的股票。盤中 **09:30、10:30、11:30、12:30（參考）與 13:15、13:21（決策）** 用即時報價更新，"
             "**13:24 左右做決定、收盤前買進**。")
 
 c1, c2, c3 = st.columns(3)
@@ -59,7 +59,7 @@ gate = meta.get("gate")
 c1.metric("大盤", "✅ 可以買新股" if gate else "⛔ 暫停買新股",
           f"加權 {meta.get('taiex', 0):,.0f}／季線 {meta.get('taiex_ma60', 0):,.0f}" if meta else None, delta_color="off")
 c2.metric("盤中最後更新", im.get("snapshot_at", "")[11:16] if fresh else "今天尚未更新",
-          None if fresh else "每天 13:15、13:21 更新", delta_color="off")
+          None if fresh else "09:30 起每小時、13:15、13:21 更新", delta_color="off")
 c3.metric("名單依據", f"{meta.get('data_date', '—')} 收盤")
 if gate is False:
     st.error("大盤在季線下：今天**不買新股**，只處理手上持股的出場。")
@@ -74,7 +74,7 @@ def f(d):
     return d[d["卡別"] == card]
 
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 今天的買點", "📋 持股與出場", "🗂 完整觀察名單", "📖 規則說明"])
+tab1, tab2, tab5, tab3, tab4 = st.tabs(["🎯 今天的買點", "📋 持股與出場", "📜 歷史紀錄", "🗂 完整觀察名單", "📖 規則說明"])
 
 # ---------------- 1. 今天的買點 ----------------
 with tab1:
@@ -88,6 +88,9 @@ with tab1:
             "昨收": NC("昨收", format="%.2f"), "觸發價": NC("收盤要高於", format="%.2f"),
             "需漲pct": NC("還要漲", format="%.1f%%"), "需量張1320": NC("13:20 成交量要 ≥（張）", format="%d")})
     else:
+        if im.get("snapshot_at", "")[11:16] < "13:00":
+            st.warning(f"⏰ 這是早盤 {im.get('snapshot_at', '')[11:16]} 的參考快照：早盤突破常在收盤前跌回，"
+                       "**規則上仍以 13:20 後的狀態為準**（量的門檻已依時間換算）。")
         ok = intra[intra["狀態"] == "✅ 符合"].sort_values("距觸發pct")
         near = intra[intra["狀態"].str.startswith("🟡")].sort_values("距觸發pct", ascending=False)
         lim = intra[intra["狀態"] == "⛔ 漲停（不買）"]
@@ -139,6 +142,81 @@ with tab2:
         if "距防守pct" in hold.columns:
             hold = hold.sort_values("距防守pct")
         table(hold, cols, cfg, height=420)
+
+# ---------------- 5. 歷史紀錄 ----------------
+with tab5:
+    st.caption("2019 年起每一個符合規則的訊號（每個都買、各自計算，不受名額限制）。尚未出場的以最新收盤價計算。"
+               "報酬已扣手續費與交易稅。用下面的條件篩選，找出哪些時期、產業、量能的訊號比較好。")
+    h = f(rd("nh20_history.csv"))
+    if h.empty:
+        st.write("尚無資料。")
+    else:
+        h["訊號日"] = pd.to_datetime(h["訊號日"])
+        h["年"] = h["訊號日"].dt.year
+        h["年月"] = h["訊號日"].dt.strftime("%Y-%m")
+        mode = st.radio("選擇期間的方式", ["依年／月", "依日期區間"], horizontal=True)
+        if mode == "依年／月":
+            ys = sorted(h["年"].unique(), reverse=True)
+            a1, a2 = st.columns(2)
+            ysel = a1.multiselect("年", ys, default=ys[:1])
+            ms = sorted(h.loc[h["年"].isin(ysel), "年月"].unique(), reverse=True) if ysel else []
+            msel = a2.multiselect("月（不選＝整年）", ms)
+            hh = h[h["年"].isin(ysel)] if ysel else h.iloc[0:0]
+            if msel:
+                hh = hh[hh["年月"].isin(msel)]
+        else:
+            d0, d1 = h["訊號日"].min().date(), h["訊號日"].max().date()
+            rng = st.date_input("訊號日區間", (max(d0, (h["訊號日"].max() - pd.Timedelta(days=30)).date()), d1), min_value=d0, max_value=d1)
+            if isinstance(rng, (tuple, list)) and len(rng) == 2:
+                hh = h[(h["訊號日"].dt.date >= rng[0]) & (h["訊號日"].dt.date <= rng[1])]
+            else:
+                hh = h[h["訊號日"].dt.date == (rng[0] if isinstance(rng, (tuple, list)) else rng)]
+        with st.expander("更多篩選（產業、量比、代號）"):
+            b1, b2, b3 = st.columns(3)
+            inds = sorted(hh["產業"].dropna().unique())
+            isel = b1.multiselect("產業", inds)
+            vr = b2.slider("突破日量比（相對 20 日均量）", 1.5, 10.0, (1.5, 10.0), 0.1)
+            code = b3.text_input("代號或名稱包含")
+        if isel:
+            hh = hh[hh["產業"].isin(isel)]
+        hh = hh[(hh["量比"] >= vr[0]) & ((hh["量比"] <= vr[1]) | (vr[1] >= 10.0))]
+        if code:
+            hh = hh[hh["代號"].str.contains(code) | hh["名稱"].astype(str).str.contains(code)]
+        if hh.empty:
+            st.write("這個條件下沒有訊號。")
+        else:
+            r = hh["報酬pct"]
+            win, loss = r[r > 0], r[r <= 0]
+            k = st.columns(5)
+            k[0].metric("訊號筆數", len(hh))
+            k[1].metric("勝率", f"{(r > 0).mean() * 100:.0f}%")
+            k[2].metric("平均每筆報酬", f"{r.mean():+.1f}%")
+            k[3].metric("賺賠比", f"{win.mean() / abs(loss.mean()):.1f}" if len(win) and len(loss) and loss.mean() != 0 else "—")
+            k[4].metric("平均持有", f"{hh['持有天數'].mean():.0f} 天")
+            k2 = st.columns(5)
+            k2[0].metric("平均獲利", f"{win.mean():+.1f}%" if len(win) else "—")
+            k2[1].metric("平均虧損", f"{loss.mean():+.1f}%" if len(loss) else "—")
+            k2[2].metric("最大單筆獲利", f"{r.max():+.1f}%")
+            k2[3].metric("最大單筆虧損", f"{r.min():+.1f}%")
+            k2[4].metric("仍持有", int((hh["狀態"] != "已出場").sum()))
+            st.markdown("#### 每月統計")
+            g = hh.groupby("年月")["報酬pct"]
+            mt = pd.DataFrame({"筆數": g.size(), "勝率": g.apply(lambda x: (x > 0).mean() * 100), "平均報酬": g.mean(),
+                               "最好一筆": g.max(), "最差一筆": g.min()}).reset_index().sort_values("年月", ascending=False)
+            st.dataframe(mt, use_container_width=True, hide_index=True, column_config={
+                "勝率": NC("勝率", format="%.0f%%"), "平均報酬": NC("平均每筆報酬", format="%+.1f%%"),
+                "最好一筆": NC("最好一筆", format="%+.1f%%"), "最差一筆": NC("最差一筆", format="%+.1f%%")})
+            st.markdown("#### 累積報酬（每筆投入相同金額、依訊號日累加）")
+            cum = hh.sort_values("訊號日").groupby("訊號日")["報酬pct"].sum().cumsum().rename("累積報酬（%，每筆一單位）")
+            st.line_chart(cum)
+            st.markdown("#### 逐筆明細")
+            show = hh.sort_values("訊號日", ascending=False).assign(訊號日=lambda x: x["訊號日"].dt.strftime("%Y-%m-%d"))
+            cols = ["訊號日", "卡別", "代號", "名稱", "產業", "買價", "觸發價", "量比", "出場日", "賣價", "報酬pct", "持有天數", "最大漲幅pct", "最大跌幅pct", "狀態"]
+            st.dataframe(show[cols], use_container_width=True, hide_index=True, height=450, column_config={
+                "買價": NC("買價", format="%.2f"), "觸發價": NC("觸發價", format="%.2f"), "量比": NC("量比", format="%.1f×"),
+                "賣價": NC("賣價／現價", format="%.2f"), "報酬pct": NC("報酬", format="%+.1f%%"), "持有天數": NC("持有天數", format="%d"),
+                "最大漲幅pct": NC("期間最大漲幅", format="%+.1f%%"), "最大跌幅pct": NC("期間最大跌幅", format="%+.1f%%")})
+            st.download_button("下載這份明細（CSV）", show[cols].to_csv(index=False).encode("utf-8-sig"), "nh20_history_filtered.csv", "text/csv")
 
 # ---------------- 3. 完整觀察名單 ----------------
 with tab3:
