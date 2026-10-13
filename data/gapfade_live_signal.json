@@ -1,60 +1,60 @@
 {
-  "date": "2026-10-12",
-  "generated_at": "2026-10-12T09:02:35.522544",
+  "date": "2026-10-13",
+  "generated_at": "2026-10-13T09:02:24.849133",
   "n_candidates_pool": 59,
   "n_signal": 34,
   "min_candidates_required": 7,
   "triggered": true,
   "picks": [
     {
-      "code": "3535",
-      "gap_pct": 9.15,
-      "open_px": 93.0,
-      "prev_close": 85.2,
-      "mktcap_e8": 67.4,
-      "industry": "光電業",
-      "pred_score": 1.9134,
-      "weight": 0.4065
-    },
-    {
-      "code": "6517",
-      "gap_pct": 4.26,
-      "open_px": 63.6,
-      "prev_close": 61.0,
-      "mktcap_e8": 18.7,
-      "industry": "光電業",
-      "pred_score": 1.5795,
-      "weight": 0.2802
-    },
-    {
-      "code": "4976",
-      "gap_pct": 3.45,
-      "open_px": 37.5,
-      "prev_close": 36.25,
-      "mktcap_e8": 51.2,
-      "industry": "光電業",
-      "pred_score": 1.257,
-      "weight": 0.1581
-    },
-    {
       "code": "6163",
-      "gap_pct": 5.78,
-      "open_px": 43.0,
+      "gap_pct": 8.98,
+      "open_px": 44.3,
       "prev_close": 40.65,
       "mktcap_e8": 60.5,
       "industry": "資訊服務業",
-      "pred_score": 1.2392,
-      "weight": 0.1514
+      "pred_score": 2.0012,
+      "weight": 0.3002
     },
     {
-      "code": "3317",
-      "gap_pct": 3.27,
-      "open_px": 69.5,
-      "prev_close": 67.3,
-      "mktcap_e8": 60.6,
-      "industry": "半導體業",
-      "pred_score": 0.8492,
-      "weight": 0.0038
+      "code": "3535",
+      "gap_pct": 8.33,
+      "open_px": 92.3,
+      "prev_close": 85.2,
+      "mktcap_e8": 67.4,
+      "industry": "光電業",
+      "pred_score": 1.8896,
+      "weight": 0.289
+    },
+    {
+      "code": "6517",
+      "gap_pct": 5.41,
+      "open_px": 64.3,
+      "prev_close": 61.0,
+      "mktcap_e8": 18.7,
+      "industry": "光電業",
+      "pred_score": 1.6332,
+      "weight": 0.2632
+    },
+    {
+      "code": "2483",
+      "gap_pct": 5.78,
+      "open_px": 37.5,
+      "prev_close": 35.45,
+      "mktcap_e8": 38.2,
+      "industry": "電子零組件業",
+      "pred_score": 0.4743,
+      "weight": 0.1466
+    },
+    {
+      "code": "6416",
+      "gap_pct": 13.59,
+      "open_px": 117.0,
+      "prev_close": 103.0,
+      "mktcap_e8": 75.5,
+      "industry": "通信網路業",
+      "pred_score": -0.9737,
+      "weight": 0.001
     }
   ]
 }
