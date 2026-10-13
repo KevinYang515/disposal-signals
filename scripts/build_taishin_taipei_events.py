@@ -47,6 +47,7 @@ FIELDS = [
 ]
 
 PRICE_ATOL = 0.0001
+MIN_STRICT_LOCK_SOURCE_EVENTS = 254
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -91,16 +92,18 @@ def source_events() -> pd.DataFrame:
     event_keys = set(zip(events["d0_date"], events["stock"]))
     if not event_keys.issubset(strict_keys):
         raise RuntimeError("A strict-lock/liquid event is absent from the strict-lock source audit.")
-    # 2026-08-15: the discovery source used to be frozen at exactly 250 rows
-    # because run_new_branch_discovery_20260813.py hardcoded the Taishin-Taipei
-    # window's end date to 2026-08-07. That cutoff has been extended to the
-    # latest available price date, so this population grows as new qualifying
-    # D0 events appear -- it must never SHRINK below the originally-found 250
-    # (2026-04-07 start is unchanged, so old events can't disappear), but a
-    # frozen exact-count assertion would silently break every future refresh.
-    if len(events) < 250:
-        raise RuntimeError(f"Strict-lock/liquid event count dropped below the known floor of 250; got {len(events)}.")
-    print(f"Taishin-Taipei strict-lock/liquid source events: {len(events)} (>= 250 floor)")
+    # The source grows as new qualifying D0 events appear.  Guard against a
+    # regression below the established refresh floor, not an obsolete exact
+    # historical count.
+    if len(events) < MIN_STRICT_LOCK_SOURCE_EVENTS:
+        raise RuntimeError(
+            "Strict-lock/liquid event count dropped below the known floor of "
+            f"{MIN_STRICT_LOCK_SOURCE_EVENTS}; got {len(events)}."
+        )
+    print(
+        "Taishin-Taipei strict-lock/liquid source events: "
+        f"{len(events)} (>= {MIN_STRICT_LOCK_SOURCE_EVENTS} floor)"
+    )
     return events.sort_values(["d0_date", "stock"]).reset_index(drop=True)
 
 
@@ -230,7 +233,7 @@ def main() -> None:
 
     events = pd.DataFrame(rows)
     if len(events) != len(source) or events.duplicated(["d0", "code"]).any():
-        raise RuntimeError("The output must be a one-to-one rebuild of the 250 D0 events.")
+        raise RuntimeError("The output must be a one-to-one rebuild of the strict-lock source events.")
     events["d0"] = pd.to_datetime(events["d0"])
     events["d1"] = pd.to_datetime(events["d1"])
     borrow_audit.suspension_flags(events, CACHE_DIR / "day_trade_short_suspension.feather")
@@ -254,13 +257,29 @@ def main() -> None:
     events["d0"] = events["d0"].dt.strftime("%Y-%m-%d")
     events["d1"] = events["d1"].dt.strftime("%Y-%m-%d")
     events = events.sort_values(["d0", "code"])
-    if list(events.columns.intersection(FIELDS)) != FIELDS:
-        raise RuntimeError("Output schema drifted from the branch event schema.")
+    # `events` carries a few extra in-memory diagnostic columns from
+    # suspension_flags() (day_trade_short_suspended_d0/day_trade_suspension_reason)
+    # that this builder has always deliberately excluded from the CSV via the
+    # events[FIELDS] selection below -- only check that every required FIELDS
+    # column is present, not that no incidental extra column rode along.
+    missing_fields = [field for field in FIELDS if field not in events.columns]
+    if missing_fields:
+        raise RuntimeError(f"Output schema is missing required columns: {missing_fields}")
+    expected_latest_d0 = str(source["d0_date"].max())
+    if str(events["d0"].max()) != expected_latest_d0:
+        raise RuntimeError(
+            f"Output D0 end {events['d0'].max()} does not match source end {expected_latest_d0}."
+        )
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     with OUT_CSV.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(events[FIELDS].to_dict("records"))
+    readback = pd.read_csv(OUT_CSV, dtype={"code": str})
+    if readback.columns.tolist() != FIELDS or len(readback) != len(events):
+        raise RuntimeError("Written CSV failed schema or row-count readback validation.")
+    if str(readback["d0"].max()) != expected_latest_d0:
+        raise RuntimeError("Written CSV D0 end failed readback validation.")
     print(f"Wrote {len(events)} rows to {OUT_CSV}")
     print(f"D0 range: {events['d0'].min()} .. {events['d0'].max()}")
 
