@@ -94,6 +94,7 @@ with tab1:
         ok = intra[intra["狀態"] == "✅ 符合"].sort_values("距觸發pct")
         near = intra[intra["狀態"].str.startswith("🟡")].sort_values("距觸發pct", ascending=False)
         lim = intra[intra["狀態"] == "⛔ 漲停（不買）"]
+        zf = intra[intra["狀態"].str.startswith("⚠️")]
         k1, k2, k3 = st.columns(3)
         k1.metric("✅ 符合，可買", len(ok))
         k2.metric("🟡 差一點", len(near))
@@ -102,14 +103,19 @@ with tab1:
                "距觸發pct": NC("高於觸發價", format="%+.1f%%"), "漲幅pct": NC("今日漲幅", format="%+.1f%%"),
                "量達成率": st.column_config.ProgressColumn("成交量達成（滿格=2倍）", format="%.2f", min_value=0, max_value=2),
                "累計量張": NC("目前成交（張）", format="%d"), "目前應達張": NC("現在應達（張）", format="%d"),
-               "收盤前提醒": TC("提醒")}
-        cols = ["代號", "名稱", "現價", "觸發價", "距觸發pct", "漲幅pct", "量達成率", "累計量張", "目前應達張", "收盤前提醒"]
+               "收盤前提醒": TC("提醒"), "套牢提醒": TC("套牢／長上影")}
+        cols = ["代號", "名稱", "現價", "觸發價", "距觸發pct", "漲幅pct", "量達成率", "累計量張", "目前應達張", "套牢提醒", "收盤前提醒"]
         st.markdown("#### ✅ 符合條件（價格站上、量也夠）")
         table(ok.assign(量達成率=ok["量達成率"].clip(upper=2)), cols, cfg)
         if not ok.empty:
             st.caption("「成交量達成」1.00 代表剛好達標。「提醒」有字的，價格只比觸發價高一點點，收盤前可能跌回去，13:24 再確認一次。")
         st.markdown("#### 🟡 差一點（價格到了但量不夠，或價格還差不到 1%）")
         table(near.assign(量達成率=near["量達成率"].clip(upper=2)), ["狀態"] + cols, cfg)
+        if not zf.empty:
+            st.markdown("#### ⚠️ 價量達標，但撞上套牢區或爆量長上影（主卡規則上不買）")
+            table(zf.assign(量達成率=zf["量達成率"].clip(upper=2)), cols, cfg)
+            st.caption("上方 5% 內有一大塊過去 120 天的成交密集區（套牢區），或今天爆量（≥2 倍）卻收長上影（上影佔當天高低差一半以上）。"
+                       "2020 年後回測，這類突破勝率約 23%、平均幾乎不賺。10 檔卡只做提醒、不排除。")
         if not lim.empty:
             st.markdown("#### ⛔ 已經漲停（規則上不追）")
             table(lim, ["代號", "名稱", "現價", "漲幅pct"], cfg)
@@ -177,11 +183,15 @@ with tab5:
             isel = b1.multiselect("產業", inds)
             vr = b2.slider("突破日量比（相對 20 日均量）", 1.5, 10.0, (1.5, 10.0), 0.1)
             code = b3.text_input("代號或名稱包含")
+            zsel = st.radio("套牢區／長上影旗標", ["全部", "只看有旗標", "只看沒旗標"], horizontal=True)
         if isel:
             hh = hh[hh["產業"].isin(isel)]
         hh = hh[(hh["量比"] >= vr[0]) & ((hh["量比"] <= vr[1]) | (vr[1] >= 10.0))]
         if code:
             hh = hh[hh["代號"].str.contains(code) | hh["名稱"].astype(str).str.contains(code)]
+        if "套牢旗標" in hh.columns and zsel != "全部":
+            has = hh["套牢旗標"].fillna("").astype(str).str.len() > 0
+            hh = hh[has] if zsel == "只看有旗標" else hh[~has]
         if hh.empty:
             st.write("這個條件下沒有訊號。")
         else:
@@ -211,7 +221,8 @@ with tab5:
             st.line_chart(cum)
             st.markdown("#### 逐筆明細")
             show = hh.sort_values("訊號日", ascending=False).assign(訊號日=lambda x: x["訊號日"].dt.strftime("%Y-%m-%d"))
-            cols = ["訊號日", "卡別", "代號", "名稱", "產業", "買價", "觸發價", "量比", "出場日", "賣價", "報酬pct", "持有天數", "最大漲幅pct", "最大跌幅pct", "狀態"]
+            cols = ["訊號日", "卡別", "代號", "名稱", "產業", "買價", "觸發價", "量比", "出場日", "賣價", "報酬pct", "持有天數", "最大漲幅pct", "最大跌幅pct", "狀態", "套牢旗標"]
+            cols = [c for c in cols if c in show.columns]
             st.dataframe(show[cols], use_container_width=True, hide_index=True, height=450, column_config={
                 "買價": NC("買價", format="%.2f"), "觸發價": NC("觸發價", format="%.2f"), "量比": NC("量比", format="%.1f×"),
                 "賣價": NC("賣價／現價", format="%.2f"), "報酬pct": NC("報酬", format="%+.1f%%"), "持有天數": NC("持有天數", format="%d"),
@@ -224,7 +235,8 @@ with tab3:
     w = f(rd("nh20_watch.csv"))
     if not w.empty:
         w = w.sort_values("需漲pct")
-    table(w, ["代號", "名稱", "產業", "昨收", "觸發價", "需漲pct", "均量張", "需量張1320", "需量張1324"], {
+    table(w, ["代號", "名稱", "產業", "昨收", "觸發價", "需漲pct", "均量張", "需量張1320", "需量張1324", "上方套牢區"], {
+        "上方套牢區": TC("觸發價上方 10% 內的套牢區（佔量）"),
         "昨收": NC("昨收", format="%.2f"), "觸發價": NC("收盤要高於", format="%.2f"), "需漲pct": NC("還要漲", format="%.1f%%"),
         "均量張": NC("20 日均量（張）", format="%d"), "需量張1320": NC("13:20 要 ≥（張）", format="%d"),
         "需量張1324": NC("13:24 要 ≥（張）", format="%d")}, height=500)
@@ -239,6 +251,7 @@ with tab4:
 4. **大盤**：加權報酬指數在季線（60 日均線）之上才買新股。
 5. **收盤漲停不買**（買不到）。10 檔卡例外：昨天收盤漲停的突破，今天開盤買。
 6. **主卡**另外限定：電子股、20 日平均成交額 ≥ 1 億、最多 6 檔，滿了就不買新的。
+7. **主卡不買「撞上套牢區」的突破**（2026-10-14 起）：收盤價上方 5% 內有一大塊過去 120 天的成交密集區（佔量 ≥ 10%），或突破當天爆量（≥ 2 倍）卻收長上影（上影 ≥ 當天高低差一半）。10 檔卡只標示提醒。
 
 **賣出**
 - 進場後，找出「量最大的那根 K 棒」，它的最低價就是防守價；之後如果出現更大量的 K 棒，防守價就換成那根的低點。
