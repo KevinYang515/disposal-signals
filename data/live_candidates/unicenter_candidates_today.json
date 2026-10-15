@@ -1,16 +1,16 @@
 {
-  "trade_date": "2026-10-15",
-  "signal_date": "2026-10-14",
+  "trade_date": "2026-10-16",
+  "signal_date": "2026-10-15",
   "strategy": "UniCenter",
-  "generated_at": "2026-10-15T07:47:07.664969+08:00",
+  "generated_at": "2026-10-16T07:47:07.989086+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "1301",
-      "prev_close": 88.9,
-      "net_amt_wan": 10339.070000000002,
-      "d0_turnover": 17038132255.900002,
-      "uc_influence_pct": 0.6068194473851303
+      "code": "2033",
+      "prev_close": 54.4,
+      "net_amt_wan": 54.4,
+      "d0_turnover": 176797062.4,
+      "uc_influence_pct": 0.30769742020328955
     }
   ]
 }

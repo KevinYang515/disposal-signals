@@ -1,46 +1,10 @@
 {
-  "trade_date": "2026-10-15",
-  "signal_date": "2026-10-14",
+  "trade_date": "2026-10-16",
+  "signal_date": "2026-10-15",
   "strategy": "FlipBranch",
-  "generated_at": "2026-10-15T07:35:11.459293+08:00",
+  "generated_at": "2026-10-16T07:35:10.336732+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
-  "active": true,
-  "candidates": [
-    {
-      "code": "1301",
-      "prev_close": 88.9,
-      "ranking_value": 21448000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "港商野村"
-    },
-    {
-      "code": "1326",
-      "prev_close": 85.5,
-      "ranking_value": 9993000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "港商野村"
-    },
-    {
-      "code": "6278",
-      "prev_close": 290.0,
-      "ranking_value": 2078000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "港商野村"
-    },
-    {
-      "code": "4977",
-      "prev_close": 191.0,
-      "ranking_value": 916000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
-    },
-    {
-      "code": "6153",
-      "prev_close": 19.0,
-      "ranking_value": 694000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "港商野村"
-    }
-  ]
+  "active": false,
+  "candidates": []
 }
