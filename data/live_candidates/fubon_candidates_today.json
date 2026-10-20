@@ -1,57 +1,45 @@
 {
-  "trade_date": "2026-10-19",
-  "signal_date": "2026-10-16",
+  "trade_date": "2026-10-21",
+  "signal_date": "2026-10-20",
   "strategy": "FubonBare",
-  "generated_at": "2026-10-19T07:30:35.466454+08:00",
+  "generated_at": "2026-10-21T07:30:38.519940+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "4566",
-      "prev_close": 81.8,
-      "net_amt_wan": 8065.48,
-      "influence_pct": 20.73975419081066
+      "code": "3114",
+      "prev_close": 41.9,
+      "net_amt_wan": 2212.32,
+      "influence_pct": 57.394353627587144
     },
     {
-      "code": "4939",
-      "prev_close": 83.3,
-      "net_amt_wan": 31862.25,
-      "influence_pct": 17.990626234539654
-    },
-    {
-      "code": "8039",
-      "prev_close": 311.5,
-      "net_amt_wan": 108806.95,
-      "influence_pct": 12.186648711957588
-    },
-    {
-      "code": "6668",
-      "prev_close": 68.3,
-      "net_amt_wan": 9555.17,
-      "influence_pct": 11.762831987607841
-    },
-    {
-      "code": "4903",
-      "prev_close": 58.0,
-      "net_amt_wan": 9262.6,
-      "influence_pct": 10.642934263020171
+      "code": "6870",
+      "prev_close": 345.0,
+      "net_amt_wan": 2208.0,
+      "influence_pct": 20.89518334416167
     },
     {
       "code": "6269",
-      "prev_close": 82.0,
-      "net_amt_wan": 18171.2,
-      "influence_pct": 8.114171349266602
+      "prev_close": 88.3,
+      "net_amt_wan": 53615.76,
+      "influence_pct": 19.501795047770432
     },
     {
-      "code": "6533",
-      "prev_close": 323.5,
-      "net_amt_wan": 6437.65,
-      "influence_pct": 7.567405305209972
+      "code": "5475",
+      "prev_close": 228.5,
+      "net_amt_wan": 56211.0,
+      "influence_pct": 18.622668201898172
     },
     {
-      "code": "1815",
-      "prev_close": 140.0,
-      "net_amt_wan": 121226.0,
-      "influence_pct": 5.898765268138866
+      "code": "6209",
+      "prev_close": 112.0,
+      "net_amt_wan": 36198.4,
+      "influence_pct": 10.700574193123366
+    },
+    {
+      "code": "3441",
+      "prev_close": 268.0,
+      "net_amt_wan": 7664.8,
+      "influence_pct": 3.4586685324464477
     }
   ]
 }
