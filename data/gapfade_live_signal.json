@@ -1,60 +1,9 @@
 {
-  "date": "2026-10-22",
-  "generated_at": "2026-10-22T09:02:44.921708",
+  "date": "2026-10-23",
+  "generated_at": "2026-10-23T09:01:17.550197",
   "n_candidates_pool": 59,
-  "n_signal": 31,
+  "n_signal": 0,
   "min_candidates_required": 7,
-  "triggered": true,
-  "picks": [
-    {
-      "code": "1309",
-      "gap_pct": 8.98,
-      "open_px": 13.95,
-      "prev_close": 12.8,
-      "mktcap_e8": 50.9,
-      "industry": "塑膠工業",
-      "pred_score": 2.2024,
-      "weight": 0.4974
-    },
-    {
-      "code": "7712",
-      "gap_pct": 6.74,
-      "open_px": 150.5,
-      "prev_close": 141.0,
-      "mktcap_e8": 45.9,
-      "industry": "半導體業",
-      "pred_score": 1.8714,
-      "weight": 0.3601
-    },
-    {
-      "code": "4976",
-      "gap_pct": 9.52,
-      "open_px": 39.7,
-      "prev_close": 36.25,
-      "mktcap_e8": 51.2,
-      "industry": "光電業",
-      "pred_score": 1.2712,
-      "weight": 0.1112
-    },
-    {
-      "code": "8182",
-      "gap_pct": 4.02,
-      "open_px": 40.1,
-      "prev_close": 38.55,
-      "mktcap_e8": 41.3,
-      "industry": "電子零組件業",
-      "pred_score": 1.0687,
-      "weight": 0.0272
-    },
-    {
-      "code": "6588",
-      "gap_pct": 3.34,
-      "open_px": 92.8,
-      "prev_close": 89.8,
-      "mktcap_e8": 31.2,
-      "industry": "通信網路業",
-      "pred_score": 1.0132,
-      "weight": 0.0041
-    }
-  ]
+  "triggered": false,
+  "picks": []
 }
