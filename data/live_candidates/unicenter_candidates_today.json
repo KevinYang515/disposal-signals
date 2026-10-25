@@ -1,8 +1,8 @@
 {
-  "trade_date": "2026-10-23",
+  "trade_date": "2026-10-26",
   "signal_date": "2026-10-22",
   "strategy": "UniCenter",
-  "generated_at": "2026-10-23T07:47:09.046722+08:00",
+  "generated_at": "2026-10-26T07:47:10.358015+08:00",
   "active": true,
   "candidates": [
     {
