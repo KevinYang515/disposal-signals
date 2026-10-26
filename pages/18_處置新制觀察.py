@@ -291,7 +291,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
             today_exit = sub_hist[sub_hist['出關日'] == TODAY_STR]
             if not today_exit.empty:
                 st.subheader(f'📤 今日出關（{key}）')
-                exit_cols = [c for c in ['代號', '名稱', '起始日', '出關日', '買進日', '買進價',
+                exit_cols = [c for c in ['代號', '名稱', '起始日', '出關日', '處置觸發原因', '買進日', '買進價',
                                           '觸發方式', '出關價', '出關報酬(%)', '結果']
                              if c in today_exit.columns]
                 st.dataframe(today_exit[exit_cols], use_container_width=True, hide_index=True)
@@ -301,7 +301,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
         if sub_sig.empty:
             st.info('目前沒有符合條件的處置中股票。')
         else:
-            display_cols = ['評級', '訊號', '買進訊號', '觸發方式', '代號', '名稱', '規模', '處置原因', '近20日漲幅', '大戶(%)',
+            display_cols = ['評級', '訊號', '買進訊號', '觸發方式', '代號', '名稱', '規模', '處置原因', '處置觸發原因', '近20日漲幅', '大戶(%)',
                              '起始日', '今D幾', '出關日', '觸發價', '距觸發(%)', '目前損益(%)', '今日漲跌']
             d_cols = [c for c in [f'D{n}%' for n in range(1, 9)]
                       if c in sub_sig.columns and sub_sig[c].notna().any()]
@@ -516,7 +516,7 @@ for (key, label), tab in zip(TAB_DEFS, tabs):
                     f'全部{key}已出關（不論是否觸發進場條件）平均報酬：{rets.mean():+.2f}%，勝率 {(rets > 0).mean()*100:.1f}%'
                     f'（n={len(settled)}）。樣本數還很小，以上數字僅供觀察趨勢，不是可信賴的統計結果。'
                 )
-                show_cols = ['起始日', '出關日', '代號', '名稱', '規模', 'Dn組別', '買進日', '觸發方式',
+                show_cols = ['起始日', '出關日', '代號', '名稱', '規模', '處置觸發原因', 'Dn組別', '買進日', '觸發方式',
                              '是否當沖加重', '買進價', '買進時累積(%)', '最深日', '期間最深(%)', '出關價', '出關報酬(%)', '結果']
                 show_cols += [f'T+{k}收盤(%)' for k in range(1, 11)]
                 show_cols = [c for c in show_cols if c in settled.columns]

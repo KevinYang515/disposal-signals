@@ -983,7 +983,7 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '處置觸發條款', '觀察標記', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '處置觸發原因', '處置觸發條款', '觀察標記', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       '觸發價(D0收盤版)', '距觸發(D0收盤版)(%)',
@@ -1092,6 +1092,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 2026-10-04新增：處置觸發條款(見disposal_trigger_tags)+觀察旗標，跟build_newregime_history
         # 同一套邏輯，讓這個獨立對照頁也看得到「是不是真的漲多觸發」。
         reason_text_sig = load_disposal_reasons().get((str(sid), pd.Timestamp(sd)), '')
+        d['處置觸發原因'] = reason_text_sig  # 2026-10-26新增：Kevin要求今日訊號也要秀出跟歷史表一樣的原始觸發文字，不是只有漲多/跌深這種粗分類
         tags_str_sig, has_price_sig = disposal_trigger_tags(sid, pd.Timestamp(sd))
         d['處置觸發條款'] = tags_str_sig
         obs_sig = observation_flag(not has_price_sig, is_daytrade_aggravated(reason_text_sig))
