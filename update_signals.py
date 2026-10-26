@@ -61,6 +61,13 @@ def refresh_finlab():
         print('  更新大戶持股資料 (5個門檻)...')
         for zh in ['一百', '二百', '四百', '八百', '一千']:
             data.get(f'etl:inventory:大於{zh}張佔比')
+        # 2026-10-26新增：trading_attention/disposal_information這兩份feather
+        # (load_attention_raw()/load_disposal_reasons()直接讀的檔案，處置預警看板
+        # 跟處置觸發原因都靠它們)一直沒排進這裡刷新，結果attention_watchlist.csv
+        # 卡在17天前的舊資料沒人發現。
+        print('  更新處置預警看板原始資料 (trading_attention/disposal_information)...')
+        data.get('trading_attention')
+        data.get('disposal_information')
         print('  finlab 資料刷新完成')
     except Exception as e:
         print(f'  finlab 刷新失敗（將使用現有 feather）: {e}')
