@@ -61,6 +61,13 @@ def refresh_finlab():
         print('  更新大戶持股資料 (5個門檻)...')
         for zh in ['一百', '二百', '四百', '八百', '一千']:
             data.get(f'etl:inventory:大於{zh}張佔比')
+        # 2026-10-26新增：trading_attention/disposal_information這兩份feather
+        # (load_attention_raw()/load_disposal_reasons()直接讀的檔案，處置預警看板
+        # 跟處置觸發原因都靠它們)一直沒排進這裡刷新，結果attention_watchlist.csv
+        # 卡在17天前的舊資料沒人發現。
+        print('  更新處置預警看板原始資料 (trading_attention/disposal_information)...')
+        data.get('trading_attention')
+        data.get('disposal_information')
         print('  finlab 資料刷新完成')
     except Exception as e:
         print(f'  finlab 刷新失敗（將使用現有 feather）: {e}')
@@ -983,7 +990,7 @@ def build_signals(df, price, open_p, whale_dfs):
     # 沒有這行 to_csv 會寫出完全空白檔案，讓 Streamlit 端 pd.read_csv 掛掉（同 build_5min/build_tail20 已修過的問題）。
     return sig.reindex(columns=SIGNALS_COLS)
 
-NEWREGIME_SIG_COLS = ['處置次別', '評級', '處置觸發條款', '觀察標記', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
+NEWREGIME_SIG_COLS = ['處置次別', '評級', '處置觸發原因', '處置觸發條款', '觀察標記', '訊號', '買進訊號', '觸發方式', '買進訊號(-5%版)', '代號', '名稱', '規模', '處置原因',
                       '近20日漲幅', '大戶(%)', '起始日', '今D幾', '出關日', '目前損益(%)', '目前損益(-5%版)(%)',
                       '今日漲跌', '觸發價', '距觸發(%)', '觸發價(-5%版)', '距觸發(-5%版)(%)',
                       '觸發價(D0收盤版)', '距觸發(D0收盤版)(%)',
@@ -1092,6 +1099,7 @@ def build_newregime_signals(df, price, open_p, whale_dfs):
         # 2026-10-04新增：處置觸發條款(見disposal_trigger_tags)+觀察旗標，跟build_newregime_history
         # 同一套邏輯，讓這個獨立對照頁也看得到「是不是真的漲多觸發」。
         reason_text_sig = load_disposal_reasons().get((str(sid), pd.Timestamp(sd)), '')
+        d['處置觸發原因'] = reason_text_sig  # 2026-10-26新增：Kevin要求今日訊號也要秀出跟歷史表一樣的原始觸發文字，不是只有漲多/跌深這種粗分類
         tags_str_sig, has_price_sig = disposal_trigger_tags(sid, pd.Timestamp(sd))
         d['處置觸發條款'] = tags_str_sig
         obs_sig = observation_flag(not has_price_sig, is_daytrade_aggravated(reason_text_sig))
@@ -1882,33 +1890,10 @@ def main():
     df = load()
     price, open_p, whale_dfs = load_price()
 
-    print('產生訊號表...')
+    # 2026-10-26 Kevin決定：舊制(20分鐘/5分鐘撮合)已於2026-08-10停用，
+    # 舊首頁(app.py)的今日訊號/回測網格/歷史回測/5分盤/出關動能全部不再更新，
+    # 維持目前data/裡的檔案內容當最終存檔；之後所有更新都只進新制頁面。
     sig_df = merge_upcoming(df, price)
-    sig = build_signals(sig_df, price, open_p, whale_dfs)
-    sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals.csv ({len(sig)} 筆)')
-
-    print('產生回測網格...')
-    grid = build_backtest_grid(df, price, open_p)
-    grid.to_csv(f'{OUT_DIR}/backtest_grid.csv', index=False, encoding='utf-8-sig')
-    print(f'  → backtest_grid.csv ({len(grid)} 筆)')
-
-    print('產生歷史回測紀錄...')
-    hist, cmp_stats = build_history(df, price, open_p, whale_dfs)
-    hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → history.csv ({len(hist)} 筆)')
-
-    print('產生 5分盤動能資料...')
-    sig5, hist5 = build_5min(df, price, open_p)
-    sig5.to_csv(f'{OUT_DIR}/signals_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    hist5.to_csv(f'{OUT_DIR}/history_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals_5min.csv ({len(sig5)} 筆) / history_5min.csv ({len(hist5)} 筆)')
-
-    print('產生出關動能資料...')
-    sig_t, hist_t = build_tail20(df, price, hist)
-    sig_t.to_csv(f'{OUT_DIR}/signals_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    hist_t.to_csv(f'{OUT_DIR}/history_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals_tail20.csv ({len(sig_t)} 筆) / history_tail20.csv ({len(hist_t)} 筆)')
 
     print('產生處置新制(2分鐘撮合)觀察資料...')
     sig_nr = build_newregime_signals(sig_df, price, open_p, whale_dfs)
@@ -1927,10 +1912,19 @@ def main():
     print(f'  → attention_watchlist.csv ({len(watchlist)} 筆)')
 
     # 更新時間
+    # cmp_stats(舊制策略比較數字)不再重算，沿用舊檔裡最後一次算出的凍結值
+    old_cmp_stats = []
+    meta_path = f'{OUT_DIR}/meta.json'
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                old_cmp_stats = json.load(f).get('cmp_stats', [])
+        except Exception as e:
+            print(f'  ⚠️ cmp_stats 沿用失敗，本次會寫回空值: {e}')
     meta = {
         'updated_at': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M'),
         'data_date': price.index[-1].strftime('%Y-%m-%d'),
-        'cmp_stats': cmp_stats,
+        'cmp_stats': old_cmp_stats,
         'cmp_stats_newregime': cmp_stats_nr,
     }
     with open(f'{OUT_DIR}/meta.json', 'w') as f:
