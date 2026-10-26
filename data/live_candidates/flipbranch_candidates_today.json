@@ -1,8 +1,8 @@
 {
-  "trade_date": "2026-10-26",
+  "trade_date": "2026-10-27",
   "signal_date": "2026-10-22",
   "strategy": "FlipBranch",
-  "generated_at": "2026-10-26T07:35:11.777745+08:00",
+  "generated_at": "2026-10-27T07:35:11.878784+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
   "active": true,
