@@ -1882,33 +1882,10 @@ def main():
     df = load()
     price, open_p, whale_dfs = load_price()
 
-    print('產生訊號表...')
+    # 2026-10-26 Kevin決定：舊制(20分鐘/5分鐘撮合)已於2026-08-10停用，
+    # 舊首頁(app.py)的今日訊號/回測網格/歷史回測/5分盤/出關動能全部不再更新，
+    # 維持目前data/裡的檔案內容當最終存檔；之後所有更新都只進新制頁面。
     sig_df = merge_upcoming(df, price)
-    sig = build_signals(sig_df, price, open_p, whale_dfs)
-    sig.to_csv(f'{OUT_DIR}/signals.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals.csv ({len(sig)} 筆)')
-
-    print('產生回測網格...')
-    grid = build_backtest_grid(df, price, open_p)
-    grid.to_csv(f'{OUT_DIR}/backtest_grid.csv', index=False, encoding='utf-8-sig')
-    print(f'  → backtest_grid.csv ({len(grid)} 筆)')
-
-    print('產生歷史回測紀錄...')
-    hist, cmp_stats = build_history(df, price, open_p, whale_dfs)
-    hist.to_csv(f'{OUT_DIR}/history.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → history.csv ({len(hist)} 筆)')
-
-    print('產生 5分盤動能資料...')
-    sig5, hist5 = build_5min(df, price, open_p)
-    sig5.to_csv(f'{OUT_DIR}/signals_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    hist5.to_csv(f'{OUT_DIR}/history_5min.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals_5min.csv ({len(sig5)} 筆) / history_5min.csv ({len(hist5)} 筆)')
-
-    print('產生出關動能資料...')
-    sig_t, hist_t = build_tail20(df, price, hist)
-    sig_t.to_csv(f'{OUT_DIR}/signals_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    hist_t.to_csv(f'{OUT_DIR}/history_tail20.csv', index=False, encoding='utf-8-sig', float_format='%.2f')
-    print(f'  → signals_tail20.csv ({len(sig_t)} 筆) / history_tail20.csv ({len(hist_t)} 筆)')
 
     print('產生處置新制(2分鐘撮合)觀察資料...')
     sig_nr = build_newregime_signals(sig_df, price, open_p, whale_dfs)
@@ -1927,10 +1904,19 @@ def main():
     print(f'  → attention_watchlist.csv ({len(watchlist)} 筆)')
 
     # 更新時間
+    # cmp_stats(舊制策略比較數字)不再重算，沿用舊檔裡最後一次算出的凍結值
+    old_cmp_stats = []
+    meta_path = f'{OUT_DIR}/meta.json'
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                old_cmp_stats = json.load(f).get('cmp_stats', [])
+        except Exception as e:
+            print(f'  ⚠️ cmp_stats 沿用失敗，本次會寫回空值: {e}')
     meta = {
         'updated_at': datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M'),
         'data_date': price.index[-1].strftime('%Y-%m-%d'),
-        'cmp_stats': cmp_stats,
+        'cmp_stats': old_cmp_stats,
         'cmp_stats_newregime': cmp_stats_nr,
     }
     with open(f'{OUT_DIR}/meta.json', 'w') as f:

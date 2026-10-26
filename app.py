@@ -94,6 +94,10 @@ data_date = meta.get('data_date', '')
 updated_at = meta.get('updated_at', '-')
 st.caption(f"腳本更新：{updated_at}　｜　價格資料截至：{data_date}　｜　策略：漲多處置 × 大+中型 × 20分鐘撮合")
 
+# 2026-10-26新增：舊制(20分鐘/5分鐘撮合)已於2026-08-10停用，此頁資料為最終存檔、不再更新。
+st.info('⚠️ 舊制(20分鐘/5分鐘撮合)已於2026-08-10停用，本頁資料為最終存檔、不會再更新。最新即時訊號請改看下方「處置新制觀察」頁面。', icon='⚠️')
+st.page_link('pages/18_處置新制觀察.py', label='📍 前往處置新制觀察', icon='➡️')
+
 # 若價格資料超過 1 個交易日未更新，顯示警告
 if data_date:
     from datetime import date
