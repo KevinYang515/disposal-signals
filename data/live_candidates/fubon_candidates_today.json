@@ -1,75 +1,21 @@
 {
-  "trade_date": "2026-10-29",
-  "signal_date": "2026-10-28",
+  "trade_date": "2026-10-30",
+  "signal_date": "2026-10-29",
   "strategy": "FubonBare",
-  "generated_at": "2026-10-29T07:30:32.030424+08:00",
+  "generated_at": "2026-10-30T07:30:28.271274+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "8099",
-      "prev_close": 93.6,
-      "net_amt_wan": 2957.76,
-      "influence_pct": 63.88594254606657
-    },
-    {
-      "code": "4960",
-      "prev_close": 34.8,
-      "net_amt_wan": 6914.76,
-      "influence_pct": 14.929468347087784
-    },
-    {
-      "code": "3605",
-      "prev_close": 171.5,
-      "net_amt_wan": 21934.85,
-      "influence_pct": 14.061896676760293
-    },
-    {
-      "code": "2455",
-      "prev_close": 512.0,
-      "net_amt_wan": 67891.2,
-      "influence_pct": 13.931099367033251
-    },
-    {
-      "code": "6510",
-      "prev_close": 3200.0,
-      "net_amt_wan": 20480.0,
-      "influence_pct": 13.522571107454699
-    },
-    {
-      "code": "2355",
-      "prev_close": 54.5,
-      "net_amt_wan": 5509.95,
-      "influence_pct": 10.595196017616184
-    },
-    {
-      "code": "3406",
-      "prev_close": 1330.0,
-      "net_amt_wan": 72751.0,
-      "influence_pct": 10.274263028169353
-    },
-    {
-      "code": "1815",
+      "code": "3691",
       "prev_close": 144.0,
-      "net_amt_wan": 83044.8,
-      "influence_pct": 7.812158690531989
+      "net_amt_wan": 8078.4,
+      "influence_pct": 30.63370821857069
     },
     {
-      "code": "2368",
-      "prev_close": 1185.0,
-      "net_amt_wan": 54510.0,
-      "influence_pct": 6.3017241815626175
-    },
-    {
-      "code": "6456",
-      "prev_close": 107.5,
-      "net_amt_wan": 13190.25,
-      "influence_pct": 3.730502404141757
-    },
-    {
-      "code": "3189",
-      "prev_close": 1035.0,
-      "net_amt_wan": 62203.5,
-      "influence_pct": 3.4119295088731967
+      "code": "2465",
+      "prev_close": 113.0,
+      "net_amt_wan": 19650.7,
+      "influence_pct": 18.67584397197835
     }
   ]
 }
