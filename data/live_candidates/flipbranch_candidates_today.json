@@ -1,10 +1,18 @@
 {
-  "trade_date": "2026-11-02",
-  "signal_date": "2026-10-30",
+  "trade_date": "2026-11-03",
+  "signal_date": "2026-11-02",
   "strategy": "FlipBranch",
-  "generated_at": "2026-11-02T07:35:11.817964+08:00",
+  "generated_at": "2026-11-03T07:35:11.949025+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
-  "active": false,
-  "candidates": []
+  "active": true,
+  "candidates": [
+    {
+      "code": "2468",
+      "prev_close": 58.5,
+      "ranking_value": 1239000.0,
+      "ranking_field": "dominant_net_shares",
+      "dominant_broker": "港商野村"
+    }
+  ]
 }
