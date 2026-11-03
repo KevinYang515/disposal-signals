@@ -1,60 +1,60 @@
 {
-  "date": "2026-10-30",
-  "generated_at": "2026-10-30T09:09:37.704966",
+  "date": "2026-11-03",
+  "generated_at": "2026-11-03T09:03:21.620611",
   "n_candidates_pool": 59,
-  "n_signal": 15,
+  "n_signal": 18,
   "min_candidates_required": 7,
   "triggered": true,
   "picks": [
     {
-      "code": "6517",
-      "gap_pct": 8.2,
-      "open_px": 66.0,
-      "prev_close": 61.0,
-      "mktcap_e8": 18.7,
-      "industry": "光電業",
-      "pred_score": 2.2909,
-      "weight": 0.3913
+      "code": "6530",
+      "gap_pct": 8.4,
+      "open_px": 81.3,
+      "prev_close": 75.0,
+      "mktcap_e8": 25.3,
+      "industry": "通信網路業",
+      "pred_score": 2.1773,
+      "weight": 0.3068
     },
     {
-      "code": "7714",
-      "gap_pct": 5.88,
-      "open_px": 162.0,
+      "code": "6658",
+      "gap_pct": 9.15,
+      "open_px": 167.0,
       "prev_close": 153.0,
-      "mktcap_e8": 32.1,
-      "industry": "數位雲端",
-      "pred_score": 1.5859,
-      "weight": 0.3167
-    },
-    {
-      "code": "8040",
-      "gap_pct": 4.11,
-      "open_px": 76.0,
-      "prev_close": 73.0,
-      "mktcap_e8": 70.4,
-      "industry": "半導體業",
-      "pred_score": 1.1895,
-      "weight": 0.2747
+      "mktcap_e8": 55.6,
+      "industry": "其他電子業",
+      "pred_score": 1.9252,
+      "weight": 0.2599
     },
     {
       "code": "4939",
-      "gap_pct": 9.87,
-      "open_px": 66.8,
+      "gap_pct": 6.09,
+      "open_px": 64.5,
       "prev_close": 60.8,
       "mktcap_e8": 59.7,
       "industry": "電子零組件業",
-      "pred_score": -1.2538,
-      "weight": 0.0162
+      "pred_score": 1.7947,
+      "weight": 0.2357
     },
     {
-      "code": "4903",
-      "gap_pct": 30.03,
-      "open_px": 49.8,
-      "prev_close": 38.3,
-      "mktcap_e8": 40.3,
+      "code": "6517",
+      "gap_pct": 4.26,
+      "open_px": 63.6,
+      "prev_close": 61.0,
+      "mktcap_e8": 18.7,
+      "industry": "光電業",
+      "pred_score": 1.5795,
+      "weight": 0.1957
+    },
+    {
+      "code": "6416",
+      "gap_pct": 9.71,
+      "open_px": 113.0,
+      "prev_close": 103.0,
+      "mktcap_e8": 75.5,
       "industry": "通信網路業",
-      "pred_score": -1.3973,
-      "weight": 0.0011
+      "pred_score": 0.5366,
+      "weight": 0.0019
     }
   ]
 }
