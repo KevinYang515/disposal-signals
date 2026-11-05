@@ -1,60 +1,60 @@
 {
-  "date": "2026-11-03",
-  "generated_at": "2026-11-03T09:03:21.620611",
+  "date": "2026-11-05",
+  "generated_at": "2026-11-05T09:07:32.491292",
   "n_candidates_pool": 59,
-  "n_signal": 18,
+  "n_signal": 8,
   "min_candidates_required": 7,
   "triggered": true,
   "picks": [
     {
-      "code": "6530",
-      "gap_pct": 8.4,
-      "open_px": 81.3,
-      "prev_close": 75.0,
-      "mktcap_e8": 25.3,
-      "industry": "通信網路業",
-      "pred_score": 2.1773,
-      "weight": 0.3068
+      "code": "2061",
+      "gap_pct": 9.07,
+      "open_px": 61.3,
+      "prev_close": 56.2,
+      "mktcap_e8": 32.2,
+      "industry": "電器電纜",
+      "pred_score": 2.3001,
+      "weight": 0.5102
     },
     {
-      "code": "6658",
-      "gap_pct": 9.15,
-      "open_px": 167.0,
-      "prev_close": 153.0,
-      "mktcap_e8": 55.6,
-      "industry": "其他電子業",
-      "pred_score": 1.9252,
-      "weight": 0.2599
-    },
-    {
-      "code": "4939",
-      "gap_pct": 6.09,
-      "open_px": 64.5,
-      "prev_close": 60.8,
-      "mktcap_e8": 59.7,
+      "code": "3236",
+      "gap_pct": 5.13,
+      "open_px": 43.0,
+      "prev_close": 40.9,
+      "mktcap_e8": 42.9,
       "industry": "電子零組件業",
-      "pred_score": 1.7947,
-      "weight": 0.2357
+      "pred_score": 0.6982,
+      "weight": 0.3485
     },
     {
-      "code": "6517",
-      "gap_pct": 4.26,
-      "open_px": 63.6,
-      "prev_close": 61.0,
-      "mktcap_e8": 18.7,
-      "industry": "光電業",
-      "pred_score": 1.5795,
-      "weight": 0.1957
+      "code": "6199",
+      "gap_pct": 72.92,
+      "open_px": 166.0,
+      "prev_close": 96.0,
+      "mktcap_e8": 59.3,
+      "industry": "其他",
+      "pred_score": -2.0397,
+      "weight": 0.0723
     },
     {
-      "code": "6416",
-      "gap_pct": 9.71,
-      "open_px": 113.0,
-      "prev_close": 103.0,
-      "mktcap_e8": 75.5,
-      "industry": "通信網路業",
-      "pred_score": 0.5366,
-      "weight": 0.0019
+      "code": "1809",
+      "gap_pct": 20.11,
+      "open_px": 44.8,
+      "prev_close": 37.3,
+      "mktcap_e8": 62.3,
+      "industry": "玻璃陶瓷",
+      "pred_score": -2.082,
+      "weight": 0.068
+    },
+    {
+      "code": "4760",
+      "gap_pct": 11.84,
+      "open_px": 264.5,
+      "prev_close": 236.5,
+      "mktcap_e8": 76.2,
+      "industry": "其他電子業",
+      "pred_score": -2.7462,
+      "weight": 0.001
     }
   ]
 }
