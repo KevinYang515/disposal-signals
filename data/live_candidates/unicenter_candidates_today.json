@@ -1,58 +1,86 @@
 {
-  "trade_date": "2026-11-11",
-  "signal_date": "2026-11-10",
+  "trade_date": "2026-11-12",
+  "signal_date": "2026-11-11",
   "strategy": "UniCenter",
-  "generated_at": "2026-11-11T07:47:09.694541+08:00",
+  "generated_at": "2026-11-12T07:47:10.528667+08:00",
   "active": true,
   "candidates": [
     {
-      "code": "6715",
-      "prev_close": 412.5,
-      "net_amt_wan": 742.5,
-      "d0_turnover": 643997887.5,
-      "uc_influence_pct": 1.152954092570684
+      "code": "1802",
+      "prev_close": 76.7,
+      "net_amt_wan": 29176.68,
+      "d0_turnover": 20459285202.2,
+      "uc_influence_pct": 1.42608501282648
     },
     {
-      "code": "3715",
-      "prev_close": 119.0,
-      "net_amt_wan": 273.7,
-      "d0_turnover": 499134314.0,
-      "uc_influence_pct": 0.5483493967918223
+      "code": "3167",
+      "prev_close": 881.0,
+      "net_amt_wan": 4845.5,
+      "d0_turnover": 6675998631.0,
+      "uc_influence_pct": 0.7258090164218909
     },
     {
-      "code": "3617",
-      "prev_close": 257.0,
-      "net_amt_wan": 205.6,
-      "d0_turnover": 254490652.0,
-      "uc_influence_pct": 0.8078882205857998
+      "code": "5209",
+      "prev_close": 218.0,
+      "net_amt_wan": 348.8,
+      "d0_turnover": 138230312.0,
+      "uc_influence_pct": 2.5233249853331734
     },
     {
-      "code": "5230",
-      "prev_close": 30.85,
-      "net_amt_wan": 191.27,
-      "d0_turnover": 247717694.95000002,
-      "uc_influence_pct": 0.7721289350710551
+      "code": "1528",
+      "prev_close": 28.2,
+      "net_amt_wan": 313.02,
+      "d0_turnover": 1063684513.8,
+      "uc_influence_pct": 0.2942789858637124
     },
     {
-      "code": "6870",
-      "prev_close": 449.0,
-      "net_amt_wan": 134.7,
-      "d0_turnover": 260532250.0,
-      "uc_influence_pct": 0.5170185264971995
+      "code": "7767",
+      "prev_close": 53.1,
+      "net_amt_wan": 185.85,
+      "d0_turnover": 39238776.0,
+      "uc_influence_pct": 4.736386272599328
     },
     {
-      "code": "3701",
-      "prev_close": 57.5,
-      "net_amt_wan": 115.0,
-      "d0_turnover": 273272257.5,
-      "uc_influence_pct": 0.4208257400588862
+      "code": "3564",
+      "prev_close": 57.8,
+      "net_amt_wan": 173.4,
+      "d0_turnover": 149587671.6,
+      "uc_influence_pct": 1.159186436591343
     },
     {
-      "code": "6465",
-      "prev_close": 37.8,
-      "net_amt_wan": 49.14,
-      "d0_turnover": 9592695.0,
-      "uc_influence_pct": 5.122648014973894
+      "code": "4562",
+      "prev_close": 33.05,
+      "net_amt_wan": 161.945,
+      "d0_turnover": 54117953.849999994,
+      "uc_influence_pct": 2.992444992448657
+    },
+    {
+      "code": "2471",
+      "prev_close": 59.8,
+      "net_amt_wan": 137.54,
+      "d0_turnover": 262687227.39999998,
+      "uc_influence_pct": 0.5235884567412356
+    },
+    {
+      "code": "7717",
+      "prev_close": 430.0,
+      "net_amt_wan": 129.0,
+      "d0_turnover": 226388550.0,
+      "uc_influence_pct": 0.569816803897547
+    },
+    {
+      "code": "4716",
+      "prev_close": 18.7,
+      "net_amt_wan": 87.89,
+      "d0_turnover": 30886472.099999998,
+      "uc_influence_pct": 2.845582354483276
+    },
+    {
+      "code": "3597",
+      "prev_close": 41.15,
+      "net_amt_wan": 61.725,
+      "d0_turnover": 49298934.5,
+      "uc_influence_pct": 1.25205545770974
     }
   ]
 }

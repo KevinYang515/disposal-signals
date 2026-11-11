@@ -1,8 +1,8 @@
 {
-  "trade_date": "2026-11-11",
-  "signal_date": "2026-11-10",
+  "trade_date": "2026-11-12",
+  "signal_date": "2026-11-11",
   "strategy": "CityCenterGA",
-  "generated_at": "2026-11-11T07:42:09.404599+08:00",
+  "generated_at": "2026-11-12T07:42:10.741599+08:00",
   "active": false,
   "candidates": []
 }
