@@ -1,18 +1,10 @@
 {
-  "trade_date": "2026-11-16",
-  "signal_date": "2026-11-13",
+  "trade_date": "2026-11-17",
+  "signal_date": "2026-11-16",
   "strategy": "FlipBranch",
-  "generated_at": "2026-11-16T07:35:10.644540+08:00",
+  "generated_at": "2026-11-17T07:35:10.786568+08:00",
   "candidate_count_before_daily_gate": null,
   "min_candidate_count": null,
-  "active": true,
-  "candidates": [
-    {
-      "code": "3049",
-      "prev_close": 12.35,
-      "ranking_value": 3806000.0,
-      "ranking_field": "dominant_net_shares",
-      "dominant_broker": "富邦證券"
-    }
-  ]
+  "active": false,
+  "candidates": []
 }
